@@ -87,18 +87,23 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 
 ## 读控制台日志(console 监听)
 
-`cdp.js` 用**常驻 daemon** 收集页面控制台日志。核心价值:能抓到**用户手动操作期间**打出的日志、跨多次命令/agent 回合累计、**刷新页面后仍持续收集**,且支持过滤。对你的验收断言很有用(子代理看"控制台有没有报错"这种客观检查)。
+`cdp.js` 用**常驻 daemon 给每个页面注入监控脚本**,把日志存进页面的 `window.__cdpLogs`,`logs` 命令再 eval 读出来——**保留对象的嵌套结构和调用链**(不是拍平的文本)。核心价值:能抓到**用户手动操作期间**打出的日志、跨多次命令/agent 回合累计、**刷新页面后监控自动补装**、支持过滤。
 
-原理:CDP 控制台事件(`Runtime.consoleAPICalled`/`Runtime.exceptionThrown`/`Log.entryAdded`)是推式的,必须有**活着的 WebSocket 连着 page target 且发过 `Runtime.enable`**。每次 `node cdp.js xxx` 是独立进程、跑完即退,所以由 `listen` daemon 常驻持有 WS、缓冲事件,`logs` 命令去查它的本地 HTTP 接口。
+原理:直接监听 CDP 控制台事件拿到的只是描述文本,看不到对象嵌套结构。所以改成往页面注入 `console.*`/`onerror`/`unhandledrejection` 钩子,把**活的嵌套对象 + 调用链(stack)** 存进 `window.__cdpLogs`,读时结构化序列化。关键机制是 `Page.addScriptToEvaluateOnNewDocument`——注册在该 tab 的会话上,**每次 document 创建(含刷新)自动先跑监控脚本**,刷新自动补装,无需 daemon 探测。
 
-- **自动种监听**:`open` / `ensure --url` 打开页面时,会自动拉起 daemon 并 attach 该 tab——打开即种上,之后无论怎么手动操作/刷新都在收。
+- **自动装监听**:`open` / `ensure --url` 打开页面时自动拉起 daemon,它轮询 `/json/list` 给**每个** tab(含手动开的)注册监控脚本。
 - **读**:`node cdp.js logs [--target <匹配>] [--level error,warn] [--since <ms>] [--json]`
-  - `--level` 逗号分隔按级别过滤(`debug/log/info/warn/error`);未捕获异常归 `error`。默认排除浏览器级噪音(`browser`,如网络/资源错误)。
+  - `--level` 逗号分隔按级别过滤(`debug/log/info/warn/error`);未捕获异常归 `error`。
   - `--since <毫秒时间戳>` 只取该时间点之后。
-  - 默认人类可读 `[HH:MM:SS][level] args`;`--json` 输出完整结构给脚本/agent。
-  - **自动补种**:读一个 daemon 还没 attach 的 tab(如用户手动新开的)→ 现在就种上监听(只能从**此刻起**捕获,历史无法补)。
-- **停止**:`node cdp.js listen-stop`。daemon 端口 `CDP_LOGS_PORT`(默认 9333),日志缓冲每 target 封顶 2000 条 FIFO。
-- **脚本模式**:`cdp.logs(target, {level, since})` → 返回日志条目数组,可与 `cdp.click`/`cdp.waitForFn` 配合做"跑完流程断言无报错"。
+  - 默认人类可读 `[HH:MM:SS][level] args`;`--json` 输出完整结构(嵌套对象 + `stack` 调用链)给脚本/agent。
+  - **读时自动补种**:`logs` 本身也会幂等注入监控脚本(防 daemon 未及装),所以对任意 tab 读都有效。
+- **停止**:`node cdp.js listen-stop`。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
+- **脚本模式**:`cdp.logs(target, {level, since})` → 返回结构化日志数组,可与 `cdp.click`/`cdp.waitForFn` 配合做"跑完流程断言无报错"。
+
+**已知限制**:
+- `window.__cdpLogs` 在页面刷新后**清空**(缓冲在页面里,新 document 从头开始);监控脚本会自动补装,但历史没了。
+- **首屏/加载早期的日志可能错过**:daemon 靠轮询注入,页面刚打开的几毫秒内已打的日志在注入前就跑了。agent 打开页→操作→读的场景不受影响;想抓加载早期日志需在导航前注册。
+- 只覆盖主线程的 console/onerror/unhandledrejection,worker 等跨 context 的异常抓不到。
 
 ## 自动化工作流(推荐)
 

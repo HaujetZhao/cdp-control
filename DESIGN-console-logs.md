@@ -1,80 +1,80 @@
-# 设计:cdp.js 读控制台日志(常驻 daemon)
+# 设计:cdp.js 读控制台日志(页面注入监控 + 注入守护 daemon)
 
-日期:2026-08-07
+日期:2026-08-07(初版 CDP 事件缓冲方案 → 重构为页面注入方案)
 
-## 背景与核心矛盾
+## 背景与两次方案迭代
 
-读控制台日志本质是**推式 + 长连接**:要收到 `Runtime.consoleAPICalled` / `Runtime.exceptionThrown` / `Log.entryAdded`,必须有一条**活着的 WebSocket 连着 page target 且发过 `Runtime.enable`**,事件是推给这条 WS 的。而每次 `node cdp.js xxx` 是**独立进程、跑完即退**,WS 一关事件就断。
+### 为什么最初走 CDP 事件
+读控制台日志本质是"推式 + 长连接":要收到 `Runtime.consoleAPICalled`/`Runtime.exceptionThrown`,必须有一条活着的 WS 连 target 且发过 `Runtime.enable`。每次 `node cdp.js xxx` 是独立进程、跑完即退,所以第一版用一个常驻 daemon 持有 WS、缓冲事件、暴露 `/logs` HTTP 读取。
 
-用户需求(经 brainstorming 澄清):
-1. **监听窗口跨 agent 回合 + 用户手动操作**:打开页 → 用户操作 → 之后 agent 再读。
-2. **打开页面时自动装监听器**,读时支持过滤。
-3. **刷新后监听器还能接着用**(硬性要求)。
-4. **读不到时自动补种**,不多一轮交互。
+**局限(实测暴露)**:CDP 事件把 console 参数给的是 `RemoteObject.description`(拍平的文本),异常也只给格式化堆栈字符串——**对象嵌套结构丢了,调用链只是文本**。用户要能看镶嵌结构和调用链。
 
-结论:**必须有一个常驻监听进程**持续持有 WS、缓冲事件,agent 读时查它的本地 HTTP 接口。CDP 事件挂在 target 上,`Runtime.enable` 在同一 target 刷新后保持 → 刷新存活天然成立(不能用 JS 注入 `console.log=` 覆盖,那刷新即失效)。
+### 为什么改为页面注入
+用户提出:daemon 不做"缓冲+读",改成"**注入守护**"——监听所有 tab,确保每个 tab 都有页面注入的监控器,刷新后自动补。往页面 hook `console.*`/`onerror`/`unhandledrejection` 存进 `window.__cdpLogs`,读时拿到的就是**活的嵌套对象 + 调用链**,比 CDP preview 结构保真度高(无任意深度上限)。
+
+关键机制 **`Page.addScriptToEvaluateOnNewDocument`**:注册在该 tab 的 debugger session 上,之后**每次 document 创建(含刷新)自动先跑这段脚本** → 刷新自动补装,**不需要 daemon 探测刷新**。daemon 只需轮询 `/json/list` 发现新 tab 去注册。
 
 ## 架构
 
 ```
-open/ensure ──spawn──▶ cdp-listen daemon(HTTP :9333,CDP_LOGS_PORT 可改)
-                          │  每500ms轮询 /json/list,给每个 page target:
-                          │  attach WS → Runtime.enable + Log.enable → 缓冲事件
-                          ▼
-日志: {ts, targetId, url, title, type(console/exception/browser), level, args}
-                          ▲
-logs 命令 ──HTTP GET /logs?target&level&since──┘
+daemon(listen)= 注入守护:轮询 /json/list → 每个 tab attach WS
+                 → Page.enable + Page.addScriptToEvaluateOnNewDocument(MONITOR_JS)
+                 → 刷新自动重跑,无需探测;立即对已加载页 Runtime.evaluate 注入一次
+                 （不做日志缓冲、没有 /logs HTTP 读;只有 /health + /shutdown）
+
+页面 MONITOR_JS: hook console.*/onerror/unhandledrejection → window.__cdpLogs
+                 [{ts,type:console|exception|rejection,level,args(活对象),stack}]
+                 window.__cdpMon 哨兵防重复;封顶 2000 条 FIFO
+
+logs 命令: 幂等注入(MONITOR_JS)+ 读取 window.__cdpLogs 并结构化序列化
+           → 保留嵌套对象结构 + stack 调用链,level/since 在页面侧过滤
 ```
 
 ## 组件
 
-### `listen` 子命令(daemon 主体,`cmdListen`)
-- HTTP server(`node:http`,绑定 127.0.0.1:9333):
-  - `GET /health` → 存活探测
-  - `GET /logs?target=<子串>&level=error,warn&since=<ts>` → 带过滤取日志
-  - `POST /shutdown` → 停止
-- 主循环 `syncAttach` 每 500ms `getJson('/json/list')`:
-  - 未 attach 的 page target → `pageWs(target, onEvent)` + `Runtime.enable` + `Log.enable`。
-  - **刷新存活**:同一 target 内导航,WS 不断、enable 保持 → 事件继续进,无需特判。
-  - **自动 attach 手动开的 tab**:轮询 diff 自然覆盖。
-- 缓冲:`Map<targetId, {target, entries[], listeningSince}>`;每 target 封顶 2000 条 FIFO。
-- WS 断开 → `attached.delete(targetId)`,下轮重连;缓冲保留。
+### `MONITOR_JS`(注入到每个页面的监控脚本)
+- hook `console.log/info/warn/error/debug`:记录 `args`(**活的引用**,读时再序列化)+ `new Error().stack`(调用链)。
+- `window.addEventListener('error')`:未捕获异常 → message/source/line/col/reason/stack。
+- `window.addEventListener('unhandledrejection')`:Promise 拒绝 → reason/stack。
+- `window.__cdpMon` 哨兵保证幂等(重复注入、每次 document 重建只装一次)。
+- 注意:脚本内不含模板反引号,因为要作为字符串注入/读到页面里。
 
-### dispatcher 改造(最小侵入)
-`attachDispatcher(ws, onEvent?)`:`msg.id === undefined` 时若传了 `onEvent` 则回调 `(method, params)`。**不影响**现有单命令(不传 onEvent,事件照旧忽略)。
+### `buildReadExpr(levelSet, since)`(读表达式)
+= `MONITOR_JS` + 结构化序列化器。序列化保留普通对象/数组嵌套结构,并处理:
+- 循环引用 → `[循环]`(`WeakSet` 追踪,每个条目独立 `seen` 防共享引用误判)
+- DOM 节点 → `<DIV#id>`
+- Error → `{name, message}`
+- 深度 >8 → `[深]`;数组 >50 项、对象 >30 键截断(防爆炸)
+- 在页面侧完成 level 过滤 + since 时间戳过滤
 
-### 事件 → entry 映射(`handleEvent`)
-- `Runtime.consoleAPICalled`:level = `params.type`,type='console',args = RemoteObject 数组经 `serializeRemoteArg` 降级(DOM/函数/循环引用 → 描述文本,防 JSON 崩)。
-- `Runtime.exceptionThrown`:level='error',type='exception',args = description 截断 + line/col。
-- `Log.entryAdded`:type='browser',默认查询时排除(浏览器级噪音,需显式 `--level browser`)。
+### daemon(`cmdListen`,注入守护)
+- `inject(target)`:attach WS → `Page.enable` → `Page.addScriptToEvaluateOnNewDocument(MONITOR_JS)`(注册给未来所有 document)→ `Runtime.evaluate(MONITOR_JS)`(立即注入当前已加载页,幂等)。
+- `sync()`:每 500ms 轮询 `/json/list`,对未 attach 的 tab 注入(覆盖手动新开)。WS 断开 → 移除,下轮重连重注册。
+- HTTP:仅 `/health`(存活探测)+ `/shutdown`。PID 存 `os.tmpdir()/cdp-listen.pid`。
 
-### 自动种监听
-`open()` 和 `ensureBrowser()`(url 分支)末尾 `maybeSpawnDaemon()`(异步、失败不阻塞)。→ agent 打开页面即自动种上。
+### `logs` 命令 / `cdp.logs` API
+- `maybeSpawnDaemon()` 确保 daemon 在跑(持续守护注入)。
+- `evaluate(target, buildReadExpr(levelSet, since))` → 结构化日志数组。**读时自带幂等注入**,所以任意 tab(含手动开的、daemon 未及装的)读都有效。
 
-### `logs` 子命令(读取 + 自动补种)
-- `node cdp.js logs [--target <匹配>] [--level error,warn] [--since <ms>] [--json]`
-- 流程:`ensureDaemon()`(不在跑则 spawn)→ `GET /logs`。daemon 侧 `/logs` 若该 target 未 attach → 当场 `attach()`(**自动补种**,只能从此刻起捕获)。
-- 输出:默认人类可读 `[HH:MM:SS][level] args`;`--json` 给脚本/agent。
-- `--level` 逗号分隔匹配 level;未捕获异常归 'error'。默认(不传 level)排除 `browser` 级。
+### 自动装监听
+`open()` / `ensureBrowser()`(url 分支)末尾 `maybeSpawnDaemon()` → daemon 轮询给新 tab 注册。
 
 ### `listen-stop`
-发起 `POST /shutdown`(daemon 在响应前 `process.exit`,response 被截断 reject 也算成功)→ 轮询 health 直到不可达;优雅关闭未生效再读 pid 文件 `kill` 兜底。PID 存 `os.tmpdir()/cdp-listen.pid`。
+发起 `POST /shutdown`(daemon 响应前 `process.exit`,response 截断 reject 也算成功)→ 轮询 health 直到不可达;优雅关闭未生效再读 pid 文件 `kill` 兜底。
 
-### 脚本 API
-`cdp.logs(target, {level, since})` → 走 daemon HTTP 返回条目数组,供 `run` 脚本做"跑完流程断言无报错"。
+## 实测验证(本地 Edge)
+- 嵌套对象结构完整:`console.log('nested',{a:1,b:{c:[1,2,3],d:{e:'deep'}}})` → args 保留完整嵌套 ✓
+- 调用链:每条 console 记录带 `stack` ✓
+- 未捕获异常:`throw new Error('chain-test')` → message + reason{name,message} + stack ✓
+- **刷新自动补**:navigate 后新打日志仍捕获(监控经 addScriptToEvaluateOnNewDocument 自动重跑)✓
+- 新开 tab 自动装:注入后打日志能捕获 ✓
+- `listen-stop` 正确停止 ✓
 
-## 关键修复(实测发现)
-- **parseArgs 取值 bug**:`--level log` 里 `--level` 不在取值白名单 → `opts.level=true`、值被当位置参数。已把 `level`/`since` 加进 `--target/--file/--url` 那组。
-- **listen-stop 判定 bug**:原以"fetch 返回值"判成败,daemon 提前 `process.exit` 导致 fetch 抛错被误判失败。改为轮询 health。
-
-## 实测验证记录(本地 Edge + 5173)
-- console.log/warn/error 按 level 正确捕获 ✓
-- 未捕获异常 `throw new Error(...)` 捕获为 type=exception ✓
-- `--level log` 过滤只剩 log 级、`--level error` 过滤掉 log 级 ✓
-- **刷新存活**:导航后同 target 继续收到 `post-reload` 日志 ✓
-- 新开自带 console 的 data 页 → 自动 attach、`logs` 读到 ✓
-- `listen-stop` 正确停掉、health 不可达 ✓
+## 已知限制(诚实记录)
+- `window.__cdpLogs` 刷新后清空(缓冲在页面);监控自动补装但历史没了。
+- **首屏/加载早期日志可能错过**:daemon 靠轮询注入,页面刚打开的几毫秒内已打的日志在注入前跑了(实测 data 页首屏日志丢失)。agent 打开页→操作→读的场景不受影响;想抓加载早期日志需在导航前注册 `addScriptToEvaluateOnNewDocument`。
+- 只覆盖主线程 hook;worker 等跨 context 异常抓不到。
 
 ## 不改的部分
-- 单命令 `eval`/`snapshot` 等行为不变(不传 onEvent,事件照旧忽略)。
-- 读历史日志的限制:daemon 只在 attach 之后才收;attach 前已存在的日志读不到(想抓加载期日志要在导航前种监听)。
+- 单命令 `eval`/`snapshot` 等行为不变。
+- 读历史日志的限制:监控只在注入之后收;注入前已存在的日志读不到。

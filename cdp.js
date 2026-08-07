@@ -470,14 +470,78 @@ async function hover(target, selector) {
 
 const LOGS_PORT = Number(process.env.CDP_LOGS_PORT) || 9333;
 
-// CDP RemoteObject → 可安全 JSON 的普通值(节点/函数/循环引用降级为描述文本)。
-function serializeRemoteArg(ro) {
-  if (ro == null) return null;
-  if (ro.type === 'string' || ro.type === 'number' || ro.type === 'boolean') return ro.value;
-  if (ro.type === 'undefined') return undefined;
-  if (ro.type === 'object' && ro.subtype === 'null') return null;
-  const d = typeof ro.description === 'string' ? ro.description : '';
-  return d.length > 500 ? d.slice(0, 500) + '…' : d;
+// 注入到每个页面的监控脚本(hook console/onerror/unhandledrejection → window.__cdpLogs)。
+// 存的是**活的嵌套对象**(读时再结构化序列化),可看对象结构 + 调用链(stack)。
+// window.__cdpMon 哨兵保证幂等(重复注入 / 每次 document 重建只装一次)。
+// 注意:不能有模板字符串反引号,因为它会作为表达式被注入 / 读到页面里。
+const MONITOR_JS = `(() => {
+  if (window.__cdpMon) return;
+  window.__cdpMon = true;
+  var logs = (window.__cdpLogs = window.__cdpLogs || []);
+  var CAP = 2000;
+  function push(e) { logs.push(e); if (logs.length > CAP) logs.splice(0, logs.length - CAP); }
+  function stack() { try { return new Error().stack; } catch (e) { return ''; } }
+  var lv = { log: 1, info: 1, warn: 1, error: 1, debug: 1 };
+  for (var k in lv) {
+    var orig = console[k];
+    if (typeof orig !== 'function') continue;
+    (function (name, base) {
+      console[name] = function () {
+        push({ ts: Date.now(), type: 'console', level: name, args: Array.prototype.slice.call(arguments), stack: stack() });
+        return base.apply(console, arguments);
+      };
+    })(k, orig);
+  }
+  window.addEventListener('error', function (ev) {
+    push({ ts: Date.now(), type: 'exception', level: 'error', message: ev.message || '', source: ev.filename || '', line: ev.lineno, col: ev.colno, reason: ev.error, stack: (ev.error && ev.error.stack) || ev.message || '' });
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev.reason;
+    push({ ts: Date.now(), type: 'rejection', level: 'error', reason: r, stack: (r && r.stack) || stack() });
+  });
+})()`;
+
+// 读表达式 = 幂等注入监控脚本 + 结构化序列化 window.__cdpLogs。
+// 序列化保留普通对象/数组的**嵌套结构**,循环引用 → [循环]、DOM 节点 → <DIV#id>、
+// Error → {name,message}、深度/键数封顶(防爆炸)。level 过滤与 since 时间戳在页面侧完成。
+function buildReadExpr(levelSet, since) {
+  const filter = levelSet
+    ? '(' + JSON.stringify(levelSet) + '.indexOf(e.level) !== -1)'
+    : 'e.type !== "browser"';
+  return MONITOR_JS + '\n;(() => {\n'
+    + '  var arr = window.__cdpLogs || [];\n'
+    + '  var since = ' + (since || 0) + ';\n'
+    + '  function makeStruct() {\n'
+    + '    var seen = new WeakSet();\n'
+    + '    return function struct(v, d) {\n'
+    + '      if (v === null) return null;\n'
+    + '      var t = typeof v;\n'
+    + '      if (t === "string" || t === "number" || t === "boolean") return v;\n'
+    + '      if (t === "undefined") return undefined;\n'
+    + '      if (t === "function" || t === "symbol" || t === "bigint") return String(v);\n'
+    + '      if (t !== "object") return String(v);\n'
+    + '      if (d > 8) return "[深]";\n'
+    + '      if (v instanceof Error) return { name: v.name, message: v.message };\n'
+    + '      if (Array.isArray(v)) { var a = []; for (var i = 0; i < v.length && i < 50; i++) a.push(struct(v[i], d + 1)); return a; }\n'
+    + '      if (v.nodeType) return "<" + (v.nodeName || "?") + (v.id ? "#" + v.id : "") + ">";\n'
+    + '      if (seen.has(v)) return "[循环]";\n'
+    + '      seen.add(v); var o = {}; var n = 0;\n'
+    + '      for (var k in v) { if (n++ >= 30) { o["..."] = "(+more)"; break; } try { o[k] = struct(v[k], d + 1); } catch (e) { o[k] = String(v[k]); } }\n'
+    + '      return o;\n'
+    + '    };\n'
+    + '  }\n'
+    + '  return arr.filter(function (e) { return e.ts >= since && ' + filter + '; }).map(function (e) {\n'
+    + '    var struct = makeStruct();\n'
+    + '    var o = { ts: e.ts, type: e.type, level: e.level, args: (e.args || []).map(function (a) { return struct(a, 0); }) };\n'
+    + '    if (e.stack) o.stack = e.stack;\n'
+    + '    if (e.message) o.message = e.message;\n'
+    + '    if (e.source) o.source = e.source;\n'
+    + '    if (e.line != null) o.line = e.line;\n'
+    + '    if (e.col != null) o.col = e.col;\n'
+    + '    if (e.reason !== undefined) o.reason = struct(e.reason, 0);\n'
+    + '    return o;\n'
+    + '  });\n'
+    + '})()';
 }
 
 async function spawnDaemon() {
@@ -491,7 +555,7 @@ async function daemonHealthy(port = LOGS_PORT) {
   try { const r = await fetch(`http://127.0.0.1:${port}/health`); return r.ok; } catch { return false; }
 }
 
-// 异步确保 daemon 在跑(打开页面时自动种监听;失败不阻塞主流程)。
+// 异步确保 daemon 在跑(打开页面时自动注入守护;失败不阻塞主流程)。
 async function maybeSpawnDaemon() {
   try { await ensureDaemon(); } catch {}
 }
@@ -507,12 +571,6 @@ async function ensureDaemon(port = LOGS_PORT) {
   throw new Error('监听 daemon 启动失败');
 }
 
-async function daemonGetJson(port, path) {
-  const r = await fetch(`http://127.0.0.1:${port}${path}`);
-  if (!r.ok) throw new Error(`监听 daemon HTTP ${r.status}: ${path}`);
-  return r.json();
-}
-
 async function pidFilePath() {
   const os = await import('node:os');
   const path = await import('node:path');
@@ -520,130 +578,66 @@ async function pidFilePath() {
 }
 
 /**
- * 常驻监听主体(listen 子命令)。持有到各 page target 的 WS + Runtime/Log.enable,缓冲
- * 控制台事件,暴露本地 HTTP 接口供 logs 查询。轮询 /json/list 自动 attach 新 tab(含
- * 手动开的)与刷新后的同 target(WS 不断、enable 保持 → 事件继续进来)。
+ * 注入守护 daemon(listen 子命令)。不做日志缓冲/读取——职责是保证**每个 tab 都装上
+ * 页面监控脚本**。attach 时 Page.addScriptToEvaluateOnNewDocument 注册一次,之后每次
+ * document 创建(含刷新)自动重跑监控脚本 → 刷新自动补,无需探测。轮询 /json/list 自动
+ * 覆盖新开的 tab(含手动开的)。读取交给 logs 命令去 eval 页面 window.__cdpLogs。
  */
 async function cmdListen() {
   const http = await import('node:http');
   const fs = await import('node:fs');
-  const path = await import('node:path');
-
-  const buffers = new Map(); // targetId -> { target, entries:[], listeningSince }
   const attached = new Map(); // targetId -> ws
 
-  function handleEvent(target, method, params) {
-    const b = buffers.get(target.id);
-    if (!b) return;
-    let entry = null;
-    if (method === 'Runtime.consoleAPICalled') {
-      entry = {
-        ts: Date.now(), targetId: target.id, url: target.url, title: target.title,
-        type: 'console', level: (params.type || 'log').toLowerCase(),
-        args: (params.args || []).map(serializeRemoteArg),
-      };
-    } else if (method === 'Runtime.exceptionThrown') {
-      const ed = params.exceptionDetails || {};
-      const ex = ed.exception?.description || ed.text || '';
-      entry = {
-        ts: Date.now(), targetId: target.id, url: target.url, title: target.title,
-        type: 'exception', level: 'error',
-        args: [String(ex).slice(0, 2000)], line: ed.lineNumber, col: ed.columnNumber,
-      };
-    } else if (method === 'Log.entryAdded') {
-      const e = params.entry || {};
-      entry = {
-        ts: (e.timestamp || Date.now()), targetId: target.id, url: target.url, title: target.title,
-        type: 'browser', level: (e.level || '').toLowerCase(),
-        args: [String(e.text || '').slice(0, 2000)], source: e.source,
-      };
-    }
-    if (!entry) return;
-    b.entries.push(entry);
-    if (b.entries.length > 2000) b.entries.splice(0, b.entries.length - 2000);
-  }
-
-  async function attach(target) {
+  async function inject(target) {
     let ws;
-    try { ws = await pageWs(target, (m, p) => handleEvent(target, m, p)); } catch { return; }
+    try { ws = await pageWs(target); } catch { return; }
     attached.set(target.id, ws);
-    ws.onclose = () => attached.delete(target.id); // 断了下轮重连,缓冲保留
-    if (!buffers.has(target.id)) buffers.set(target.id, { target, entries: [], listeningSince: Date.now() });
-    try { await send(ws, 'Runtime.enable', {}, 5000); await send(ws, 'Log.enable', {}, 5000); } catch {}
+    ws.onclose = () => attached.delete(target.id); // 断了下轮重连,重注册
+    try {
+      await send(ws, 'Page.enable', {}, 5000);
+      // 关键:注册到 target 会话,刷新后新 document 自动先跑监控脚本
+      await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: MONITOR_JS }, 5000);
+      // 对当前已加载页面立即注入一次(幂等)
+      await send(ws, 'Runtime.evaluate', { expression: MONITOR_JS, returnByValue: true }, 5000);
+    } catch {}
   }
 
-  async function syncAttach() {
+  async function sync() {
     let list;
     try { list = await listTargets(); } catch { return; }
-    for (const t of list) if (!attached.has(t.id)) await attach(t);
-  }
-
-  function applyFilter(entries, levelSet, since) {
-    let out = entries.filter(e => e.ts >= since);
-    if (levelSet) out = out.filter(e => levelSet.includes(e.level));
-    else out = out.filter(e => e.type !== 'browser'); // 默认排除浏览器级噪音
-    return out;
+    for (const t of list) if (!attached.has(t.id)) await inject(t);
   }
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://127.0.0.1:${LOGS_PORT}`);
     res.setHeader('content-type', 'application/json; charset=utf-8');
-    const send = (code, obj) => { res.statusCode = code; res.end(JSON.stringify(obj)); };
-    try {
-      if (url.pathname === '/health') return send(200, { ok: true, targets: buffers.size });
-      if (url.pathname === '/shutdown') { fs.unlinkSync(await pidFilePath()); server.close(); process.exit(0); }
-      if (url.pathname === '/logs') {
-        const match = url.searchParams.get('target');
-        const levelSet = url.searchParams.get('level')?.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) || null;
-        const since = Number(url.searchParams.get('since')) || 0;
-        let list = [];
-        try { list = await listTargets(); } catch {}
-        let target = null;
-        if (match) { try { target = resolveTarget(list, match); } catch {} }
-        else target = list.find(t => !/^(about:|edge:\/\/|chrome:\/\/|devtools:)/.test(t.url || '')) || list[0] || null;
-        if (!target) return send(200, { entries: [], targets: list.map(t => ({ id: t.id, title: t.title, url: t.url })), note: '没有匹配的 target' });
-        // 自动补种:手动开的 tab 尚未 attach → 现在就种上(只能从此刻起捕获)
-        if (!attached.has(target.id)) await attach(target);
-        const b = buffers.get(target.id) || { target, entries: [], listeningSince: Date.now() };
-        return send(200, {
-          target: { id: target.id, title: target.title, url: target.url },
-          listeningSince: b.listeningSince ?? null,
-          entries: applyFilter(b.entries, levelSet, since),
-        });
-      }
-      return send(404, { error: 'unknown route' });
-    } catch (err) {
-      send(500, { error: err.message });
-    }
+    if (url.pathname === '/health') { res.end(JSON.stringify({ ok: true, targets: attached.size })); return; }
+    if (url.pathname === '/shutdown') { try { fs.unlinkSync(await pidFilePath()); } catch {} server.close(); process.exit(0); }
+    res.statusCode = 404; res.end('{}');
   });
 
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(LOGS_PORT, '127.0.0.1', resolve);
-  });
-  await syncAttach();
-  setInterval(() => { syncAttach().catch(() => {}); }, 500);
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(LOGS_PORT, '127.0.0.1', resolve); });
+  await sync();
+  setInterval(() => { sync().catch(() => {}); }, 500);
   fs.writeFileSync(await pidFilePath(), String(process.pid));
   process.on('SIGINT', () => process.exit(0));
   process.on('SIGTERM', () => process.exit(0));
-  console.error(`监听 daemon 就绪 :${LOGS_PORT},attached=${buffers.size}`);
+  console.error(`注入守护 daemon 就绪 :${LOGS_PORT},tabs=${attached.size}`);
 }
 
 /**
- * 读 target 的控制台日志(走 daemon HTTP,带自动补种)。脚本模式用。
+ * 读 target 的控制台日志:幂等注入监控脚本 + 读取 window.__cdpLogs(结构化嵌套对象)。
  * @param {object|string} target target 对象或 id/url/title 子串
  * @param {{level?:string, since?:number}} [opts] level 逗号分隔;since 毫秒时间戳
- * @returns {Promise<Array>} 日志条目
+ * @returns {Promise<Array>} 日志条目(结构化,含 args 嵌套 + stack 调用链)
  */
 async function logs(target, opts = {}) {
-  const port = await ensureDaemon();
-  const id = typeof target === 'object' ? (target.id || target) : target;
-  const qs = new URLSearchParams();
-  if (id !== undefined && id !== null) qs.set('target', String(id));
-  if (opts.level) qs.set('level', opts.level);
-  if (opts.since) qs.set('since', String(opts.since));
-  const d = await daemonGetJson(port, '/logs?' + qs);
-  return d.entries || [];
+  maybeSpawnDaemon().catch(() => {}); // 确保 daemon 在跑(持续守护注入)
+  if (typeof target === 'string') target = await resolve(target);
+  const levelSet = opts.level ? opts.level.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : null;
+  const since = opts.since || 0;
+  const value = await evaluate(target, buildReadExpr(levelSet, since), 30000);
+  return Array.isArray(value) ? value : [];
 }
 
 // ---- 确保浏览器打开(小白场景:自动探测默认浏览器并启动 CDP) ----
@@ -865,24 +859,16 @@ async function main() {
   }
 
   if (cmd === 'logs') {
-    const port = await ensureDaemon();
-    const qs = new URLSearchParams();
-    if (opts.target) qs.set('target', opts.target);
-    if (opts.level) qs.set('level', opts.level);
-    if (opts.since) qs.set('since', opts.since);
-    const d = await daemonGetJson(port, '/logs?' + qs);
-    const entries = d.entries || [];
+    const t = await api.resolve(opts.target);
+    const entries = await api.logs(t, { level: opts.level, since: opts.since });
     if (opts.json) { console.log(JSON.stringify(entries, null, 2)); return; }
-    if (entries.length === 0) {
-      console.log(`(无控制台日志${d.target ? ' · ' + d.target.title : ''})`);
-      if (d.note) console.log(d.note);
-      return;
-    }
-    console.log(`→ ${d.target?.title || ''} ${d.target?.url || ''}`);
+    if (entries.length === 0) { console.log(`(无控制台日志 · ${t.title || t.url})`); return; }
+    console.log(`→ ${t.title} ${t.url}`);
     for (const e of entries) {
-      const t = new Date(e.ts).toTimeString().slice(0, 8);
+      const ts = new Date(e.ts).toTimeString().slice(0, 8);
       const loc = (e.line != null) ? ` (${e.line}:${e.col ?? ''})` : '';
-      console.log(`[${t}][${e.level}] ${e.args.map(a => a == null ? 'undefined' : String(a)).join(' ')}${loc}`);
+      const argsText = (e.args || []).map(a => a == null ? 'undefined' : (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+      console.log(`[${ts}][${e.level}] ${argsText}${loc}`);
     }
     return;
   }
