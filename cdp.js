@@ -73,8 +73,8 @@ async function main() {
   navigate <url> [--target]导航到 url
   eval "<js>" [--target]   在页面执行 JS,返回 JSON 值
   snapshot [--target]      提取可交互元素清单(标签/文本/选择器/坐标)
-  view [--in <sel>] [--out <s1,s2>] [--target] 视口几何视图(可只看某区域/排除区域)
-  tree <selector> [--depth N] [--out <s1,s2>] [--target] 钻取该元素 DOM 子树,紧凑层级树(过滤垃圾节点/属性)
+  view [--all] [--in <sel>] [--out <s1,s2>] [--target] 区域索引(主要容器+标签+块数,选一个用tree/--in深入);--all 全量叶子块
+  tree <selector> [--depth N] [--out <s1,s2>] [--full] [--target] 钻取该元素 DOM 子树,紧凑层级树(只对视口内建树;--full 全部)
   click <selector> [--target] 点击元素
   fill <selector> <值> [--target] 填入输入框并触发 input/change
   focus <selector> [--target] 聚焦元素(配合按键用)
@@ -219,13 +219,22 @@ async function main() {
     }
     case 'view': {
       const v = await api.view(target, {
+        all: !!opts.all,
         in: opts.in,
         out: opts.out ? opts.out.split(',').map(s => s.trim()).filter(Boolean) : undefined,
       });
-      if (!v?.blocks?.length) { console.log('(视口内无可感知块)'); break; }
-      console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.blocks.length} 块${v.truncated ? '(截断)' : ''} · 自顶到底:`);
-      console.log(v.blocks.map((e, i) =>
-        `${i + 1}. ${' '.repeat(Math.max(0, 8 - String(e.z).length))}[z=${e.z}] [${e.kind}/${e.tag}] "${e.text || '(图)'}"${e.occluded ? ' <被遮挡>' : ''}  ${e.selector}`
+      if (opts.all) {
+        if (!v?.blocks?.length) { console.log('(视口内无可感知块)'); break; }
+        console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.blocks.length} 块${v.truncated ? '(截断)' : ''} · 自顶到底:`);
+        console.log(v.blocks.map((e, i) =>
+          `${i + 1}. ${' '.repeat(Math.max(0, 8 - String(e.z).length))}[z=${e.z}] [${e.kind}/${e.tag}] "${e.text || '(图)'}"${e.occluded ? ' <被遮挡>' : ''}  ${e.selector}`
+        ).join('\n'));
+        break;
+      }
+      if (!v?.regions?.length) { console.log('(未归纳出区域)'); break; }
+      console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.regions.length} 区域(阅读序,选一个用 tree/--in 深入):`);
+      console.log(v.regions.map((r, i) =>
+        `${i + 1}. [${r.tag}${r.id ? '#' + r.id : ''}${r.cls?.length ? '.' + r.cls.join('.') : ''}] "${r.label}" ${r.blocks}块 z=${r.z}  ${r.selector}`
       ).join('\n'));
       break;
     }
@@ -235,6 +244,7 @@ async function main() {
       const r = await api.tree(target, sel, {
         depth: opts.depth ? Number(opts.depth) : 8,
         out: opts.out ? opts.out.split(',').map(s => s.trim()).filter(Boolean) : undefined,
+        vp: !opts.full, // 默认只对视口内元素建树;--full 关
       });
       if (!r.lines?.length) { console.log('(空子树)'); break; }
       console.log(r.lines.join('\n'));

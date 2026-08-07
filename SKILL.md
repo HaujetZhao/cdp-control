@@ -117,7 +117,7 @@ sites/
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下) |
 | `view [--in <sel>] [--out <s1,s2>] [--target]` | **视口几何视图**:可见文本块/可交互/图片,按堆叠(z)自顶到底排序,含遮挡标注;`--in` 只看某容器内(阅读序)、`--out` 排除区域——感知导向,补强 snapshot |
-| `tree <selector> [--depth N] [--out <s1,s2>] [--target]` | **钻取该元素 DOM 子树**为紧凑层级树(过滤垃圾节点/属性/包装节点);`--out` 排除子区域——从 view 拿到短 selector 后看内部层级结构 |
+| `tree <selector> [--depth N] [--out <s1,s2>] [--full] [--target]` | **钻取该元素 DOM 子树**为紧凑层级树(过滤垃圾节点/属性/包装节点);默认**只对视口内元素建树**(有界输出),`--out` 排除子区域,`--full` 含视口外——从 view 拿到短 selector 后看内部层级结构 |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -201,7 +201,7 @@ await cdp.close(t);
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
 | `cdp.view(target, opts?)` | 对象,`{in,out,occluded}` | 视口几何视图:`{viewport, blocks, truncated}`;`opts.in` 只看某容器内(阅读序)、`opts.out`(数组/字符串)排除区域、`opts.occluded=false` 关遮挡标注 |
-| `cdp.tree(target, selector, opts?)` | 对象,字符串,`{depth,maxClass,out}` | 钻取子树为紧凑层级树:`{ok, selector, lines}`;`opts.out` 排除子区域 |
+| `cdp.tree(target, selector, opts?)` | 对象,字符串,`{depth,maxClass,out,vp}` | 钻取子树为紧凑层级树:`{ok, selector, lines}`;`opts.out` 排除子区域,`opts.vp` 视口过滤(默认 true,false=含视口外) |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
