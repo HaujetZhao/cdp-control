@@ -1,0 +1,169 @@
+---
+name: cdp-browser-control
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返;未知页面元素时,先用 snapshot 探明再写脚本。
+---
+
+# CDP 浏览器控制 (cdp-browser-control)
+
+## Overview
+
+本 Skill 所在目录有一个零依赖 Node 脚本 `cdp.js` ，可直接连 Chrome/Edge 的 CDP 端口(默认 9222),取代 chrome-devtools MCP。核心价值:**能看到并操作手动打开的 tab**(MCP 因 Puppeteer attach 竞态会漏看)。
+
+**重要原则——自动化时优先写脚本文件**:凡是"打开→跳转→等元素→点击→填表→读结果"这类多步操作,**不要一步步调单个命令**(那会每次发一个模型请求、每次都 prefill+decode 全量上下文)。而是把整段操作写成一个 `.js` 脚本文件,用 `node "<本 SKILL 所在目录>/cdp.js" run 脚本.js` **一次执行**。脚本可反复修改重跑。
+
+## When to Use
+
+- 需要读取/操作浏览器里已手动打开的页面(知乎、财联社这种 tab)。
+- 做多步自动化(填表、爬取、提交)时——此时**写脚本文件 + run** 是首选,省往返、可复用、易改。
+- 只想快速看一个页面有什么元素时——用 `snapshot` 探路。
+
+## ⚠️ 调用前唯一入口:`ensure`(必走,别自己探端口)
+
+**不确定 CDP 浏览器是否启动时，先跑一遍 `ensure`**,`ensure` 自己处理"浏览器开没开、用哪个、要不要启动":
+
+```bash
+node "<本 SKILL 所在目录>/cdp.js" ensure          # 确保浏览器已通过 CDP 就绪(不导航)
+node "<本 SKILL 所在目录>/cdp.js" ensure --url "<网页地址>"   # 开浏览器并直接打开该页
+```
+
+`ensure` 内部自动:
+1. 检查 CDP 端口(默认 9222)是否已就绪——已就绪则直接继续。
+2. 没就绪 → 自动探测默认浏览器(优先 Edge,其次 Chrome,覆盖常见安装路径)。
+3. 用**独立用户数据目录**启动它(默认 `~/.cdp-browser`,可用环境变量 `CDP_USER_DATA` 覆盖)。
+4. 轮询等待浏览器 ready(最多 ~15s),然后(若给了 `--url`)打开它。**冷启动**(本次由 ensure 启动的浏览器)会直接复用首个空白 tab 导航,不额外开 tab;**热启动**(浏览器已就绪)才新开一个 tab 放链接,不覆盖你现有页面。
+
+**规范要点:**
+- **必须先 `ensure`,不要一上来就 `list`/`open`**——浏览器没开时这些会报连接失败。
+- 对小白用户,整个流程 agent 一次 `ensure` 完成,用户无需知道开哪个浏览器、用户数据在哪。
+
+## 调用方式
+
+```bash
+node "<本 SKILL 所在目录>/cdp.js" <子命令> [参数]
+node "<本 SKILL 所在目录>/cdp.js" run "./scripts/你的脚本.js"   # 在项目根执行自动化脚本
+```
+
+## 脚本放置规范(重要)
+
+自动化脚本写到**当前项目的根目录**(或项目内临时目录，如 `scripts` 或 `tmp`),**不写进 skill 目录**。运行用 **`cdp.js` 的绝对路径**,在项目根执行:
+
+```bash
+node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
+```
+
+- **为什么**:`run` 读取脚本和脚本里的相对路径输出(截图等)都以 `cwd`(你执行命令的那个目录)为基准。在项目根运行 → 脚本能被读、截图/生成文件直接落到项目根,**skill 目录保持干净、只有工具本身**,不会被业务脚本和输出污染。
+- **绝对路径调 cdp.js**:不要 `cd` 进 skill 目录再跑(那会把 cwd 变成 skill 目录,输出写进 skill)。
+- **脚本自包含**:每个脚本自己用 `cdp.open(url)` 或 `cdp.resolve(url/title子串)` 定位 target,不假设"当前选中页"。这样并行跑多个脚本互不影响。
+- **模板参考**:skill 的 `<本 SKILL 所在目录>/templates/` 里有示例脚本(`auto-demo.js`、`zhihu-acceptance.js`),**复制到项目根后修改使用**,不要原地运行。
+
+## Quick Reference
+
+所有命令可选 `--target <匹配>`(target id 或 url/title 子串;不传则自动选第一个普通网页)。
+
+| 子命令 | 作用 |
+|---|---|
+| `ensure [--url <url>]` | 确保浏览器已打开(自动探测 Edge/Chrome 启动 CDP),可选 --url 直接导航 |
+| `list` | 列出所有 page tab(含手动开的) |
+| `open <url>` | 新开一个 tab,返回 targetId |
+| `close <target>` | 关闭 tab |
+| `navigate <url> [--target]` | 导航 |
+| `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
+| `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标 |
+| `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
+| `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
+| `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
+| `fill <selector> <值> [--target]` | 填输入框并派发 input/change |
+| `focus <selector> [--target]` | 聚焦元素(配合按键用) |
+| `get_focus [--target]` | 查看当前焦点元素在哪 |
+| `press_key <键> [--target]` | 真实按键/组合键,如 `Enter`、`Tab`、`Ctrl+Shift+A` |
+| `hover <selector> [--target]` | 鼠标移到元素上(触发 mouseover/mouseenter) |
+| `shot [--file out.png] [--target]` | 截图 |
+| `logs [--target] [--level error,warn] [--since <ms>] [--json]` | 读 target 控制台日志(见下方「读控制台日志」) |
+| `listen` | 前台运行控制台监听 daemon(常驻后台,一般不手动调) |
+| `listen-stop` | 停止控制台监听 daemon |
+| `run <脚本文件>` | 执行自动化脚本(脚本里用全局 `cdp` API,可顶层 `await`) |
+
+环境变量:`CDP_HOST` / `CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(监听 daemon 端口,默认 9333)。
+
+## 读控制台日志(console 监听)
+
+`cdp.js` 用**常驻 daemon** 收集页面控制台日志。核心价值:能抓到**用户手动操作期间**打出的日志、跨多次命令/agent 回合累计、**刷新页面后仍持续收集**,且支持过滤。对你的验收断言很有用(子代理看"控制台有没有报错"这种客观检查)。
+
+原理:CDP 控制台事件(`Runtime.consoleAPICalled`/`Runtime.exceptionThrown`/`Log.entryAdded`)是推式的,必须有**活着的 WebSocket 连着 page target 且发过 `Runtime.enable`**。每次 `node cdp.js xxx` 是独立进程、跑完即退,所以由 `listen` daemon 常驻持有 WS、缓冲事件,`logs` 命令去查它的本地 HTTP 接口。
+
+- **自动种监听**:`open` / `ensure --url` 打开页面时,会自动拉起 daemon 并 attach 该 tab——打开即种上,之后无论怎么手动操作/刷新都在收。
+- **读**:`node cdp.js logs [--target <匹配>] [--level error,warn] [--since <ms>] [--json]`
+  - `--level` 逗号分隔按级别过滤(`debug/log/info/warn/error`);未捕获异常归 `error`。默认排除浏览器级噪音(`browser`,如网络/资源错误)。
+  - `--since <毫秒时间戳>` 只取该时间点之后。
+  - 默认人类可读 `[HH:MM:SS][level] args`;`--json` 输出完整结构给脚本/agent。
+  - **自动补种**:读一个 daemon 还没 attach 的 tab(如用户手动新开的)→ 现在就种上监听(只能从**此刻起**捕获,历史无法补)。
+- **停止**:`node cdp.js listen-stop`。daemon 端口 `CDP_LOGS_PORT`(默认 9333),日志缓冲每 target 封顶 2000 条 FIFO。
+- **脚本模式**:`cdp.logs(target, {level, since})` → 返回日志条目数组,可与 `cdp.click`/`cdp.waitForFn` 配合做"跑完流程断言无报错"。
+
+## 自动化工作流(推荐)
+
+**先探后写、写成文件、一次执行**——避免多次模型往返:
+
+1. **探明页面**:不知道元素时,先 `node cdp.js list`(看有哪些 tab)+ `node cdp.js snapshot --target <匹配>`(拿到可交互元素的 selector)。
+2. **写脚本文件**:把整段操作写成一个 `.js` 放到**项目根**(见上方"脚本放置规范"),用全局 `cdp` API。可参考模板 `templates/auto-demo.js`,复制到项目后改。
+3. **执行**:在项目根用绝对路径运行 `node "<本 SKILL 所在目录>/cdp.js" run ./你的脚本.js`。出错改文件再跑,不重新生成;截图等输出直接落项目根。
+
+脚本示例(等价于 9 个单命令调用,但只发一次模型请求):
+
+```js
+// ⚠️ 记住两类"句柄":open 返回字符串 targetId,其余方法都要 **target 对象**。
+// 所以 open 之后总要 resolve 一次拿到对象,再往下传。
+const tid = await cdp.open('about:blank');      // 返回字符串 targetId
+const t = await cdp.resolve(tid);                // 用 id/url/title 子串 → 返回 target 对象
+await cdp.eval(t, `document.body.innerHTML='<input id=box><button id=btn>go</button>';'ok'`);
+await cdp.waitFor(t, '#btn');                    // 等元素出现
+await cdp.fill(t, '#box', '值');
+await cdp.click(t, '#btn');
+console.log(await cdp.eval(t, 'document.title'));
+await cdp.shot(t, 'out.png');
+await cdp.close(t);
+```
+
+> **target 对象**是绝大多数方法的第一个参数。它来自 `cdp.resolve(子串)`;若你已经有一个**手动打开**的页面,直接 `const t = await cdp.resolve('5173')`(url/title 子串)拿对象即可,不需要 `open`。
+
+### 脚本模式 API
+
+脚本顶层可直接 `await`;全局 `cdp` 提供:
+
+**句柄类型约定(重要):**
+- `open` **返回字符串 `targetId`**;其余方法的第一个参数 **`target` 一律是对象**(来自 `resolve` 或 `list()` 数组里的元素)。**不要用字符串 id 直接调方法**。
+- `resolve(匹配)` 匹配可为 targetId / url / title 子串;`undefined` 取第一个普通网页。
+
+| API | 参数 | 返回 |
+|---|---|---|
+| `cdp.ensure(url?)` | 字符串 url 可选 | 浏览器就绪(自动启动) |
+| `cdp.list()` | — | `[{id,title,url,webSocketDebuggerUrl,...}]` |
+| `cdp.resolve(匹配?)` | id/url/title 子串,可省略 | `target` 对象 |
+| `cdp.open(url)` | 字符串 | 字符串 `targetId`(⚠️ 非对象) |
+| `cdp.close(target)` | 对象 | — |
+| `cdp.navigate(target, url)` | 对象,字符串 | — |
+| `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
+| `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
+| `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
+| `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
+| `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
+| `cdp.waitForFn(target, jsExpr, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(等 JS 布尔表达式为真,超时抛错) |
+| `cdp.focus(target, selector)` | 对象,字符串 | 聚焦结果 |
+| `cdp.getFocus(target)` | 对象 | 焦点元素信息或 null |
+| `cdp.pressKey(target, "Ctrl+Shift+A")` | 对象,字符串 | — |
+| `cdp.hover(target, selector)` | 对象,字符串 | — |
+| `cdp.outline(target)` | 对象 | `{title,url,headings,links}` |
+| `cdp.content(target)` | 对象 | `{title,url,text}` |
+| `cdp.shot(target, file?)` | 对象,字符串可选 | 截图文件路径 |
+| `cdp.logs(target, opts?)` | 对象,`{level,since}` | 控制台日志条目数组(自动拉起 daemon) |
+
+## 常见错误
+
+- **eval 拿不到结果** → 已用 `returnByValue + awaitPromise`;跨域 iframe 内的元素需用 `contentDocument` 单独取。
+- **click 没生效** → `el.click()` 是合成事件;若组件不吃,用 `eval` 调组件方法,或截图定位后真坐标点击。
+- **多 tab 匹配错** → title 相似时用完整 id。
+- **连接失败** → 别手动排查端口,**先跑 `ensure`** 让它自动启动浏览器;仍失败再用 `CDP_HOST/CDP_PORT` 指端口,或确认浏览器没被别的占用。
+- **fill 对富文本框无效** → 已派发 input/change;React 等框架可能需额外 setter,改用 `eval` 按框架方式设值。
+- **logs 拿不到历史日志** → daemon 只在 attach **之后**才收;页面加载早期的日志、attach 前已有的日志读不到。想抓加载期日志要在导航**前**种上监听(open/ensure 已自动种)。
+- **`--target 5173` 匹配到 DevTools 窗** → DevTools 的 url/title 也含 `5173`。用**完整 targetId** 精确指定(见 `list`)。
+- **listen-stop 报"未发现"** → 若 health 已不可达说明其实已停(判定是轮询 health 而不是看返回值);仍想确认看 `node cdp.js logs` 是否还能拉起。
