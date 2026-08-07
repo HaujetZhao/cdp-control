@@ -65,6 +65,7 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 - **为什么**:`run` 读取脚本和脚本里的相对路径输出(截图等)都以 `cwd`(你执行命令的那个目录)为基准。在项目根运行 → 脚本能被读、截图/生成文件直接落到项目根,**skill 目录保持干净、只有工具本身**,不会被业务脚本和输出污染。
 - **绝对路径调 cdp.js**:不要 `cd` 进 skill 目录再跑(那会把 cwd 变成 skill 目录,输出写进 skill)。
 - **脚本自包含**:每个脚本自己用 `cdp.open(url)` 或 `cdp.resolve(url/title子串)` 定位 target,不假设"当前选中页"。这样并行跑多个脚本互不影响。
+- **脚本运行环境**:`run` 脚本里只有全局 `cdp` + **白名单 `require`**(可用 `os`/`path`/`fs`/`child_process`/`crypto`/`util`/`stream`/`url`)。取临时目录/写文件:``const path = require('path'), os = require('os')``,用 `path.join(os.tmpdir(), name)` 拼路径——**勿直接用 `/tmp/xx` 前缀**(Windows 会被 `path.resolve` 解析成盘根 `D:\xx` 而 ENOENT)。
 - **无内置模板**:skill 当前**不附模板文件**(别去找 `templates/`)。写脚本直接参考下方「自动化工作流」里的完整示例,复制到项目根改即可。
 
 ## Quick Reference
@@ -181,6 +182,9 @@ await cdp.close(t);
 - **snapshot 只取"可交互且可见且有文本"的元素,上限 300 个**——隐藏/禁用/无文本(如纯图卡)会被跳过,返回的是操作导向清单,**不是完整无障碍树**。想要全量元素用 `eval` 自写 `querySelectorAll`。
 - **click 没生效** → `el.click()` 是合成事件;若组件不吃,用 `eval` 调组件方法,或截图定位后真坐标点击。
 - **多 tab 匹配错** → title 相似时用完整 id。
+- **`navigate` 后 target 对象的 `url`/`title` 是快照,不刷新** → 判断跳转是否成功用 `cdp.eval(t, 'location.href')`,别信 target 对象的缓存字段。
+- **`open` 失败/脚本中断会留下已建的 tab**(open 已建 target,后续报错不会自动关)→ 记得 `list` 核对后用 `close` 清理。
+- **SPA(知乎热榜这类)首屏加载慢,固定 sleep 不一定够** → 优先用 `waitFor`/`waitForFn` 等条件出现,别死等固定时长。
 - **连接失败** → 别手动排查端口,**先跑 `ensure`** 让它自动启动浏览器;仍失败再用 `CDP_HOST/CDP_PORT` 指端口,或确认浏览器没被别的占用。
 - **fill 对富文本框无效** → 已派发 input/change;React 等框架可能需额外 setter,改用 `eval` 按框架方式设值。
 - **logs 拿不到历史日志** → daemon 只在 attach **之后**才收;页面加载早期的日志、attach 前已有的日志读不到。想抓加载期日志要在导航**前**种上监听(open/ensure 已自动种)。

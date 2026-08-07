@@ -102,8 +102,15 @@ async function main() {
     const abs = path.resolve(file);
     const code = fs.readFileSync(abs, 'utf8');
     global.cdp = api;
-    const fn = new Function('cdp', `return (async () => {\n${code}\n})();`);
-    await fn(api);
+    // 注入受白名单限制的 require,让脚本能用 Node 内建模块(取临时路径 os.tmpdir()、
+    // 写文件 fs、拼路径 path 等)。否则 new Function 作用域只有全局 cdp,require 会 is not defined。
+    const BUILTIN_ALLOW = new Set(['os', 'path', 'fs', 'child_process', 'crypto', 'util', 'stream', 'url']);
+    const safeRequire = (id) => {
+      if (BUILTIN_ALLOW.has(id)) return require(id);
+      throw new Error(`脚本不可 require '${id}',仅允许 Node 内建: ${[...BUILTIN_ALLOW].join('/')}`);
+    };
+    const fn = new Function('cdp', 'require', `return (async () => {\n${code}\n})();`);
+    await fn(api, safeRequire);
     return;
   }
 
