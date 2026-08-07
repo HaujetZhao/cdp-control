@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返;未知页面元素时,先用 snapshot 探明再写脚本。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返;未知页面元素时,先用 snapshot 探明再写脚本。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -109,6 +109,7 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
   - 默认人类可读 `[HH:MM:SS][level] args`;`--json` 输出完整结构(嵌套对象 + `stack` 调用链)给脚本/agent。
   - **读时自动补种**:`logs` 本身也会幂等注入监控脚本(防 daemon 未及装),所以对任意 tab 读都有效。
 - **停止**:`node cdp.js listen-stop`。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
+- **生命周期**:daemon 在**浏览器关闭后约 5s 自动退出**(看门狗),不留孤儿进程;下次 `open`/`ensure`/`logs` 会自动重新拉起。所以无需手动担心残留。
 - **脚本模式**:`cdp.logs(target, {level, since})` → 返回结构化日志数组,可与 `cdp.click`/`cdp.waitForFn` 配合做"跑完流程断言无报错"。
 
 **已知限制**:
