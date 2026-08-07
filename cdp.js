@@ -45,7 +45,7 @@ const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 // ==================== CLI ====================
 
-const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'out', 'margin', 'at']); // 这些标志取下一个参数为值
+const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since']); // 这些标志取下一个参数为值
 
 function parseArgs(argv) {
   const args = [];
@@ -73,8 +73,7 @@ async function main() {
   navigate <url> [--target]导航到 url
   eval "<js>" [--target]   在页面执行 JS,返回 JSON 值
   snapshot [--target]      提取可交互元素清单(标签/文本/选择器/坐标)
-  tree [<selector>|--at <center|x,y|.5,.4>] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target] 紧凑层级树(只对视口±N屏建树)
-                           --at 坐标锚定(取该屏点最顶层元素,看"所见");无参=树整页可见结构;--vis selector多匹配取视口内那个
+  tree [--target]     结构树:整页 body 的文本+结构紧凑层级树(不做可见性判定,只输出文本与结构)
   click <selector> [--target] 点击元素
   fill <selector> <值> [--target] 填入输入框并触发 input/change
   focus <selector> [--target] 聚焦元素(配合按键用)
@@ -218,17 +217,9 @@ async function main() {
       break;
     }
     case 'tree': {
-      const sel = args[0];
-      const r = await api.tree(target, sel, {
-        out: opts.out ? opts.out.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-        vp: !opts.full, // 默认只对视口内元素建树;--full 关
-        vm: opts.margin ? Number(opts.margin) : 1, // 纵向余量(视口高倍数,默认1=中心上下各一屏)
-        at: opts.at, // 坐标锚定:center | x,y | 相对比例
-        vis: !!opts.vis, // selector 多匹配时取视口内那个
-      });
-      if (!r.lines?.length) { console.log('(空子树)'); break; }
+      const r = await api.tree(target);
+      if (!r.lines?.length) { console.log('(空树)'); break; }
       console.log(r.lines.join('\n'));
-      if (r.truncated) console.log('…(已截断,>400 行)');
       break;
     }
     case 'click': {

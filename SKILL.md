@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree --at center` 看屏幕中心所见、`tree` 无参看整页可见结构、`tree <selector>` 看容器结构;勿盲用 snapshot/class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 无参输出整页 body 的文本+结构紧凑树,不做可见性判定;勿盲用 snapshot/class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -96,19 +96,13 @@ sites/
 
 ## 感知页面(核心:`tree`,唯一感知命令)
 
-`tree` 是**唯一感知命令**,三个用法覆盖"看屏幕"的全部需求:
+`tree` 是**唯一感知命令**,无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。
 
-1. **`tree`(无参)** → **可见内容概览**:把视口内可见的内容项(卡片/广告)按阅读序列出,每项标题+点赞评论+正文摘要——**正是你屏幕上看到的内容清单**。丢弃无标题碎片/重复/整页容器。
-2. **`tree --at center` / `--at x,y` / `--at .5,.4`**(推荐看"所见")→ 用 `elementFromPoint` 取该屏点**最顶层元素**、上溯最近语义容器后建树——**永远命中你此刻视口内看到的那张卡/评论区**,尊重弹窗遮挡,不会像盲用 class selector 那样读到滚出屏的旧元素。
-3. **`tree <selector>`** → 建某个容器的树(已知结构时用)。
-
-**为什么不要盲用 class selector**:`querySelector(".Comments-container")` 取 DOM 里**第一个**,那可能是已滚出屏的旧卡。要看"屏幕上此刻的东西",用 `tree --at`,别猜 selector。
-
-- **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。`tree` 无参概览给"有哪些内容项(标题+摘要)",要读全文就 `tree --at <卡>` 定位后 `content`。
-- **shadow DOM 已穿透**:`tree`/概览会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。普通站点行为不变。
-- 想**操作**(点/填)→ `snapshot` 拿干净 selector,或 `tree --at <坐标>` 定位后操作。
-- **过滤噪音**:`tree <sel> --out "header, aside"` 排除固定 chrome;`--margin N` 上下各多 N 屏;`--full` 含全部屏外。
-- 结论:**感知一律走 `tree`(`--at` 看所见、无参看全貌、selector 看结构)**。snapshot 只做操作,不做感知。
+- **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。
+- **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。
+- 想**操作**(点/填)→ `snapshot` 拿干净 selector。
+- `tree` 不带状态前缀(无 `[看]`/`[架]`/`[X]`),只看文本与结构。
+- 结论:**感知一律走 `tree`**。snapshot 只做操作,不做感知。
 
 ## Quick Reference
 
@@ -123,7 +117,7 @@ sites/
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
-| `tree [<selector> \| --at <center\|x,y\|.5,.4>] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target]` | **紧凑层级树(唯一感知命令)**:过滤垃圾节点/属性/包装节点;默认只对视口±3屏内建树(有界)。**`--at` 坐标锚定**(看"所见"):取该屏点最顶层元素(`elementFromPoint`,尊重堆叠/遮挡)、上溯最近语义容器——永远命中当前视口那张卡,不读滚走的旧卡;**无参=可见内容概览**(视口内卡片清单,标题+统计+正文摘要,正是屏幕所见);`--vis` selector 多匹配取视口内;`--out` 排除子区域、`--margin N` 上下拓宽、`--full` 含全部屏外 |
+| `tree [--target]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,无参数、不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM) |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -206,7 +200,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
-| `cdp.tree(target, selector?, opts?)` | 对象,字符串可选,`{maxClass,out,vp,vm,at,vis}` | 钻取子树为紧凑层级树:`{ok, lines}`;无 selector 也无 `at` 时返回**可见内容概览**(视口内卡片:`{ok, items, lines}`);`opts.out` 排除子区域,`opts.vp` 视口过滤(默认 true),`opts.vm` 纵向余量(视口高倍数,默认1),`opts.at` 坐标锚定(center\|x,y\|相对比例),`opts.vis` selector 多匹配取视口内 |
+| `cdp.tree(target)` | 对象 | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;无参数、不做可见性判定,输出纯文本与结构 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
