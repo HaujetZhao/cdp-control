@@ -123,7 +123,7 @@ sites/
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
-| `tree [<selector> \| --at <center\|x,y\|.5,.4>] [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target]` | **紧凑层级树(唯一感知命令)**:过滤垃圾节点/属性/包装节点;默认只对视口±1屏建树(有界)。**`--at` 坐标锚定**(看"所见"):取该屏点最顶层元素(`elementFromPoint`,尊重堆叠/遮挡)、上溯最近语义容器——永远命中当前视口那张卡,不读滚走的旧卡;**无参=可见内容概览**(视口内卡片清单,标题+统计+正文摘要,正是屏幕所见);`--vis` selector 多匹配取视口内;`--out` 排除子区域、`--margin N` 上下拓宽、`--full` 含全部屏外 |
+| `tree [<selector> \| --at <center\|x,y\|.5,.4>] [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target]` | **紧凑层级树(唯一感知命令)**:过滤垃圾节点/属性/包装节点;默认只对视口±3屏内建树(有界)。**`--at` 坐标锚定**(看"所见"):取该屏点最顶层元素(`elementFromPoint`,尊重堆叠/遮挡)、上溯最近语义容器——永远命中当前视口那张卡,不读滚走的旧卡;**无参=可见内容概览**(视口内卡片清单,标题+统计+正文摘要,正是屏幕所见);`--vis` selector 多匹配取视口内;`--out` 排除子区域、`--margin N` 上下拓宽、`--full` 含全部屏外 |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |

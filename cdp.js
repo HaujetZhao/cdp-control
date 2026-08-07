@@ -223,7 +223,7 @@ async function main() {
         depth: opts.depth ? Number(opts.depth) : 8,
         out: opts.out ? opts.out.split(',').map(s => s.trim()).filter(Boolean) : undefined,
         vp: !opts.full, // 默认只对视口内元素建树;--full 关
-        vm: opts.margin ? Number(opts.margin) : 1, // 纵向余量(视口高倍数,默认1)
+        vm: opts.margin ? Number(opts.margin) : 3, // 纵向余量(视口高倍数,默认3)
         at: opts.at, // 坐标锚定:center | x,y | 相对比例
         vis: !!opts.vis, // selector 多匹配时取视口内那个
       });
