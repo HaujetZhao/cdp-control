@@ -78,3 +78,12 @@ logs 命令: 幂等注入(MONITOR_JS)+ 读取 window.__cdpLogs 并结构化序�
 ## 不改的部分
 - 单命令 `eval`/`snapshot` 等行为不变。
 - 读历史日志的限制:监控只在注入之后收;注入前已存在的日志读不到。
+
+## 代码拆分(维护性)
+实现代码按职责拆到 `lib/`(依赖单向无环):
+- `lib/transport.js` 低级连接与 target 级原语
+- `lib/scripts.js` 页面 JS 字符串(含 MONITOR_JS/buildReadExpr)
+- `lib/api.js` 高层页面操作 API
+- `lib/monitor.js` 本特性:注入守护 daemon + logs 读取
+- `lib/browser.js` ensure 浏览器就绪
+- `cdp.js` 单入口:组装最终 api + CLI 分发(daemon 靠 process.argv[1] 自启,入口保持单文件)

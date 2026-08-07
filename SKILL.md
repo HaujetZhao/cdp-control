@@ -9,6 +9,17 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 
 本 Skill 所在目录有一个零依赖 Node 脚本 `cdp.js` ，可直接连 Chrome/Edge 的 CDP 端口(默认 9222),取代 chrome-devtools MCP。核心价值:**能看到并操作手动打开的 tab**(MCP 因 Puppeteer attach 竞态会漏看)。
 
+**代码结构**(`cdp.js` 是单入口,逻辑按职责拆在 `lib/` 下):
+```
+cdp.js              入口:组装最终 api + CLI 子命令分发(require.main 守卫)
+lib/transport.js   低级连接与 target 级原语(getJson/ws/send/evaluate/resolve)
+lib/scripts.js     注入/读取到页面的 JS 字符串(页面操作 + 控制台监控 MONITOR_JS)
+lib/api.js         高层页面操作 API(snapshot/click/fill/wait/keyboard/...)
+lib/monitor.js     控制台监听:注入守护 daemon(cmdListen)+ logs 读取
+lib/browser.js     确保浏览器就绪(冷启动自动探测 Edge/Chrome)
+```
+依赖单向无环:`transport ← scripts/api ← monitor/browser ← cdp.js`。
+
 **重要原则——自动化时优先写脚本文件**:凡是"打开→跳转→等元素→点击→填表→读结果"这类多步操作,**不要一步步调单个命令**(那会每次发一个模型请求、每次都 prefill+decode 全量上下文)。而是把整段操作写成一个 `.js` 脚本文件,用 `node "<本 SKILL 所在目录>/cdp.js" run 脚本.js` **一次执行**。脚本可反复修改重跑。
 
 ## When to Use
