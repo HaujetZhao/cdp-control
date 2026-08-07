@@ -65,7 +65,7 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 - **为什么**:`run` 读取脚本和脚本里的相对路径输出(截图等)都以 `cwd`(你执行命令的那个目录)为基准。在项目根运行 → 脚本能被读、截图/生成文件直接落到项目根,**skill 目录保持干净、只有工具本身**,不会被业务脚本和输出污染。
 - **绝对路径调 cdp.js**:不要 `cd` 进 skill 目录再跑(那会把 cwd 变成 skill 目录,输出写进 skill)。
 - **脚本自包含**:每个脚本自己用 `cdp.open(url)` 或 `cdp.resolve(url/title子串)` 定位 target,不假设"当前选中页"。这样并行跑多个脚本互不影响。
-- **模板参考**:skill 的 `<本 SKILL 所在目录>/templates/` 里有示例脚本(`auto-demo.js`、`zhihu-acceptance.js`),**复制到项目根后修改使用**,不要原地运行。
+- **无内置模板**:skill 当前**不附模板文件**(别去找 `templates/`)。写脚本直接参考下方「自动化工作流」里的完整示例,复制到项目根改即可。
 
 ## Quick Reference
 
@@ -79,7 +79,7 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标 |
+| `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下) |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -115,6 +115,7 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 **已知限制**:
 - `window.__cdpLogs` 在页面刷新后**清空**(缓冲在页面里,新 document 从头开始);监控脚本会自动补装,但历史没了。
 - **首屏/加载早期的日志可能错过**:daemon 靠轮询注入,页面刚打开的几毫秒内已打的日志在注入前就跑了。agent 打开页→操作→读的场景不受影响;想抓加载早期日志需在导航前注册。
+- **刚 `open` 的新 tab,立即打日志再 `logs` 读会读到空**:daemon 每 ~500ms 轮询,新 tab 打开后需 **~0.5–2s 才装上监控**;开 tab 后**先 `await sleep(1500)` 再操作/读日志**,否则首几条在监控装上前就跑掉了,读到空是正常的(不是 bug)。
 - 只覆盖主线程的 console/onerror/unhandledrejection,worker 等跨 context 的异常抓不到。
 
 ## 自动化工作流(推荐)
@@ -122,7 +123,7 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 **先探后写、写成文件、一次执行**——避免多次模型往返:
 
 1. **探明页面**:不知道元素时,先 `node cdp.js list`(看有哪些 tab)+ `node cdp.js snapshot --target <匹配>`(拿到可交互元素的 selector)。
-2. **写脚本文件**:把整段操作写成一个 `.js` 放到**项目根**(见上方"脚本放置规范"),用全局 `cdp` API。可参考模板 `templates/auto-demo.js`,复制到项目后改。
+2. **写脚本文件**:把整段操作写成一个 `.js` 放到**项目根**(见上方"脚本放置规范"),用全局 `cdp` API。直接复制下面「脚本示例」即可(无内置模板)。
 3. **执行**:在项目根用绝对路径运行 `node "<本 SKILL 所在目录>/cdp.js" run ./你的脚本.js`。出错改文件再跑,不重新生成;截图等输出直接落项目根。
 
 脚本示例(等价于 9 个单命令调用,但只发一次模型请求):
@@ -177,6 +178,7 @@ await cdp.close(t);
 ## 常见错误
 
 - **eval 拿不到结果** → 已用 `returnByValue + awaitPromise`;跨域 iframe 内的元素需用 `contentDocument` 单独取。
+- **snapshot 只取"可交互且可见且有文本"的元素,上限 300 个**——隐藏/禁用/无文本(如纯图卡)会被跳过,返回的是操作导向清单,**不是完整无障碍树**。想要全量元素用 `eval` 自写 `querySelectorAll`。
 - **click 没生效** → `el.click()` 是合成事件;若组件不吃,用 `eval` 调组件方法,或截图定位后真坐标点击。
 - **多 tab 匹配错** → title 相似时用完整 id。
 - **连接失败** → 别手动排查端口,**先跑 `ensure`** 让它自动启动浏览器;仍失败再用 `CDP_HOST/CDP_PORT` 指端口,或确认浏览器没被别的占用。
