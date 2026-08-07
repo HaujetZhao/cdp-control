@@ -39,6 +39,9 @@ async function getJson(path) {
   return r.json();
 }
 
+// 轮询等待的通用 sleep(在 CLI/daemon 多处复用)。
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 function wsConnect(url, timeout = 8000) {
   return new Promise((resolve, reject) => {
     let ws;
@@ -176,20 +179,20 @@ const SNAPSHOT_JS = GEN_SEL + `
   return out.slice(0, 300);
 })()`;
 
-const CLICK_JS = (sel) => `
-(() => {
+// 共享的"按 selector 找元素、找不到即返回失败"页面前奏,供 CLICK/FILL/FOCUS 复用。
+const FIND_EL = (sel) => `
   const el = document.querySelector(${JSON.stringify(sel)});
   if (!el) return { ok: false, err: '未找到: ' + ${JSON.stringify(sel)} };
-  el.scrollIntoView({ block: 'center', behavior: 'instant' });
+`;
+
+const CLICK_JS = (sel) => `(() => {
+${FIND_EL(sel)}  el.scrollIntoView({ block: 'center', behavior: 'instant' });
   el.click();
   return { ok: true, tag: el.tagName.toLowerCase() };
 })()`;
 
-const FILL_JS = (sel, value) => `
-(() => {
-  const el = document.querySelector(${JSON.stringify(sel)});
-  if (!el) return { ok: false, err: '未找到: ' + ${JSON.stringify(sel)} };
-  if (!['input','textarea','select','[contenteditable=true]'].some(x => el.matches(x))) return { ok:false, err:'不是输入元素: '+el.tagName };
+const FILL_JS = (sel, value) => `(() => {
+${FIND_EL(sel)}  if (!['input','textarea','select','[contenteditable=true]'].some(x => el.matches(x))) return { ok:false, err:'不是输入元素: '+el.tagName };
   const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype
              : el.tagName === 'INPUT' ? HTMLInputElement.prototype
              : HTMLElement.prototype;
@@ -200,11 +203,8 @@ const FILL_JS = (sel, value) => `
   return { ok: true, tag: el.tagName.toLowerCase() };
 })()`;
 
-const FOCUS_JS = (sel) => `
-(() => {
-  const el = document.querySelector(${JSON.stringify(sel)});
-  if (!el) return { ok: false, err: '未找到: ' + ${JSON.stringify(sel)} };
-  el.focus();
+const FOCUS_JS = (sel) => `(() => {
+${FIND_EL(sel)}  el.focus();
   return { ok: true, tag: el.tagName.toLowerCase() };
 })()`;
 
@@ -326,15 +326,16 @@ async function fill(target, selector, value) {
 /**
  * 等 target 页面上出现匹配 selector 的元素(轮询),超时抛错。
  */
-async function waitFor(target, selector, { timeout = 15000, interval = 300 } = {}) {
+// 共享轮询原语:反复 eval 一段 JS 布尔表达式直到真值或超时。desc 用于超时报错文案。
+async function pollWait(target, expression, desc, { timeout = 15000, interval = 300 } = {}) {
   const ws = await pageWs(target);
   const start = Date.now();
   try {
     while (true) {
-      const found = await evalJs(ws, `!!document.querySelector(${JSON.stringify(selector)})`);
-      if (found) return true;
-      if (Date.now() - start > timeout) throw new Error(`等待超时( ${timeout}ms ): ${selector}`);
-      await new Promise(r => setTimeout(r, interval));
+      const v = await evalJs(ws, `Boolean(${expression})`);
+      if (v) return true;
+      if (Date.now() - start > timeout) throw new Error(`等待超时( ${timeout}ms ): ${desc}`);
+      await sleep(interval);
     }
   } finally {
     ws.close();
@@ -342,23 +343,19 @@ async function waitFor(target, selector, { timeout = 15000, interval = 300 } = {
 }
 
 /**
+ * 等 target 页面上出现匹配 selector 的元素(轮询),超时抛错。
+ */
+async function waitFor(target, selector, opts = {}) {
+  return pollWait(target, `!!document.querySelector(${JSON.stringify(selector)})`, selector, opts);
+}
+
+/**
  * 轮询执行 JS 布尔表达式直到返回真值,超时抛错。用于"等状态/等结果"(如等元素出现后
  * 又变化、等某条件达成),而 waitFor 只等元素出现。例:
  *   await cdp.waitForFn(t, `document.querySelector('#btn')?.disabled === false`);
  */
-async function waitForFn(target, expression, { timeout = 15000, interval = 300 } = {}) {
-  const ws = await pageWs(target);
-  const start = Date.now();
-  try {
-    while (true) {
-      const v = await evalJs(ws, `Boolean(${expression})`);
-      if (v) return true;
-      if (Date.now() - start > timeout) throw new Error(`等待超时( ${timeout}ms ): ${expression}`);
-      await new Promise(r => setTimeout(r, interval));
-    }
-  } finally {
-    ws.close();
-  }
+async function waitForFn(target, expression, opts = {}) {
+  return pollWait(target, expression, expression, opts);
 }
 
 /**
@@ -565,7 +562,7 @@ async function ensureDaemon(port = LOGS_PORT) {
   await spawnDaemon();
   const t0 = Date.now();
   while (Date.now() - t0 < 8000) {
-    await new Promise(r => setTimeout(r, 300));
+    await sleep(300);
     if (await daemonHealthy(port)) return port;
   }
   throw new Error('监听 daemon 启动失败');
@@ -662,11 +659,17 @@ async function findBrowserExe() {
   return cands.find(p => existsSync(p)) || null;
 }
 
+// 从任意标识串(exe 路径 / /json/version 的 Browser 字段)推断浏览器名,供冷热启动两条路径共用。
+// 未识别返回 null,由调用方决定回退(原串 / '未知浏览器')。
+function browserLabel(str) {
+  if (!str) return null;
+  if (/Edge|Edg\//i.test(str)) return 'Microsoft Edge';
+  if (/Chrome/i.test(str)) return 'Google Chrome';
+  return null;
+}
+
 function browserNameFromExe(exe) {
-  if (!exe) return '未知浏览器';
-  if (/Edge/i.test(exe)) return 'Microsoft Edge';
-  if (/Chrome/i.test(exe)) return 'Google Chrome';
-  return exe;
+  return browserLabel(exe) || exe || '未知浏览器';
 }
 
 // 热启动时浏览器非本次启动,exe 拿不到;从 /json/version 的 Browser 字段推断浏览器名(如 "Edg/127"/"Chrome/126")。
@@ -674,9 +677,8 @@ async function probeBrowserName() {
   try {
     const v = await getJson('/json/version');
     const b = (v && v.Browser) || '';
-    if (/Edg\//i.test(b)) return `Microsoft Edge (${b})`;
-    if (/Chrome\//i.test(b)) return `Google Chrome (${b})`;
-    return b || '未知浏览器';
+    const label = browserLabel(b);
+    return label ? `${label} (${b})` : (b || '未知浏览器');
   } catch { return '未知浏览器'; }
 }
 
@@ -708,7 +710,7 @@ async function ensureBrowser(url) {
     started = true;
     const t0 = Date.now();
     while (Date.now() - t0 < 15000) {
-      await new Promise(r => setTimeout(r, 500));
+      await sleep(500);
       if (await isBrowserReady()) break;
     }
     if (!(await isBrowserReady())) throw new Error('浏览器启动超时,请检查(或手动打开一个 Edge/Chrome)');
@@ -738,13 +740,16 @@ const api = { list, resolve, open, close, navigate, eval: evaluate, snapshot, cl
 
 // ==================== CLI ====================
 
+const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since']); // 这些标志取下一个参数为值
+
 function parseArgs(argv) {
   const args = [];
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--target' || a === '--file' || a === '--url' || a === '--level' || a === '--since') opts[a.slice(2)] = argv[++i];
-    else if (a.startsWith('--')) opts[a.slice(2)] = true;
+    const name = a.slice(2);
+    if (VALUE_OPTS.has(name)) opts[name] = argv[++i];
+    else if (a.startsWith('--')) opts[name] = true;
     else args.push(a);
   }
   return { args, opts };
@@ -844,7 +849,7 @@ async function main() {
     const t0 = Date.now();
     while (Date.now() - t0 < 3000) {
       if (!(await daemonHealthy(LOGS_PORT))) { stopped = true; break; }
-      await new Promise(r => setTimeout(r, 200));
+      await sleep(200);
     }
     if (!stopped) { // 优雅关闭未生效 → 杀 pid 兜底
       const pf = path.join(os.tmpdir(), 'cdp-listen.pid');
