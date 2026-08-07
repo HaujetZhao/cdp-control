@@ -45,7 +45,7 @@ const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 // ==================== CLI ====================
 
-const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'depth', 'in', 'out', 'margin', 'at']); // 这些标志取下一个参数为值
+const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'depth', 'out', 'margin', 'at']); // 这些标志取下一个参数为值
 
 function parseArgs(argv) {
   const args = [];
@@ -73,8 +73,8 @@ async function main() {
   navigate <url> [--target]导航到 url
   eval "<js>" [--target]   在页面执行 JS,返回 JSON 值
   snapshot [--target]      提取可交互元素清单(标签/文本/选择器/坐标)
-  view [--all] [--in <sel>] [--out <s1,s2>] [--target] 区域索引(主要容器+标签+块数,选一个用tree/--in深入);--all 全量叶子块
-  tree <selector>|--at <center|x,y|.5,.4> [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target] 钻取子树,紧凑层级树(只对视口±N屏建树);--at 坐标锚定(取该屏点最顶层元素),--vis selector多匹配取视口内那个
+  tree [<selector>|--at <center|x,y|.5,.4>] [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target] 紧凑层级树(只对视口±N屏建树)
+                           --at 坐标锚定(取该屏点最顶层元素,看"所见");无参=树整页可见结构;--vis selector多匹配取视口内那个
   click <selector> [--target] 点击元素
   fill <selector> <值> [--target] 填入输入框并触发 input/change
   focus <selector> [--target] 聚焦元素(配合按键用)
@@ -217,30 +217,8 @@ async function main() {
       ).join('\n'));
       break;
     }
-    case 'view': {
-      const v = await api.view(target, {
-        all: !!opts.all,
-        in: opts.in,
-        out: opts.out ? opts.out.split(',').map(s => s.trim()).filter(Boolean) : undefined,
-      });
-      if (opts.all) {
-        if (!v?.blocks?.length) { console.log('(视口内无可感知块)'); break; }
-        console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.blocks.length} 块${v.truncated ? '(截断)' : ''} · 自顶到底:`);
-        console.log(v.blocks.map((e, i) =>
-          `${i + 1}. ${' '.repeat(Math.max(0, 8 - String(e.z).length))}[z=${e.z}] [${e.kind}/${e.tag}] "${e.text || '(图)'}"${e.occluded ? ' <被遮挡>' : ''}  ${e.selector}`
-        ).join('\n'));
-        break;
-      }
-      if (!v?.regions?.length) { console.log('(未归纳出区域)'); break; }
-      console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.regions.length} 区域(阅读序,选一个用 tree --at <坐标> 或 --in 深入):`);
-      console.log(v.regions.map((r, i) =>
-        `${i + 1}. [${r.tag}${r.id ? '#' + r.id : ''}${r.cls?.length ? '.' + r.cls.join('.') : ''}] "${r.label}" ${r.blocks}块 z=${r.z} @(${r.rect.x},${r.rect.y} ${r.rect.w}x${r.rect.h})`
-      ).join('\n'));
-      break;
-    }
     case 'tree': {
       const sel = args[0];
-      if (!sel && !opts.at) throw new Error('tree 需要 selector 或 --at,如 tree "#TopstoryContent" 或 tree --at .5,.4');
       const r = await api.tree(target, sel, {
         depth: opts.depth ? Number(opts.depth) : 8,
         out: opts.out ? opts.out.split(',').map(s => s.trim()).filter(Boolean) : undefined,

@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返;未知页面元素时,先用 snapshot 探明再写脚本。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree --at center` 看屏幕中心所见、`tree` 无参看整页可见结构、`tree <selector> --depth N` 看容器结构;勿盲用 snapshot/class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -94,15 +94,19 @@ sites/
 - **生命周期**:实测验证通过 → 更新"最后验证/状态";站点改版失效 → **更新或删除原语**并在该站 README 标记。README 维护"可用/失效"清单。
 - **新任务流程**:用到某站 → 先看该站 README + 目录里有没有现成原语 → 能复用直接 `run`,缺什么就写新的并升格进目录(验证通过后)。
 
-## 用 view 探视口(感知导向)
+## 感知页面(核心:`tree`,唯一感知命令)
 
-`snapshot` 是"操作导向"——只给可交互且有文字的元素,干净 selector。但**评论正文、纯 `<span>` 的用户名、非交互文本块、以及"现在是不是有 modal 盖着页面"它都看不到**。这时用 `view`:`view` 把**视口内所有可见的文本块/可交互/图片**按**堆叠(z)自顶到底**列出来,每块带 text/z/rect/selector,并标注被遮挡(`<被遮挡>`)。弹窗里的内容会自然排在前面,agent 能判断"评论在弹窗里"、"什么东西盖住了页面"。
+`tree` 是**唯一感知命令**,三个用法覆盖"看屏幕"的全部需求:
 
-- 想**操作**(点/填)→ 优先 `snapshot` 拿 selector。
-- 想**看懂页面有什么、层级/遮挡关系、弹窗内容** → 用 `view`。两者可结合:`view` 探结构 → 取某块 selector 用 `snapshot`/`click` 操作。
-- 想**看某块内部怎么组织**(评论卡片、弹窗、表单的结构)→ `tree <selector>` 钻取该元素的紧凑层级树(`view` 给短 selector,`tree` 看里面),比 `view` 的扁平清单更有层级、且没有一长串路径噪音。
-- **区域聚焦**(重要):页面常有固定结构(header/侧栏/底部)占满视口、把关心区挤掉/截断。用 `--in` 只看目标容器(`view --in ".Comments-container"` 只看评论区,阅读序、不混 header)、`--out` 排除噪音区(`view --out "header, aside"`)。tree 同理(`tree <sel> --out ".CommentItem-actions"` 忽略操作按钮)。**先 `view` 大致定位 → 取坐标 → `tree --at <坐标>` 精确命中视口内那张卡**。
-- **坐标锚定看"所见"**:`view` 给每区域带屏幕坐标 `@(x,y w×h)`。要读"我此刻屏幕看到的"内容,直接 `tree --at center`(视口中心)或 `tree --at .5,.4`(相对位置)——用 `elementFromPoint` 取该点最顶层元素,**尊重弹窗/遮挡、永远命中视口内那张卡**,不会像盲用 class 选择器那样读到滚出屏的旧元素。
+1. **`tree`(无参)** → 树整页可见结构(body,视口过滤,深度 3)——先看页面有哪些部分。
+2. **`tree --at center` / `--at x,y` / `--at .5,.4`**(推荐看"所见")→ 用 `elementFromPoint` 取该屏点**最顶层元素**、上溯最近语义容器后建树——**永远命中你此刻视口内看到的那张卡/评论区**,尊重弹窗遮挡,不会像盲用 class selector 那样读到滚出屏的旧元素。
+3. **`tree <selector> --depth N`** → 建某个容器的树(已知结构时用)。
+
+**为什么不要盲用 class selector**:`querySelector(".Comments-container")` 取 DOM 里**第一个**,那可能是已滚出屏的旧卡。要看"屏幕上此刻的东西",用 `tree --at`,别猜 selector。
+
+- 想**操作**(点/填)→ `snapshot` 拿干净 selector,或 `tree --at <坐标>` 定位后操作。
+- **过滤噪音**:`tree <sel> --out "header, aside"` 排除固定 chrome;`--margin N` 上下各多 N 屏;`--full` 含全部屏外。
+- 结论:**感知一律走 `tree`(`--at` 看所见、无参看全貌、selector 看结构)**。snapshot 只做操作,不做感知。
 
 ## Quick Reference
 
@@ -116,9 +120,8 @@ sites/
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下) |
-| `view [--in <sel>] [--out <s1,s2>] [--target]` | **视口几何视图**:可见文本块/可交互/图片,按堆叠(z)自顶到底排序,含遮挡标注;`--in` 只看某容器内(阅读序)、`--out` 排除区域——感知导向,补强 snapshot |
-| `tree <selector> \| --at <center\|x,y\|.5,.4> [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target]` | **钻取子树**为紧凑层级树(过滤垃圾节点/属性/包装节点);默认**只对视口±1屏内元素建树**(有界输出)。**`--at` 坐标锚定**(推荐看"屏幕上看到的"):取该屏点最顶层元素(`elementFromPoint`,尊重堆叠/遮挡)、上溯最近语义容器后建树——**永远命中当前视口内的那张卡,不会读到滚走的旧卡**;`--vis` selector 多匹配时取视口内那个;`--out` 排除子区域、`--margin N` 上下拓宽、`--full` 含全部视口外 |
+| `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
+| `tree [<selector> \| --at <center\|x,y\|.5,.4>] [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target]` | **紧凑层级树(唯一感知命令)**:过滤垃圾节点/属性/包装节点;默认只对视口±1屏建树(有界)。**`--at` 坐标锚定**(看"所见"):取该屏点最顶层元素(`elementFromPoint`,尊重堆叠/遮挡)、上溯最近语义容器——永远命中当前视口那张卡,不读滚走的旧卡;无参=树整页可见结构;`--vis` selector 多匹配取视口内;`--out` 排除子区域、`--margin N` 上下拓宽、`--full` 含全部屏外 |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -201,8 +204,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
-| `cdp.view(target, opts?)` | 对象,`{in,out,occluded}` | 视口几何视图:`{viewport, blocks, truncated}`;`opts.in` 只看某容器内(阅读序)、`opts.out`(数组/字符串)排除区域、`opts.occluded=false` 关遮挡标注 |
-| `cdp.tree(target, selector, opts?)` | 对象,字符串,`{depth,maxClass,out,vp,vm,at,vis}` | 钻取子树为紧凑层级树:`{ok, selector, lines}`;`opts.out` 排除子区域,`opts.vp` 视口过滤(默认 true),`opts.vm` 纵向余量(视口高倍数,默认1),`opts.at` 坐标锚定(center\|x,y\|相对比例,取该屏点最顶层元素),`opts.vis` selector 多匹配取视口内 |
+| `cdp.tree(target, selector?, opts?)` | 对象,字符串可选,`{depth,maxClass,out,vp,vm,at,vis}` | 钻取子树为紧凑层级树:`{ok, selector, lines}`;无 selector 也无 `at` 时树整页可见结构;`opts.out` 排除子区域,`opts.vp` 视口过滤(默认 true),`opts.vm` 纵向余量(视口高倍数,默认1),`opts.at` 坐标锚定(center\|x,y\|相对比例,取该屏点最顶层元素),`opts.vis` selector 多匹配取视口内 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
