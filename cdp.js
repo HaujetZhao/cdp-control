@@ -73,6 +73,7 @@ async function main() {
   navigate <url> [--target]导航到 url
   eval "<js>" [--target]   在页面执行 JS,返回 JSON 值
   snapshot [--target]      提取可交互元素清单(标签/文本/选择器/坐标)
+  view [--target]          视口几何视图:可见文本块/可交互/图,按堆叠(z)自顶到底排序,含遮挡标注
   click <selector> [--target] 点击元素
   fill <selector> <值> [--target] 填入输入框并触发 input/change
   focus <selector> [--target] 聚焦元素(配合按键用)
@@ -212,6 +213,15 @@ async function main() {
       if (!Array.isArray(value) || value.length === 0) { console.log('(没有可交互元素)'); break; }
       console.log(value.map((e, i) =>
         `${i + 1}. [${e.tag}] "${e.text || e.placeholder || ''}"  ${e.href ? e.href : ''}  sel=${e.selector}`
+      ).join('\n'));
+      break;
+    }
+    case 'view': {
+      const v = await api.view(target);
+      if (!v?.blocks?.length) { console.log('(视口内无可感知块)'); break; }
+      console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.blocks.length} 块${v.truncated ? '(截断)' : ''} · 自顶到底:`);
+      console.log(v.blocks.map((e, i) =>
+        `${i + 1}. ${' '.repeat(Math.max(0, 8 - String(e.z).length))}[z=${e.z}] [${e.kind}/${e.tag}] "${e.text || '(图)'}"${e.occluded ? ' <被遮挡>' : ''}  sel=${e.selector}`
       ).join('\n'));
       break;
     }

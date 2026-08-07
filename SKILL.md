@@ -62,7 +62,9 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/你的脚本.js"   # 在�
 
 ## 脚本放置规范(重要)
 
-自动化脚本写到**当前项目的根目录**(或项目内临时目录，如 `scripts` 或 `tmp`),**不写进 skill 目录**。运行用 **`cdp.js` 的绝对路径**,在项目根执行:
+**两类脚本,放两处**:
+
+- **任务性一次性脚本**(针对某次具体任务的打开→跳转→填表→抓取)→ 写到**当前项目的根目录**(或项目内临时目录，如 `scripts` 或 `tmp`),**不写进 skill 目录**。运行用 **`cdp.js` 的绝对路径**,在项目根执行:
 
 ```bash
 node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
@@ -72,7 +74,32 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 - **绝对路径调 cdp.js**:不要 `cd` 进 skill 目录再跑(那会把 cwd 变成 skill 目录,输出写进 skill)。
 - **脚本自包含**:每个脚本自己用 `cdp.open(url)` 或 `cdp.resolve(url/title子串)` 定位 target,不假设"当前选中页"。这样并行跑多个脚本互不影响。
 - **脚本运行环境**:`run` 脚本里只有全局 `cdp` + **白名单 `require`**(可用 `os`/`path`/`fs`/`child_process`/`crypto`/`util`/`stream`/`url`)。取临时目录/写文件:``const path = require('path'), os = require('os')``,用 `path.join(os.tmpdir(), name)` 拼路径——**勿直接用 `/tmp/xx` 前缀**(Windows 会被 `path.resolve` 解析成盘根 `D:\xx` 而 ENOENT)。
-- **无内置模板**:skill 当前**不附模板文件**(别去找 `templates/`)。写脚本直接参考下方「自动化工作流」里的完整示例,复制到项目根改即可。
+- **可复用站点原语**(针对某站点、可反复用、已验证的**单用途**脚本,如"抓某站评论"、"在某站回复")→ 升格进 **skill 的 `sites/<域名>/` 目录**(见下方「站点脚本库 sites/」)。新任务遇到同站点先查该目录,能复用的直接 `run`,避免重写。
+
+## 站点脚本库 sites/(可复用原语)
+
+`<本 SKILL 所在目录>/sites/` 按站点组织**已验证可复用的单用途脚本** + 每站 README 导航:
+
+```
+sites/
+├── README.md            # 总索引:有哪些站、各站 README 指向、原语放置/生命周期规范
+├── zhihu/
+│   ├── README.md        # 此站导航:已知结构、可用原语清单、坑、验证状态
+│   └── get-comments.js  # 单用途原语,头部注释含元信息
+└── _template/           # 新站点脚手架(README + primitive.js 模板)
+```
+
+- **原语自包含**:每个脚本自己 `cdp.resolve(url/title 子串)` 定位 target,不假设"当前选中页";用 `cdp` 全局 + 白名单 `require`(规范与上同)。用绝对路径 `cdp.js run sites/<域名>/<原语>.js` 执行。
+- **头部注释模板**(每个原语必带):`用途 / 用法 / 返回结构 / 依赖的 DOM 结构假设 / 最后验证日期 / 状态(✅已验证 | ⚠️失效待修)`。
+- **生命周期**:实测验证通过 → 更新"最后验证/状态";站点改版失效 → **更新或删除原语**并在该站 README 标记。README 维护"可用/失效"清单。
+- **新任务流程**:用到某站 → 先看该站 README + 目录里有没有现成原语 → 能复用直接 `run`,缺什么就写新的并升格进目录(验证通过后)。
+
+## 用 view 探视口(感知导向)
+
+`snapshot` 是"操作导向"——只给可交互且有文字的元素,干净 selector。但**评论正文、纯 `<span>` 的用户名、非交互文本块、以及"现在是不是有 modal 盖着页面"它都看不到**。这时用 `view`:`view` 把**视口内所有可见的文本块/可交互/图片**按**堆叠(z)自顶到底**列出来,每块带 text/z/rect/selector,并标注被遮挡(`<被遮挡>`)。弹窗里的内容会自然排在前面,agent 能判断"评论在弹窗里"、"什么东西盖住了页面"。
+
+- 想**操作**(点/填)→ 优先 `snapshot` 拿 selector。
+- 想**看懂页面有什么、层级/遮挡关系、弹窗内容** → 用 `view`。两者可结合:`view` 探结构 → 取某块 selector 用 `snapshot`/`click` 操作。
 
 ## Quick Reference
 
@@ -87,6 +114,7 @@ node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下) |
+| `view [--target]` | **视口几何视图**:可见文本块/可交互/图片,按堆叠(z)自顶到底排序,含遮挡标注——感知导向,补强 snapshot |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -169,6 +197,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
+| `cdp.view(target, opts?)` | 对象,`{occluded}` | 视口几何视图:`{viewport, blocks, truncated}`;`opts.occluded=false` 关遮挡标注 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
