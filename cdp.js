@@ -45,7 +45,7 @@ const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 // ==================== CLI ====================
 
-const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'depth', 'in', 'out', 'margin']); // 这些标志取下一个参数为值
+const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'depth', 'in', 'out', 'margin', 'at']); // 这些标志取下一个参数为值
 
 function parseArgs(argv) {
   const args = [];
@@ -74,7 +74,7 @@ async function main() {
   eval "<js>" [--target]   在页面执行 JS,返回 JSON 值
   snapshot [--target]      提取可交互元素清单(标签/文本/选择器/坐标)
   view [--all] [--in <sel>] [--out <s1,s2>] [--target] 区域索引(主要容器+标签+块数,选一个用tree/--in深入);--all 全量叶子块
-  tree <selector> [--depth N] [--out <s1,s2>] [--margin N] [--full] [--target] 钻取该元素 DOM 子树,紧凑层级树(只对视口±N屏建树;--full 全部)
+  tree <selector>|--at <center|x,y|.5,.4> [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target] 钻取子树,紧凑层级树(只对视口±N屏建树);--at 坐标锚定(取该屏点最顶层元素),--vis selector多匹配取视口内那个
   click <selector> [--target] 点击元素
   fill <selector> <值> [--target] 填入输入框并触发 input/change
   focus <selector> [--target] 聚焦元素(配合按键用)
@@ -232,20 +232,22 @@ async function main() {
         break;
       }
       if (!v?.regions?.length) { console.log('(未归纳出区域)'); break; }
-      console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.regions.length} 区域(阅读序,选一个用 tree/--in 深入):`);
+      console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.regions.length} 区域(阅读序,选一个用 tree --at <坐标> 或 --in 深入):`);
       console.log(v.regions.map((r, i) =>
-        `${i + 1}. [${r.tag}${r.id ? '#' + r.id : ''}${r.cls?.length ? '.' + r.cls.join('.') : ''}] "${r.label}" ${r.blocks}块 z=${r.z}  ${r.selector}`
+        `${i + 1}. [${r.tag}${r.id ? '#' + r.id : ''}${r.cls?.length ? '.' + r.cls.join('.') : ''}] "${r.label}" ${r.blocks}块 z=${r.z} @(${r.rect.x},${r.rect.y} ${r.rect.w}x${r.rect.h})`
       ).join('\n'));
       break;
     }
     case 'tree': {
       const sel = args[0];
-      if (!sel) throw new Error('tree 需要 selector,如 tree "#TopstoryContent" [--depth 5]');
+      if (!sel && !opts.at) throw new Error('tree 需要 selector 或 --at,如 tree "#TopstoryContent" 或 tree --at .5,.4');
       const r = await api.tree(target, sel, {
         depth: opts.depth ? Number(opts.depth) : 8,
         out: opts.out ? opts.out.split(',').map(s => s.trim()).filter(Boolean) : undefined,
         vp: !opts.full, // 默认只对视口内元素建树;--full 关
         vm: opts.margin ? Number(opts.margin) : 1, // 纵向余量(视口高倍数,默认1)
+        at: opts.at, // 坐标锚定:center | x,y | 相对比例
+        vis: !!opts.vis, // selector 多匹配时取视口内那个
       });
       if (!r.lines?.length) { console.log('(空子树)'); break; }
       console.log(r.lines.join('\n'));
