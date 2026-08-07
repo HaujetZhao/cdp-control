@@ -104,6 +104,7 @@ sites/
 
 **为什么不要盲用 class selector**:`querySelector(".Comments-container")` 取 DOM 里**第一个**,那可能是已滚出屏的旧卡。要看"屏幕上此刻的东西",用 `tree --at`,别猜 selector。
 
+- **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。`tree` 无参概览给"有哪些内容项(标题+摘要)",要读全文就 `tree --at <卡>` 定位后 `content`。
 - 想**操作**(点/填)→ `snapshot` 拿干净 selector,或 `tree --at <坐标>` 定位后操作。
 - **过滤噪音**:`tree <sel> --out "header, aside"` 排除固定 chrome;`--margin N` 上下各多 N 屏;`--full` 含全部屏外。
 - 结论:**感知一律走 `tree`(`--at` 看所见、无参看全貌、selector 看结构)**。snapshot 只做操作,不做感知。
