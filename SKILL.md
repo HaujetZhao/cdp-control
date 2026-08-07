@@ -98,7 +98,7 @@ sites/
 
 `tree` 是**唯一感知命令**,三个用法覆盖"看屏幕"的全部需求:
 
-1. **`tree`(无参)** → 树整页可见结构(body,视口过滤,深度 3)——先看页面有哪些部分。
+1. **`tree`(无参)** → **可见内容概览**:把视口内可见的内容项(卡片/广告)按阅读序列出,每项标题+点赞评论+正文摘要——**正是你屏幕上看到的内容清单**。丢弃无标题碎片/重复/整页容器。
 2. **`tree --at center` / `--at x,y` / `--at .5,.4`**(推荐看"所见")→ 用 `elementFromPoint` 取该屏点**最顶层元素**、上溯最近语义容器后建树——**永远命中你此刻视口内看到的那张卡/评论区**,尊重弹窗遮挡,不会像盲用 class selector 那样读到滚出屏的旧元素。
 3. **`tree <selector> --depth N`** → 建某个容器的树(已知结构时用)。
 
@@ -121,7 +121,7 @@ sites/
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
-| `tree [<selector> \| --at <center\|x,y\|.5,.4>] [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target]` | **紧凑层级树(唯一感知命令)**:过滤垃圾节点/属性/包装节点;默认只对视口±1屏建树(有界)。**`--at` 坐标锚定**(看"所见"):取该屏点最顶层元素(`elementFromPoint`,尊重堆叠/遮挡)、上溯最近语义容器——永远命中当前视口那张卡,不读滚走的旧卡;无参=树整页可见结构;`--vis` selector 多匹配取视口内;`--out` 排除子区域、`--margin N` 上下拓宽、`--full` 含全部屏外 |
+| `tree [<selector> \| --at <center\|x,y\|.5,.4>] [--depth N] [--out <s1,s2>] [--margin N] [--vis] [--full] [--target]` | **紧凑层级树(唯一感知命令)**:过滤垃圾节点/属性/包装节点;默认只对视口±1屏建树(有界)。**`--at` 坐标锚定**(看"所见"):取该屏点最顶层元素(`elementFromPoint`,尊重堆叠/遮挡)、上溯最近语义容器——永远命中当前视口那张卡,不读滚走的旧卡;**无参=可见内容概览**(视口内卡片清单,标题+统计+正文摘要,正是屏幕所见);`--vis` selector 多匹配取视口内;`--out` 排除子区域、`--margin N` 上下拓宽、`--full` 含全部屏外 |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -204,7 +204,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
-| `cdp.tree(target, selector?, opts?)` | 对象,字符串可选,`{depth,maxClass,out,vp,vm,at,vis}` | 钻取子树为紧凑层级树:`{ok, selector, lines}`;无 selector 也无 `at` 时树整页可见结构;`opts.out` 排除子区域,`opts.vp` 视口过滤(默认 true),`opts.vm` 纵向余量(视口高倍数,默认1),`opts.at` 坐标锚定(center\|x,y\|相对比例,取该屏点最顶层元素),`opts.vis` selector 多匹配取视口内 |
+| `cdp.tree(target, selector?, opts?)` | 对象,字符串可选,`{depth,maxClass,out,vp,vm,at,vis}` | 钻取子树为紧凑层级树:`{ok, lines}`;无 selector 也无 `at` 时返回**可见内容概览**(视口内卡片:`{ok, items, lines}`);`opts.out` 排除子区域,`opts.vp` 视口过滤(默认 true),`opts.vm` 纵向余量(视口高倍数,默认1),`opts.at` 坐标锚定(center\|x,y\|相对比例),`opts.vis` selector 多匹配取视口内 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
