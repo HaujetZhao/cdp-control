@@ -62,6 +62,9 @@ logs 命令: 幂等注入(MONITOR_JS)+ 读取 window.__cdpLogs 并结构化序�
 ### `listen-stop`
 发起 `POST /shutdown`(daemon 响应前 `process.exit`,response 截断 reject 也算成功)→ 轮询 health 直到不可达;优雅关闭未生效再读 pid 文件 `kill` 兜底。
 
+### 看门狗(自动退出)
+浏览器被关掉后 `/json/list` 持续探测失败。`sync()` 统计连续失败次数,达 `WATCHDOG_POLLS=10`(约 5s)即自动 `process.exit(0)`,不留孤儿 daemon。下次 `open`/`ensure`/`logs` 会自动重新拉起。实测:指向死端口约 5s 自退;浏览器在时 7s 不误杀。
+
 ## 实测验证(本地 Edge)
 - 嵌套对象结构完整:`console.log('nested',{a:1,b:{c:[1,2,3],d:{e:'deep'}}})` → args 保留完整嵌套 ✓
 - 调用链:每条 console 记录带 `stack` ✓
