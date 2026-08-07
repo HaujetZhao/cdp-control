@@ -45,7 +45,7 @@ const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 // ==================== CLI ====================
 
-const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since']); // 这些标志取下一个参数为值
+const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'depth']); // 这些标志取下一个参数为值
 
 function parseArgs(argv) {
   const args = [];
@@ -74,6 +74,7 @@ async function main() {
   eval "<js>" [--target]   在页面执行 JS,返回 JSON 值
   snapshot [--target]      提取可交互元素清单(标签/文本/选择器/坐标)
   view [--target]          视口几何视图:可见文本块/可交互/图,按堆叠(z)自顶到底排序,含遮挡标注
+  tree <selector> [--depth N] [--target] 钻取该元素 DOM 子树,紧凑层级树(过滤垃圾节点/属性)
   click <selector> [--target] 点击元素
   fill <selector> <值> [--target] 填入输入框并触发 input/change
   focus <selector> [--target] 聚焦元素(配合按键用)
@@ -221,8 +222,16 @@ async function main() {
       if (!v?.blocks?.length) { console.log('(视口内无可感知块)'); break; }
       console.log(`视口 ${v.viewport.w}x${v.viewport.h} · ${v.blocks.length} 块${v.truncated ? '(截断)' : ''} · 自顶到底:`);
       console.log(v.blocks.map((e, i) =>
-        `${i + 1}. ${' '.repeat(Math.max(0, 8 - String(e.z).length))}[z=${e.z}] [${e.kind}/${e.tag}] "${e.text || '(图)'}"${e.occluded ? ' <被遮挡>' : ''}  sel=${e.selector}`
+        `${i + 1}. ${' '.repeat(Math.max(0, 8 - String(e.z).length))}[z=${e.z}] [${e.kind}/${e.tag}] "${e.text || '(图)'}"${e.occluded ? ' <被遮挡>' : ''}  ${e.selector}`
       ).join('\n'));
+      break;
+    }
+    case 'tree': {
+      const sel = args[0];
+      if (!sel) throw new Error('tree 需要 selector,如 tree "#TopstoryContent" [--depth 5]');
+      const r = await api.tree(target, sel, { depth: opts.depth ? Number(opts.depth) : 8 });
+      if (!r.lines?.length) { console.log('(空子树)'); break; }
+      console.log(r.lines.join('\n'));
       break;
     }
     case 'click': {
