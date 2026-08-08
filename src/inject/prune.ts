@@ -18,6 +18,6 @@ setResult((() => {
   if (__CDP_ARG__.list) {
     return { ok: true, pruned: listPrune().map(p => p.summary) };
   }
-  const { pruned, skipped } = registerPrune(__CDP_ARG__.refs || []);
+  const { pruned, skipped } = registerPrune(__CDP_ARG__.refs || [], __CDP_ARG__.ancestor || 0);
   return { ok: true, pruned: pruned.map(p => p.summary), skipped };
 })());

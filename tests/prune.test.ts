@@ -39,6 +39,17 @@ test('registerPrune: 重复登记去重(Set)', () => {
   (globalThis as any).__cdpPrune = undefined;
 });
 
+test('registerPrune: ancestor 爬父到容器再登记', () => {
+  const [header, nav, link] = [makeEl('header', ''), makeEl('nav', ''), makeEl('a', '关注')];
+  header.children.push(nav); nav.children.push(link); link.parentElement = nav; nav.parentElement = header;
+  (globalThis as any).__cdpRefs = [link];
+  const r = registerPrune([0], 1);   // 爬 1 级 → nav
+  assert.equal(r.skipped, 0);
+  assert.equal(r.pruned[0].el, nav); // 登记的是 nav 而非叶子 link
+  assert.equal(pruneSet()!.has(header), false);
+  (globalThis as any).__cdpPrune = undefined;
+});
+
 test('clearPrune: 清空集合', () => {
   (globalThis as any).__cdpRefs = [makeEl('div', 'x')];
   registerPrune([0]);

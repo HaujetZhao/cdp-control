@@ -4,7 +4,7 @@
  * buildTree 遇到集合内元素即整棵子树跳过 → 之后的整页 tree 不再输出,无需筛选。
  * 生命周期:与 __cdpRefs 一致,页面刷新(新 document)自动清空。
  */
-import { refElement } from './find-root.ts';
+import { refElement, climbAncestors } from './find-root.ts';
 
 export interface PruneEntry { el: Element; summary: string }
 
@@ -23,13 +23,13 @@ function summaryOf(el: Element): string {
   return (t || el.tagName).slice(0, 40);
 }
 
-/** 按 ref 逐个解析为元素并登记进排除集合;无效 ref 跳过。返回登记摘要 + 跳过数。 */
-export function registerPrune(refs: number[]): { pruned: PruneEntry[]; skipped: number } {
+/** 按 ref 逐个解析为元素(可选 --ancestor 爬父到容器)并登记进排除集合;无效 ref 跳过。返回登记摘要 + 跳过数。 */
+export function registerPrune(refs: number[], ancestor = 0): { pruned: PruneEntry[]; skipped: number } {
   const set = ensureSet();
   const pruned: PruneEntry[] = [];
   let skipped = 0;
   for (const r of refs) {
-    const el = refElement(r);
+    const el = climbAncestors(refElement(r), ancestor);
     if (!el) { skipped++; continue; }
     if (!set.has(el)) set.add(el);
     pruned.push({ el, summary: summaryOf(el) });

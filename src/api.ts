@@ -77,12 +77,12 @@ export async function locate(target: Target, ref: number, ancestor?: number): Pr
   return invoke(target, locateExpr(ref, ancestor));
 }
 
-export interface PruneOpts { refs?: number[]; clear?: boolean }
-/** 会话级排除区域:把 ref 解析成元素登记,之后的整页 tree 不再输出这些元素子树。
+export interface PruneOpts { refs?: number[]; ancestor?: number; clear?: boolean }
+/** 会话级排除区域:把 ref 解析成元素(可选 --ancestor 爬到容器)登记,之后的整页 tree 不再输出这些元素子树。
  * 无 refs 且非 clear 时列出已排除区域。 */
 export async function prune(target: Target, opts: PruneOpts = {}): Promise<any> {
   const list = !opts.refs?.length && !opts.clear;
-  return invoke(target, pruneExpr(opts.refs, !!opts.clear, list));
+  return invoke(target, pruneExpr(opts.refs, opts.ancestor, !!opts.clear, list));
 }
 
 /** 操作目标:selector 字符串,或 {ref:n, ancestor?} 用 tree 登记的引用序号(穿透 shadow,可选爬父)。 */
