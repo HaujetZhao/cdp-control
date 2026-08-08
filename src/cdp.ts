@@ -118,18 +118,36 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定定位器(selector + xpa
     console.log(`  xpath:    ${r.xpath || '(无)'}`);
   });
 
-targetCmd('prune', '按 ref 登记排除区域,之后的整页 tree 不再输出这些元素子树(会话级);无参列出已排除,--clear 清空')
-  .argument('[refs...]', 'tree 输出的 ref 序号(可逗号/空格分隔多个)')
-  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再登记(默认 0;把内容叶子抬到要删的区域容器)')
-  .option('--clear', '清空排除集合')
-  .action(async (refs, opts) => {
+targetCmd('stash', '类比 git stash:按 ref 把整页 tree 的某区域暂存藏起(之后的整页 tree 不再输出,可 pop 恢复)。用法:stash <refs...> [--ancestor] 暂存;stash list 列出;stash pop [i] 恢复第 i 个(默认最新);stash clear 清空')
+  .argument('[args...]', '暂存:tree 的 ref 序号(可逗号/空格分隔);或子命令 list / pop [i] / clear')
+  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再暂存(默认 0;把内容叶子抬到要藏的区域容器)')
+  .action(async (args, opts) => {
     const t = await needTarget(opts.target);
-    const numRefs = (refs || []).flatMap((s: string) => s.split(',')).filter((s: string) => s !== '').map(Number);
-    const r = await api.prune(t, { refs: numRefs, ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined, clear: !!opts.clear });
-    if (r.clear) { console.log('已清空排除集合'); return; }
-    if (!r.pruned?.length && !r.skipped) { console.log('当前未排除任何区域(用 prune <ref> 登记,之后整页 tree 不再输出)'); return; }
-    if (r.pruned?.length) console.log(`已排除 ${r.pruned.length} 个区域:`);
-    (r.pruned || []).forEach((s: string) => console.log(`  · ${s}`));
+    const [cmd, ...rest] = args || [];
+    if (cmd === 'list') {
+      const r = await api.stash(t, {});
+      if (!r.stashed?.length) { console.log('无暂存区域(用 stash <ref> 暂存,之后的整页 tree 不再输出该区域)'); return; }
+      r.stashed.forEach((e: any) => console.log(`  [${e.i}] ${e.summary}`));
+      return;
+    }
+    if (cmd === 'clear') {
+      await api.stash(t, { clear: true });
+      console.log('已清空暂存区域');
+      return;
+    }
+    if (cmd === 'pop') {
+      const i = rest.length ? Number(rest[0]) : undefined;
+      const r = await api.stash(t, { pop: i != null && !Number.isNaN(i) ? i : -1 });
+      if (r.popped) console.log(`已恢复(pop): ${r.popped}`);
+      else console.log('无可恢复的暂存区域');
+      return;
+    }
+    // 否则视为 refs 暂存
+    const numRefs = (args || []).flatMap((s: string) => s.split(',')).filter((s: string) => s !== '').map(Number);
+    const r = await api.stash(t, { refs: numRefs, ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined });
+    if (!r.stashed?.length && !r.skipped) { console.log('未指定有效 ref(用 stash <ref> 暂存,或 stash list/pop/clear)'); return; }
+    if (r.stashed?.length) console.log(`已暂存 ${r.stashed.length} 个区域:`);
+    (r.stashed || []).forEach((s: string) => console.log(`  · ${s}`));
     if (r.skipped) console.log(`跳过 ${r.skipped} 个无效 ref`);
   });
 
