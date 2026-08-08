@@ -1,0 +1,44 @@
+/**
+ * tree-utils.ts — 结构树输出的纯函数(无 DOM 依赖,可在 Node 里单测)。
+ * 从旧 scripts.js buildTreeExpr 的 inline 逻辑抽出,语义不变。
+ */
+
+/** 节点文本总长(递归求和,超阈值提前停,只判"够不够短")。 */
+export function inlineLen(n: { text?: string; imgAlt?: string; leafValue?: string; kids?: any[] }): number {
+  if (n.text) return n.text.length;
+  if (n.imgAlt) return 2;
+  if (n.leafValue) return n.leafValue.length + firstTxt(n.kids ?? []).length;
+  let sum = 0;
+  for (const k of n.kids ?? []) { sum += inlineLen(k); if (sum > 24) return sum; }
+  return sum;
+}
+
+/** 是否内联短项(可视文本总长 >0 且 ≤24)。 */
+export function inlineable(n: { text?: string; imgAlt?: string; leafValue?: string; kids?: any[] }): boolean {
+  const l = inlineLen(n);
+  return l > 0 && l <= 24;
+}
+
+/** 取节点可视文本(自身或首个有文本后代)。 */
+export function leafText(n: { text?: string; kids?: any[] }): string {
+  if (n.text) return n.text;
+  for (const k of n.kids ?? []) { const t = leafText(k); if (t) return t; }
+  return '';
+}
+
+/** 取后代里第一个有文本的节点的文本(用于 title 自含项拼数值)。 */
+export function firstTxt(arr: any[]): string {
+  for (const k of arr) {
+    if (k.text) return k.text;
+    const t = firstTxt(k.kids ?? []);
+    if (t) return t;
+  }
+  return '';
+}
+
+/** 琐碎叶子:空文本,或纯符号短串(如 "/"、"·" 分隔装饰)。 */
+export function isTrivialLeaf(n: { text?: string; kids?: any[] }): boolean {
+  const t = leafText(n).trim();
+  if (!t) return true;
+  return t.length <= 2 && /^[^\w一-龥]+$/.test(t);
+}
