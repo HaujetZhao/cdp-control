@@ -125,3 +125,14 @@ test('formatTree: leafValue 与 span 文本行也带 ref 标注', () => {
   markText(root);
   assert.deepEqual(formatTree(root), ['div', '  "点赞 22.9万" [ref=5]']);
 });
+
+test('formatTree: 交互/带 ref 节点不内联折叠,各自成行且标注可见', () => {
+  // 纯文本 span 可与短文本兄弟内联;但交互 button(带 ref)必须单独成行,否则 [ref=i] 被吞。
+  const t1 = mk({ tag: 'span', isContent: true, text: '外部文本', size: 1 });
+  const btn = mk({ tag: 'button', isContent: true, text: 'shadow按钮', inter: true, size: 1, ref: 4 });
+  const wrap = mk({ tag: 'div', isContent: false, size: 3, kids: [t1, btn] });
+  const root = mk({ tag: 'html', isContent: false, size: 4, kids: [wrap] });
+  markText(root);
+  // 按钮不并入文本行,独立成行带 [ref=4];span 也被拆到各自行
+  assert.deepEqual(formatTree(root), ['html', '  div', '    "外部文本"', '    button "shadow按钮" [ref=4]']);
+});

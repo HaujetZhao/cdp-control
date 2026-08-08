@@ -58,7 +58,8 @@ export function formatTree(tree: TreeNode): string[] {
       }
       const hasChildText = n.kids.some(k => k.hasText);
       if (leafish(n) && n.size <= 8) {
-        if (n.text || n.imgAlt) out.push('  '.repeat(depth) + leafLabel(n));
+        // 交互节点(含空 input)无文本也输出裸标签行——否则 fill 目标在 tree 里不可见、ref 拿不到
+        if (n.text || n.imgAlt || n.inter) out.push('  '.repeat(depth) + leafLabel(n));
         return;
       }
       if (!hasChildText) {
@@ -83,10 +84,12 @@ export function formatTree(tree: TreeNode): string[] {
     const kids = n.kids;
     if (!kids.length) return;
     const newPath = path.concat([tagLabel(n)]);
-    const productive = kids.filter(k => k.hasText && !isTrivialLeaf(k));
+    // productive = 有文本且非琐碎叶,或可交互(空 input 等无文本交互节点也要纳入,否则 tree 里不可见、ref 拿不到)
+    const productive = kids.filter(k => (k.hasText && !isTrivialLeaf(k)) || k.inter);
     if (productive.length === 1) { walk(productive[0], depth, newPath); return; }
     if (productive.length >= 2) {
-      if (productive.every(inlineable)) {
+      // 交互/带 ref 节点不内联折叠:必须各自成行,否则 [ref=i] 标注被吞、agent 拿不到可操作句柄。
+      if (productive.every(k => inlineable(k) && !k.inter && k.ref == null)) {
         const items = productive.map(inlineLabel).join(' ');
         out.push('  '.repeat(depth) + (newPath.length ? newPath.join(' > ') + ' ' : '') + items);
         return;

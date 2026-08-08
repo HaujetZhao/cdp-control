@@ -124,19 +124,21 @@ targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)')
     if (r.count > (r.matches || []).length) console.log(`  …(还有 ${r.count - (r.matches || []).length} 个未列出)`);
   });
 
-// ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。
-function refOrSel(sel: string, opts: any): string | { ref: number } {
-  return opts.ref != null ? { ref: Number(opts.ref) } : sel;
+// ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。
+function refOrSel(sel: string | undefined, opts: any): string | { ref: number } {
+  if (opts.ref != null) return { ref: Number(opts.ref) };
+  if (sel) return sel;
+  throw new Error('需提供 selector 或 --ref');
 }
 const refOpt = (c: any) => c.option('--ref <n>', '按 tree 输出的 ref 序号操作(穿透 shadow,与 selector 二选一)');
 
-refOpt(targetCmd('click', '点击元素')).argument('<selector>', 'selector')
+refOpt(targetCmd('click', '点击元素')).argument('[selector]', 'selector 或 --ref')
   .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg); console.log(`已点击: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref} (${r.tag})`); });
 
-refOpt(targetCmd('fill', '填输入框并触发 input/change')).argument('<selector>', 'selector').argument('<value>', '值')
+refOpt(targetCmd('fill', '填输入框并触发 input/change')).argument('[selector]', 'selector 或 --ref').argument('<value>', '值')
   .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); await api.fill(await needTarget(opts.target), arg, val); console.log(`已填入: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref} ← ${val}`); });
 
-refOpt(targetCmd('focus', '聚焦元素')).argument('<selector>', 'selector')
+refOpt(targetCmd('focus', '聚焦元素')).argument('[selector]', 'selector 或 --ref')
   .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg); console.log(`已聚焦: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref} (${r.tag})`); });
 
 targetCmd('get-focus', '查看当前焦点元素在哪')
@@ -145,7 +147,7 @@ targetCmd('get-focus', '查看当前焦点元素在哪')
 targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab').argument('<key>', '按键')
   .action(async (key, opts) => { await api.pressKey(await needTarget(opts.target), key); console.log(`已按键: ${key}`); });
 
-refOpt(targetCmd('hover', '鼠标移到元素上')).argument('<selector>', 'selector')
+refOpt(targetCmd('hover', '鼠标移到元素上')).argument('[selector]', 'selector 或 --ref')
   .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); await api.hover(await needTarget(opts.target), arg); console.log(`已悬停: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref}`); });
 
 targetCmd('shot', '截图').option('-f, --file <file>', '输出文件')
