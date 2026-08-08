@@ -11,7 +11,11 @@ export interface TreeNode {
   tag: string; isContent: boolean; text: string; inter: boolean; imgAlt: string;
   kids: TreeNode[]; size: number; hasText: boolean; leafValue?: string;
   agg?: boolean;   // 显示文本来自 innerText/grabText 兜底(聚合文本)而非直接文本节点
+  shadow?: boolean; // 宿主带 shadowRoot:其下子节点来自 shadow DOM,CSS 选择器不能穿透,须用 xpath 定位
 }
+
+/** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */
+const tagLabel = (n: TreeNode) => n.tag + (n.shadow ? '[shadow]' : '');
 
 /** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代)。返回根节点结果。 */
 export function markText(n: TreeNode): boolean {
@@ -29,7 +33,7 @@ export function formatTree(tree: TreeNode): string[] {
   const out: string[] = [];
   const leafish = (n: TreeNode) => n.inter || n.tag === 'img';
   const leafLabel = (n: TreeNode) => {
-    let l = n.tag;
+    let l = tagLabel(n);
     if (n.tag === 'img' && n.imgAlt) l += ' "' + n.imgAlt.slice(0, 40) + '"';
     else if (n.text) l += (n.agg ? ' ~' : ' ') + '"' + n.text.slice(0, 60) + '"';
     return l;
@@ -68,7 +72,7 @@ export function formatTree(tree: TreeNode): string[] {
     }
     const kids = n.kids;
     if (!kids.length) return;
-    const newPath = path.concat([n.tag]);
+    const newPath = path.concat([tagLabel(n)]);
     const productive = kids.filter(k => k.hasText && !isTrivialLeaf(k));
     if (productive.length === 1) { walk(productive[0], depth, newPath); return; }
     if (productive.length >= 2) {
@@ -82,7 +86,7 @@ export function formatTree(tree: TreeNode): string[] {
     }
   }
 
-  out.push(tree.tag + (tree.text ? ' "' + tree.text.slice(0, 60) + '"' : ''));
+  out.push(tagLabel(tree) + (tree.text ? ' "' + tree.text.slice(0, 60) + '"' : ''));
   for (const k of tree.kids) walk(k, 1, []);
   return out;
 }

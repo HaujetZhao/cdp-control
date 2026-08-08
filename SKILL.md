@@ -85,10 +85,10 @@ sites/
 
 ## 感知页面(核心:`tree`,唯一感知命令)
 
-`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**:递归穿透任意深度 shadow DOM(各 shadowRoot 顶层子元素按文档序求值),深层元素也能按文档序取首个命中(如 B站 `//bili-comment-renderer` 取到第一条评论);注意 `//a//b` 这类**跨 shadow 组合路径不可行**(xpath 不跨 shadow 组合)。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。**xpath/selector 含 `"`、`//`、`[contains(...)]` 等 shell 难转义的字符时,改存进文件用 `--xpath-file <file>` / `--selector-file <file>` 传**(内联与文件同给时内联优先)。
+`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**:含 `//` 时按 **Provar 式连续路径**解析——每个 `//` 都允许穿越 shadowRoot 边界,可照 tree 输出的结构(含 `[shadow]` 宿主)直接写一条连续路径,如 B站 `//bili-comments//bili-comment-renderer//bili-rich-text//p` 直达评论正文;`[n]` 为**文档序相对索引**(light 在前、shadow 依宿主序),如 `//bili-comments//bili-comment-thread-renderer[2]` 取第 2 条评论;谓词(如 `[contains(.,'…')]`)按标准 xpath 语义在跨 shadow 命中的元素上求值。首段若以单个 `/` 开头(如 `/html/body/x-box[1]`),先按**标准绝对 xpath**求锚点集合,再从锚点 `//` 穿 shadow——适合先锚定某 light 路径再深入其 shadow。单段 `//bili-comment-renderer`(无内部 `//`)仍取文档序首个命中。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。**xpath/selector 含 `"`、`//`、`[contains(...)]` 等 shell 难转义的字符时,改存进文件用 `--xpath-file <file>` / `--selector-file <file>` 传**(内联与文件同给时内联优先)。
 
 - **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。
-- **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。
+- **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。**带 shadowRoot 的宿主节点 tag 会追加 `[shadow]`**(如 `bili-comments[shadow]`、`bili-rich-text[shadow]`):表示其下的子树来自 shadow DOM,**CSS 选择器(如 `querySelector`、`snapshot` 的 selector)不能穿透**,要定位这些子树下的元素须用 `--xpath`(shadow 穿透版)或 `content` 读文本,别直接拿 tree 里的标签反推 CSS 选择器。
 - 想**操作**(点/填)→ `snapshot` 拿干净 selector。
 - `tree` 不带状态前缀(无 `[看]`/`[架]`/`[X]`),只看文本与结构。
 - 结论:**感知一律走 `tree`**。snapshot 只做操作,不做感知。
@@ -189,7 +189,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
-| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版(递归任意深度) |
+| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版:含 `//` 为 Provar 式连续路径(每段 `//` 穿 shadowRoot,支持 `[n]` 文档序索引与 `[contains(...)]` 谓词);不含 `//` 时按文档序取首个命中(递归任意深度) |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |

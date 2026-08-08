@@ -60,6 +60,8 @@ declare const __CDP_ARG__: TreeArgs;
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
       text, inter,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
+      // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 xpath 定位
+      shadow: isEl && !!(el as Element).shadowRoot,
       kids: [], size: 0, hasText: false, agg: false,
     };
     for (const k of childrenOf(el as Element)) {
