@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, hoverExpr, treeExpr } from './inject-loader';
+import { inject, hoverExpr, treeExpr, xpathExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 
@@ -74,6 +74,11 @@ export interface TreeOpts { selector?: string; xpath?: string }
 /** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
   return invoke(target, treeExpr(opts.selector, opts.xpath), 30000);
+}
+
+/** 按 xpath 查元素(注入侧 xpathEval 解析,shadow 穿透,返回命中列表 + 分步诊断)。 */
+export async function xpath(target: Target, path: string): Promise<any> {
+  return invoke(target, xpathExpr(path));
 }
 
 /** 点击 target 页面上匹配 selector 的元素。 */
@@ -167,7 +172,7 @@ export async function hover(target: Target, selector: string): Promise<void> {
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  snapshot, tree, click, fill, waitFor, waitForFn, shot, focus, getFocus, outline, content, pressKey, hover,
+  snapshot, tree, xpath, click, fill, waitFor, waitForFn, shot, focus, getFocus, outline, content, pressKey, hover,
 };
 
 export { coreApi };
