@@ -8,18 +8,13 @@
  */
 import { setResult } from './lib/result';
 import { inlineable, leafText, firstTxt, isTrivialLeaf } from './lib/tree-utils';
+import { findRoot } from './lib/find-root';
 import type { TreeArgs } from './lib/arg';
 
 declare const __CDP_ARG__: TreeArgs;
 
 (() => {
-  const rootExpr = __CDP_ARG__.rootExpr;
-  let root: Element | null;
-  try {
-    root = (0, eval)(rootExpr); // rootExpr 是"解析根元素的 JS 表达式",如 document.querySelector(...)
-  } catch {
-    root = null;
-  }
+  const root = findRoot(__CDP_ARG__.selector, __CDP_ARG__.xpath);
   if (!root || root.nodeType !== 1) return setResult({ ok: false, err: '未找到匹配的根节点(selector/xpath 未命中)' });
 
   const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);

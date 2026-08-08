@@ -33,24 +33,14 @@ export function inject(name: string, args?: unknown): string {
   return `var __CDP_ARG__ = ${JSON.stringify(args)};\n${code}`;
 }
 
-/** 结构树入口(唯一感知命令)。rootExpr 是解析建树根元素的 JS 表达式串。 */
-export function treeExpr(rootExpr: string): string {
-  return inject('tree', { rootExpr });
+/** 结构树入口(唯一感知命令)。selector/xpath 可选,缺省整页 body。 */
+export function treeExpr(selector?: string, xpath?: string): string {
+  return inject('tree', { selector, xpath });
 }
 
-/** 点击入口。 */
-export function clickExpr(sel: string): string {
-  return inject('click', { sel });
-}
-
-/** 填表入口。 */
-export function fillExpr(sel: string, value: string): string {
-  return inject('fill', { sel, value });
-}
-
-/** 聚焦入口。 */
-export function focusExpr(sel: string): string {
-  return inject('focus', { sel });
+/** 悬停入口(返回元素中心视口坐标)。 */
+export function hoverExpr(sel: string): string {
+  return inject('hover', { sel });
 }
 
 /** 读控制台日志入口。 */
