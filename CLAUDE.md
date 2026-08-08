@@ -26,7 +26,7 @@ dist/inject/*.js         注入到浏览器页面跑的 JS(esbuild 打包成自�
 |---|---|---|---|
 | `src/*.ts` | Node 侧(连接 CDP、CLI、api、纯函数模块) | Node | esbuild 转译 CJS(不打包) |
 | `src/inject/*.ts` | 注入浏览器页面执行的 JS(入口) | 浏览器(DOM lib) | esbuild bundle 成 IIFE → `dist/inject/` |
-| `src/inject/lib/` | 注入侧共享模块(genSel/result/arg/monitor-inject/tree-utils/find-root) | 浏览器 | 打进各入口 |
+| `src/inject/lib/` | 注入侧共享模块(genSel/result/arg/monitor-inject/tree-utils/tree-format/find-root) | 浏览器 | 打进各入口 |
 
 依赖单向无环:`transport ← inject-loader/api ← monitor/browser ← cdp`。
 
@@ -49,8 +49,8 @@ Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注�
 ## 测试
 
 - `tests/*.test.ts` 用 Node 内置 `node:test` + `node:assert/strict`,零运行时依赖。
-- 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/keys.ts`(parseKeySpec)、`src/cli-args.ts`(parseArgs)、`src/transport.ts`(resolveTarget)。
-- 注入侧 DOM 相关逻辑(如 tree 的 simplify/walk、find-root 的 shadow 穿透)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。
+- 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/inject/lib/tree-format.ts`(formatTree/markText,结构树折叠内联的纯变换)、`src/keys.ts`(parseKeySpec)、`src/cli-args.ts`(parseArgs)、`src/transport.ts`(resolveTarget)。
+- 注入侧 DOM 相关逻辑(如 tree 的 simplify(DOM 采集)、find-root 的 shadow 穿透)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。
 
 ## 文档分工
 
