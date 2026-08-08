@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**感知页面内容用 `tree`，它会输出整页 body 的文本+结构紧凑树，并生成便捷操作的 ref，`tree --ref <n> --ancestor <k>` 可以查看局部， 也可以用 `--selector-file`/`--xpath-file` 局部定位。可用 `locate` 从 ref 得到 xpath 和 selector 用作刷新后的快速定位。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**感知页面内容用 `tree`，它会输出整页 body 的文本+结构紧凑树，并生成便捷操作的 ref，`tree --ref <n> --ancestor <k>` 可以查看局部， 也可以用 `--selector-file`/`--xpath-file` 局部定位。可用 `locate` 从 ref 得到 xpath 和 selector 用作刷新后的快速定位。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -68,6 +68,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `--ref <n>` | 以某 ref 的元素为树根(与 --selector-file/--xpath-file 互斥) |
 | `--ancestor <k>` | 从锚点(任意)向上爬 k 层父级再建树;多与 --ref 配合把"内容叶子"抬到"区域容器" |
 | `--visible-only` | 筛选当前视口内可见元素 |
+| `--scroll-to-load` | 先上下滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动;遇到"内容没显示/找不到评论区"先试它,别以为页面没有 |
 
 **铁律**:初次查看页面要看完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
 
@@ -110,7 +111,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树 |
+| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only] [--scroll-to-load]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树;--scroll-to-load 先上下滚动触发懒加载再建树(评论区等首屏外内容) |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定定位器(selector + xpath)**。ref 是会话句柄,页面刷新后失效;locate 把它翻译成刷新后仍可用的定位器,供 `tree --selector-file/--xpath-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow;--ancestor 定位后爬父) |
 | `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--target]` | 填输入框并派发 input/change(selector 或 ref,--ancestor 爬父) |
