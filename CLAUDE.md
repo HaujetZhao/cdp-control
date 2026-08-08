@@ -16,7 +16,7 @@ npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
 `npm run build` 产出的 `dist/` 结构:
 ```
 dist/cdp.js              入口(require.main 守卫,组装 api + CLI)
-dist/api.js / transport.js / monitor.js / browser.js / inject-loader.js   Node 侧
+dist/*.js                其余 Node 侧(api/transport/monitor/browser/inject-loader/cli-args/keys)
 dist/inject/*.js         注入到浏览器页面跑的 JS(esbuild 打包成自包含 IIFE)
 ```
 
@@ -24,9 +24,9 @@ dist/inject/*.js         注入到浏览器页面跑的 JS(esbuild 打包成自�
 
 | 目录 | 内容 | 运行环境 | 编译 |
 |---|---|---|---|
-| `src/*.ts` | Node 侧(连接 CDP、CLI、api) | Node | esbuild 转译 CJS(不打包) |
-| `src/inject/*.ts` | 注入浏览器页面执行的 JS | 浏览器(DOM lib) | esbuild bundle 成 IIFE → `dist/inject/` |
-| `src/inject/lib/` | 注入侧共享模块(genSel/result/arg/monitor-inject/tree-utils) | 浏览器 | 打进各入口 |
+| `src/*.ts` | Node 侧(连接 CDP、CLI、api、纯函数模块) | Node | esbuild 转译 CJS(不打包) |
+| `src/inject/*.ts` | 注入浏览器页面执行的 JS(入口) | 浏览器(DOM lib) | esbuild bundle 成 IIFE → `dist/inject/` |
+| `src/inject/lib/` | 注入侧共享模块(genSel/result/arg/monitor-inject/tree-utils/find-root) | 浏览器 | 打进各入口 |
 
 依赖单向无环:`transport ← inject-loader/api ← monitor/browser ← cdp`。
 
@@ -42,11 +42,15 @@ esbuild 会把入口包进 module wrapper、吞掉返回值,故:
 
 **新增注入入口的步骤**:在 `src/inject/` 加一个 `.ts`(顶层,不进 lib/),用 `setResult` + 可选 `__CDP_ARG__`,重建即可自动打包成 `dist/inject/<名>.js`。**注意**:注入侧代码跑在浏览器,不能用 Node API;类型只在编译期(DOM lib)。
 
+## 返回契约(api.ts 的 `invoke`)
+
+Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注入脚本成功返回任意值(可含 `{ok:true}`);失败返回 `{ok:false, err}`。`invoke` 统一把 `{ok:false}` 抛成异常,调用方无需各自判 ok。数据类入口(snapshot 等返回裸数组/对象)自然通过。改 api 方法时统一走 `invoke`,别再散落 `r?.ok` 检查。
+
 ## 测试
 
 - `tests/*.test.ts` 用 Node 内置 `node:test` + `node:assert/strict`,零运行时依赖。
-- 目前测 `src/inject/lib/tree-utils.ts` 的纯函数(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)。
-- 注入侧 DOM 相关逻辑(如 tree 的 simplify/walk)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。
+- 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/keys.ts`(parseKeySpec)、`src/cli-args.ts`(parseArgs)、`src/transport.ts`(resolveTarget)。
+- 注入侧 DOM 相关逻辑(如 tree 的 simplify/walk、find-root 的 shadow 穿透)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。
 
 ## 文档分工
 
