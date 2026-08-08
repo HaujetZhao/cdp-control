@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**感知页面内容用 `tree`，它会输出整页 body 的文本+结构紧凑树，并生成便捷操作的 ref，`tree --ref <n> --ancestor <k>` 可以查看局部， 也可以用 `--selector-file`/`--xpath-file` 局部定位。可用 `locate` 从 ref 得到 xpath 和 selector 用作刷新后的快速定位。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。长页噪声多时用 `prune <ref> [--ancestor <k>]` 会话级删掉不想要区域,之后的整页 tree 即干净。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**感知页面内容用 `tree`，它会输出整页 body 的文本+结构紧凑树，并生成便捷操作的 ref，`tree --ref <n> --ancestor <k>` 可以查看局部， 也可以用 `--selector-file`/`--xpath-file` 局部定位。可用 `locate` 从 ref 得到 xpath 和 selector 用作刷新后的快速定位。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。长页噪声多时用 `stash <ref> [--ancestor <k>]` 会话级把不想要区域暂存藏起,之后的整页 tree 即干净,`stash pop` 可恢复。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -101,15 +101,16 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
   **首选 selector**(CSS,最可读、最稳);xpath 是**就近 id 锚定**版(就近祖先有 id 就 `//*[@id=…]`,否则回退 `html/body/div[1]…` 位置链),也可靠,但长路径在动态页有位置漂移风险。若页面刷新/改版后定位器失效,重新 `tree` 拿 ref 再 `locate` 一次即可。
 - **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别去找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,或各自 `locate`,再并列看。别因此绕回 JS 探查。
 
-**整页 tree 去噪(`prune`)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `prune` 把这些区域**会话级删掉**,之后的整页 tree 不再输出它们,树直接干净、无需再筛选:
+**整页 tree 去噪(`stash`,类比 git stash,可逆)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `stash` 把这些区域**会话级暂存藏起**,之后的整页 tree 不再输出它们,树直接干净、无需再筛选;可随时 `pop` 恢复:
 ```
 cdp tree --target ...                  # 1. 看整页,记下噪声区域里某个内容叶子的 ref(如导航头 logo [ref=1])
-cdp prune 1 --ancestor 4 --target ...  # 2. 从叶子爬父到要删的容器,登记排除(此例删整个导航头)
+cdp stash 1 --ancestor 4 --target ...  # 2. 从叶子爬父到要藏的区域容器,暂存(此例藏整个导航头)
 cdp tree --target ...                  # 3. 整页 tree 不再含该区域,ref 重新从 0 排
-cdp prune --target ...                 # 4. 列出当前已排除区域(回顾)
-cdp prune --clear --target ...         # 5. 清空排除,区域恢复
+cdp stash list --target ...            # 4. 列出当前暂存区域([i] 摘要)
+cdp stash pop --target ...             # 5. 恢复(pop)最近一个;stash pop <i> 按列表下标恢复指定一个
+cdp stash clear --target ...           # 6. 清空全部暂存
 ```
-`prune` 存的是**真实 DOM 元素**而非 ref 编号,整页 tree 的 ref 重排不影响已登记排除项(元素仍在页面里就持续生效)。被排除元素**整棵子树**消失(不输出、不登记其下 ref)。会话级:页面刷新清空,需重新 prune。误删用 `prune --clear` 恢复(会清掉全部)。
+`stash` 存的是**真实 DOM 元素**而非 ref 编号,整页 tree 的 ref 重排不影响已暂存项(元素仍在页面里就持续生效)。被暂存元素**整棵子树**消失(不输出、不登记其下 ref)。会话级:页面刷新清空,需重新 stash。恢复用 `stash pop`(单个可逆,类比 git stash),全清用 `stash clear`。
 
 ## 操作后自动反馈(click/fill/focus/hover/press-key 默认开启)
 
@@ -137,7 +138,7 @@ cdp prune --clear --target ...         # 5. 清空排除,区域恢复
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only] [--scroll-to-load]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树;--scroll-to-load 固定距离滚动(向下+向上各一屏,回原位)触发懒加载再建树。带 ref 的节点若在当前视区会标 `[ref=i·屏]`,否则 `[ref=i]`——看到未标 `·屏` 就知道它不在屏上,要先滚动/`--scroll-to-load` 再操作 |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定定位器(selector + xpath)**。ref 是会话句柄,页面刷新后失效;locate 把它翻译成刷新后仍可用的定位器,供 `tree --selector-file/--xpath-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
-| `prune <refs...> [--ancestor <k>] [--target] [--clear]` | 按 ref 登记排除区域(会话级),之后的整页 tree 不再输出这些元素子树——**整页 tree 去噪**;可选 --ancestor 从叶子爬到要删的容器;无参列出已排除,--clear 清空 |
+| `stash <refs...> [--ancestor <k>] [--target]` / `stash list` / `stash pop [i]` / `stash clear` | 类比 git stash:按 ref 把整页 tree 某区域暂存藏起(之后的整页 tree 不再输出)——**整页 tree 去噪**;`list` 列出、`pop` 恢复第 i 个(默认最新)可逆、`clear` 清空;可选 --ancestor 从叶子爬到要藏的区域容器 |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈(见上) |
 | `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 填输入框并派发 input/change(selector 或 ref,--ancestor 爬父)。默认带操作后反馈 |
 | `focus <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 聚焦元素(selector 或 ref,--ancestor 爬父,配合按键用)。默认带操作后反馈 |
