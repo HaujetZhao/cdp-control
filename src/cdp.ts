@@ -140,36 +140,34 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
-/** 操作结果行 + 附唯一 selector(如有)。后续对该元素操作优先用此 selector,避免 ref 失效。 */
+/** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。 */
 function printAction(line: string, r: any): void {
-  console.log(line + (r?.selector ? '\n  selector: ' + r.selector : ''));
+  console.log(line + (r?.selector ? ` ，该元素的 selector 为: ${r.selector}` : ''));
 }
 
-/** 打印操作反馈:新增内容 / 文本变化 / tab 变化分块换行缩进,末尾给局部失效指引。fb 为 null(--no-feedback)时无输出。 */
+/** 打印操作反馈:新增内容 / 文本变化 / tab 变化分块,内容 2 空格缩进。fb 为 null(--no-feedback)时无输出。 */
 function printFeedback(fb: any): void {
   if (!fb) return;
   const out: string[] = [];
   if (fb.blocks?.length) {
-    out.push('→ 页面变化 · 新增内容:');
+    out.push('页面变化 · 新增内容:');
     for (const b of fb.blocks) {
       for (const l of b.lines) out.push('  ' + l);
       if (b.count > 1) out.push(`  (重复 ${b.count} 次,已折叠)`);
     }
   }
   if (fb.changes?.length) {
-    out.push('→ 页面变化 · 文本变化:');
+    out.push('页面变化 · 文本变化:');
     for (const c of fb.changes) out.push('  · ' + (c.before ? `${c.before} → ${c.after}` : `"${c.after}"`));
   }
   if (fb.tabs?.opened?.length) {
-    out.push('→ 新开 tab:');
+    out.push('新开 tab:');
     for (const t of fb.tabs.opened) out.push('  · ' + `${t.title || t.url} [${t.id}]`);
   }
   if (fb.tabs?.closed?.length) {
-    out.push('→ 关闭 tab:');
+    out.push('关闭 tab:');
     for (const t of fb.tabs.closed) out.push('  · ' + (t.title || t.url));
   }
-  // 局部失效指引:一个 ref 失效不代表全失效,用更大容器 ref 筛局部,别整页重 tree。
-  if (fb.blocks?.length || fb.changes?.length) out.push('→ 提示: 上方 ref 若因重渲染失效,用评论区等容器 ref 筛局部(tree --ref <容器ref>)即可,不必整页重 tree。');
   if (out.length) console.log(out.join('\n'));
 }
 

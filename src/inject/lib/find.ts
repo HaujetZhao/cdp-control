@@ -25,3 +25,9 @@ export function targetLabel(arg: OperableArg): string {
   if (arg.ref != null) return 'ref=' + arg.ref + (arg.ancestor ? `↑${arg.ancestor}` : '');
   return (arg.sel ?? '');
 }
+
+/** 找不到目标时的错误文案:ref 失效给出指引(元素可能已更新,用更高层级 ref 局部 tree),selector 未命中保持原样。 */
+export function findErrMsg(arg: OperableArg): string {
+  if (arg.ref != null) return 'ref 失效: 可能元素已更新,可用更高层级的 ref 进行 tree,查看更新后的局部区域';
+  return '未找到: ' + targetLabel(arg);
+}
