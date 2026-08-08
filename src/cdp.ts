@@ -102,8 +102,8 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 
   .option('--xpath <xp>', 'XPath(shadow 穿透,任意深度)')
   .option('--xpath-file <file>', '从文件读 xpath')
   .action(async (opts) => {
-    const sel = opts.selector ?? readOptFile(opts.selectorFile);
-    const xp = opts.xpath ?? readOptFile(opts.xpathFile);
+    const sel = readOptFile(opts.selectorFile) ?? opts.selector;
+    const xp = readOptFile(opts.xpathFile) ?? opts.xpath;
     const r = await api.tree(await needTarget(opts.target), { selector: sel, xpath: xp });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));
@@ -113,7 +113,7 @@ targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)')
   .argument('[path]', 'xpath(可选,与 --xpath-file 二选一;含空格/特殊字符用文件传更稳)')
   .option('--xpath-file <file>', '从文件读 xpath')
   .action(async (path, opts) => {
-    const xp = (path as string) ?? readOptFile(opts.xpathFile);
+    const xp = readOptFile(opts.xpathFile) ?? (path as string);
     if (!xp) throw new Error('需传 xpath 位置参数或 --xpath-file');
     const r = await api.xpath(await needTarget(opts.target), xp);
     if (!r.count) {
