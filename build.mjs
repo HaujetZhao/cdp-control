@@ -27,21 +27,22 @@ async function main() {
   execSync('npx tsc --noEmit', { stdio: 'inherit', cwd: __dirname });
 
   // —— Node 侧:转译 CJS,不打包 ——
-  const nodeEntries = readdirSync(src).filter(f => f.endsWith('.ts'));
+  const nodeEntries = readdirSync(src).filter(f => f.endsWith('.ts') && f !== 'cdp.ts');
   if (nodeEntries.length) {
-    console.log(`▶ Node 侧:${nodeEntries.join(', ')} → dist/`);
+    console.log(`▶ Node 侧(转译):${nodeEntries.join(', ')} → dist/`);
     await build({
       entryPoints: nodeEntries.map(f => join(src, f)),
-      outdir: dist,
-      bundle: false,
-      format: 'cjs',
-      platform: 'node',
-      target: 'node21',
-      sourcemap: false,
+      outdir: dist, bundle: false, format: 'cjs', platform: 'node', target: 'node21', sourcemap: false,
     });
-  } else {
-    console.log('▶ Node 侧:(暂无 src/*.ts,跳过)');
   }
+  console.log('▶ Node 侧(入口 bundle): cdp.ts → dist/cdp.js');
+  await build({
+    entryPoints: [join(src, 'cdp.ts')],
+    outfile: join(dist, 'cdp.js'),
+    bundle: true, format: 'cjs', platform: 'node', target: 'node21', sourcemap: false,
+    external: ['node:fs', 'node:path'],
+    logLevel: 'info',
+  });
 
   // —— 注入页侧:每个顶层入口 bundle 成 IIFE ——
   const injectDir = join(src, 'inject');
