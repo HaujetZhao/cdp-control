@@ -60,15 +60,15 @@ declare const __CDP_ARG__: TreeArgs;
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
       text, inter,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
-      kids: [], size: 0, hasText: false,
+      kids: [], size: 0, hasText: false, agg: false,
     };
     for (const k of childrenOf(el as Element)) {
       const kt = k instanceof Element ? k.tagName.toUpperCase() : '';
       if (DROP.has(kt)) continue;
       node.kids.push(simplify(k, depth + 1));
     }
-    if (!text && !node.kids.length) text = strip(grabText(el, 0)).slice(0, 120);
-    if (!text && (inter || (isEl && el.tagName === 'IMG')) && (el as HTMLElement).innerText) text = strip((el as HTMLElement).innerText).slice(0, 80);
+    if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
+    if (!text && (inter || (isEl && el.tagName === 'IMG')) && (el as HTMLElement).innerText) { text = strip((el as HTMLElement).innerText).slice(0, 80); node.agg = true; }
     node.text = text;
     node.isContent = !!text || (isEl && el.tagName === 'IMG') || inter;
     node.size = 1 + node.kids.reduce((a, k) => a + k.size, 0);

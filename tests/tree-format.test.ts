@@ -84,3 +84,11 @@ test('markText: 自身文本或后代文本都置 hasText=true', () => {
   assert.equal(markText(empty), false);
   assert.equal(empty.hasText, false);
 });
+
+test('formatTree: 聚合文本节点(agg)输出 ~ 前缀,字面文本不加', () => {
+  const agg = mk({ tag: 'a', isContent: true, text: '首页', inter: true, agg: true, size: 1 });
+  const lit = mk({ tag: 'a', isContent: true, text: '下载', inter: true, size: 1 });
+  const root = mk({ tag: 'nav', isContent: false, size: 3, kids: [agg, lit] });
+  markText(root);
+  assert.deepEqual(formatTree(root), ['nav', '  a ~"首页"', '  a "下载"']);
+});

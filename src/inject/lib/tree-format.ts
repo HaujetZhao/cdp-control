@@ -10,6 +10,7 @@ import { inlineable, leafText, firstTxt, isTrivialLeaf } from './tree-utils.ts';
 export interface TreeNode {
   tag: string; isContent: boolean; text: string; inter: boolean; imgAlt: string;
   kids: TreeNode[]; size: number; hasText: boolean; leafValue?: string;
+  agg?: boolean;   // 显示文本来自 innerText/grabText 兜底(聚合文本)而非直接文本节点
 }
 
 /** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代)。返回根节点结果。 */
@@ -30,13 +31,13 @@ export function formatTree(tree: TreeNode): string[] {
   const leafLabel = (n: TreeNode) => {
     let l = n.tag;
     if (n.tag === 'img' && n.imgAlt) l += ' "' + n.imgAlt.slice(0, 40) + '"';
-    else if (n.text) l += ' "' + n.text.slice(0, 60) + '"';
+    else if (n.text) l += (n.agg ? ' ~' : ' ') + '"' + n.text.slice(0, 60) + '"';
     return l;
   };
   const inlineLabel = (n: TreeNode) => {
     if (n.tag === 'img' && n.imgAlt) return 'img "' + n.imgAlt.slice(0, 20) + '"';
     if (n.leafValue) { const v = firstTxt(n.kids); return '"' + n.leafValue + (v ? ' ' + v : '') + '"'; }
-    return '"' + leafText(n).slice(0, 24) + '"';
+    return (n.agg ? '~' : '') + '"' + leafText(n).slice(0, 24) + '"';
   };
 
   function walk(n: TreeNode, depth: number, path: string[]) {
