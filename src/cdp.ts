@@ -138,18 +138,18 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
-/** 打印操作反馈:先「页面变化」标题 + 新增内容 tree 行,再摘要 + tab 变化。fb 为 null(--no-feedback)时无输出。 */
+/** 打印操作反馈:页面变化(新增内容缩进)、摘要、tab 变化,每类独立一行带标签。fb 为 null(--no-feedback)时无输出。 */
 function printFeedback(fb: any): void {
   if (!fb) return;
+  const out: string[] = [];
   if (fb.lines?.length) {
-    console.log('→ 页面变化:');
-    console.log(fb.lines.join('\n'));
+    out.push('→ 页面变化:');
+    for (const l of fb.lines) out.push('  ' + l);
   }
-  const parts: string[] = [];
-  if (fb.summary) parts.push(fb.summary);
-  if (fb.tabs?.opened?.length) parts.push('新开 tab: ' + fb.tabs.opened.map((t: any) => `${t.title || t.url} [${t.id}]`).join(' | '));
-  if (fb.tabs?.closed?.length) parts.push('关闭 tab: ' + fb.tabs.closed.map((t: any) => t.title || t.url).join(' | '));
-  if (parts.length) console.log(parts.join('; '));
+  if (fb.summary) out.push('→ 摘要: ' + fb.summary);
+  if (fb.tabs?.opened?.length) out.push('→ 新开 tab: ' + fb.tabs.opened.map((t: any) => `${t.title || t.url} [${t.id}]`).join('\n            '));
+  if (fb.tabs?.closed?.length) out.push('→ 关闭 tab: ' + fb.tabs.closed.map((t: any) => t.title || t.url).join('\n            '));
+  if (out.length) console.log(out.join('\n'));
 }
 
 /** 日志用目标描述:selector 或 ref=12(↑3 表示爬 3 层父)。 */
