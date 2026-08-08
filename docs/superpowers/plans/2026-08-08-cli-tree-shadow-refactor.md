@@ -136,8 +136,8 @@ export function shadowContexts(): (Document | ShadowRoot)[] {
 Run: `npm run build`,然后:
 - `node dist/cdp.js tree --target bili --xpath "//bili-comment-renderer" | head -5`
   Expected: 首条为 `a "林韵子墨"`(文档序第一条,不再是最后一条 `bili_15248316234`)。
-- `node dist/cdp.js tree --target bili --xpath "//bili-comments//bili-comment-renderer" | head -5`
-  Expected: 也能命中(首条评论),不再报「未命中」。
+- `node dist/cdp.js tree --target bili --xpath "//bili-comments" | head -3` → 命中评论区(树穿透显示全部评论)。
+- 说明:`//bili-comments//bili-comment-renderer` 这类**跨 shadow 组合路径不可行**(`document.evaluate` 不穿透 shadow 做组合),属 xpath 固有限制,预期未命中;单元素 `//bili-comment-renderer` 已稳定取文档序第一条。
 
 - [ ] **Step 3: Commit**
 
