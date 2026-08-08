@@ -85,14 +85,17 @@ sites/
 
 ## 感知页面(核心:`tree`)
 
-`tree`:将整页以 **缩进+折叠** 输出紧凑树,省 token 地含 **结构+文本+`[ref]`**,穿透 shadow。默认整页一次给全(不做可见性判定)。
+`tree`:将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。
 
-**粒度**:
-- `tree`(默认):整页
-- `tree --xpath-file <f>` / `--selector-file <f>`:只建指定区域(shadow 穿透,取首个匹配,selector 优先)
-- `tree --visible-only`:只看当前视口内可见(非 display:none/opacity:0/visibility:hidden)。**只看当前滚动位置**,要别处先滚动再 tree
+**参数**:
 
-**铁律**:初次跑完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
+| 参数 | 作用 |
+|---|---|
+| (默认) | 整页 |
+| `--xpath-file <f>` / `--selector-file <f>` | 筛选指定区域 |
+| `--visible-only` | 筛选当前视口内可见元素 |
+
+**铁律**:初次查看页面要看完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
 
 **定位**:层数=数折叠链(`div>div>div`=3层);但同类序号 `n` **不能**从 tree 反推(含无文本兄弟)。已带 `[ref]` 直接 ref 操作。拿准序号:①F12 Copy full XPath ②文本谓词 `//*[contains(.,'…')]` ③文本叶推父链(最稳)④`cdp xpath` 分步诊断。
 
@@ -102,9 +105,9 @@ sites/
 - `//text()="X"` 是布尔非节点集,等值写 `//*[.="X"]`
 - xpath/selector 一律从文件读(Git Bash 会把行首 `//` 改 `/`)
 
-**shadow + ref**:
-- 宿主标 `[shadow]`(如 `bili-comments[shadow]`)其子树 CSS 穿透不了,定位用 `--xpath-file`
-- 操作优先 `[ref=i]`(`click {ref:i}`,零 XPath、穿透 shadow);XPath 兜底批量/精确查询
+**操作(ref)**:
+- tree 里标 `[shadow]` 的块(如 `bili-comments[shadow]`)CSS 定位不到 → 操作改用 ref 或 `--xpath-file`
+- 操作优先 `[ref=i]`(`click {ref:i}`,零 XPath,shadow 内也能定位);XPath 兜底批量/精确查询
 - ref 是会话句柄:存 `window.__cdpRefs`,页面刷新失效,每次 tree 重建。**每回合先 tree 拿 ref 再操作**,刷新/动态加载后序号漂移是预期
 
 ## Quick Reference
