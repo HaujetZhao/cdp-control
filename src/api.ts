@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, hoverExpr, treeExpr, xpathExpr } from './inject-loader';
+import { inject, treeExpr, xpathExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 
@@ -76,14 +76,22 @@ export async function xpath(target: Target, path: string): Promise<any> {
   return invoke(target, xpathExpr(path));
 }
 
-/** 点击 target 页面上匹配 selector 的元素。 */
-export async function click(target: Target, selector: string): Promise<any> {
-  return invoke(target, inject('click', { sel: selector }));
+/** 操作目标:selector 字符串,或 {ref:n} 用 tree 登记的引用序号(穿透 shadow)。 */
+export type TargetArg = string | { ref: number };
+
+/** 归一化操作目标为注入侧参数:字符串→{sel},对象→{ref}。 */
+function normArg(a: TargetArg): { sel?: string; ref?: number } {
+  return typeof a === 'string' ? { sel: a } : a;
 }
 
-/** 向 target 页面输入框填值(派发 input/change)。 */
-export async function fill(target: Target, selector: string, value: string): Promise<any> {
-  return invoke(target, inject('fill', { sel: selector, value }));
+/** 点击 target 页面上匹配 selector 或 ref 的元素。 */
+export async function click(target: Target, arg: TargetArg): Promise<any> {
+  return invoke(target, inject('click', normArg(arg)));
+}
+
+/** 向 target 页面输入框填值(按 selector 或 ref,派发 input/change)。 */
+export async function fill(target: Target, arg: TargetArg, value: string): Promise<any> {
+  return invoke(target, inject('fill', { ...normArg(arg), value }));
 }
 
 // 共享轮询原语:反复 eval 一段 JS 布尔表达式直到真值或超时。desc 用于超时报错文案。
@@ -126,9 +134,9 @@ export async function shot(target: Target, file?: string): Promise<string> {
   return out;
 }
 
-/** 聚焦 target 页面上匹配 selector 的元素。 */
-export async function focus(target: Target, selector: string): Promise<any> {
-  return invoke(target, inject('focus', { sel: selector }));
+/** 聚焦 target 页面上匹配 selector 或 ref 的元素。 */
+export async function focus(target: Target, arg: TargetArg): Promise<any> {
+  return invoke(target, inject('focus', normArg(arg)));
 }
 
 /** 返回 target 页面当前焦点元素(document.activeElement)信息,无焦点返回 null。 */
@@ -145,10 +153,10 @@ export async function pressKey(target: Target, keySpec: string): Promise<void> {
   });
 }
 
-/** 将鼠标移到 target 页面指定元素中心(触发 mouseover/mouseenter)。坐标获取那段保持不动。 */
-export async function hover(target: Target, selector: string): Promise<void> {
-  const pos = await invoke<{ ok: boolean; x: number; y: number }>(target, hoverExpr(selector));
-  if (!pos?.ok) throw new Error('未找到: ' + selector);
+/** 将鼠标移到 target 页面指定元素中心(按 selector 或 ref,触发 mouseover/mouseenter)。 */
+export async function hover(target: Target, arg: TargetArg): Promise<void> {
+  const pos = await invoke<{ ok: boolean; x: number; y: number }>(target, inject('hover', normArg(arg)));
+  if (!pos?.ok) throw new Error('未找到: ' + (typeof arg === 'string' ? arg : 'ref=' + arg.ref));
   await withPage(target, async (ws) => {
     await send(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: pos.x, y: pos.y });
   });

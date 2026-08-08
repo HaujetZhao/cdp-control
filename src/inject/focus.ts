@@ -2,13 +2,14 @@
  * focus.ts — 聚焦指定 selector 元素(入口)。参数:__CDP_ARG__.sel。
  */
 import { setResult } from './lib/result';
+import { findTarget, targetLabel } from './lib/find';
 import type { FindArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FindArgs;
 
 (() => {
-  const el = document.querySelector(__CDP_ARG__.sel) as HTMLElement | null;
-  if (!el) return setResult({ ok: false, err: '未找到: ' + __CDP_ARG__.sel });
+  const el = findTarget(__CDP_ARG__) as HTMLElement | null;
+  if (!el) return setResult({ ok: false, err: '未找到: ' + targetLabel(__CDP_ARG__) });
   el.focus();
   return setResult({ ok: true, tag: el.tagName.toLowerCase() });
 })();
