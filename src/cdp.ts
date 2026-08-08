@@ -93,13 +93,14 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector-file/--xpath-file 只建指定区域)')
+targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector-file/--xpath-file 只建指定区域,--visible-only 只输出视口内可见)')
   .option('--selector-file <file>', '从文件读 selector')
   .option('--xpath-file <file>', '从文件读 xpath')
+  .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
   .action(async (opts) => {
     const sel = readOptFile(opts.selectorFile);
     const xp = readOptFile(opts.xpathFile);
-    const r = await api.tree(await needTarget(opts.target), { selector: sel, xpath: xp });
+    const r = await api.tree(await needTarget(opts.target), { selector: sel, xpath: xp, visibleOnly: !!opts.visibleOnly });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));
   });

@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,不做可见性判定,可选 `--selector`/`--xpath`(或 `--selector-file`/`--xpath-file` 从文件读,免 shell 转义)只建指定区域;勿盲用 class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,可选 `--selector-file`/`--xpath-file` 从文件读(免 shell 转义)只建指定区域、或 `--visible-only` 只看当前视口内可见元素;勿盲用 class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -85,7 +85,7 @@ sites/
 
 ## 感知页面(核心:`tree`,唯一感知命令)
 
-`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector-file <file>` / `--xpath-file <file>` 只建指定区域(从文件读,免 shell 转义;取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。
+`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**默认不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector-file <file>` / `--xpath-file <file>` 只建指定区域(从文件读,免 shell 转义;取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--visible-only` 则切换为**只看当前视口**:只输出当前滚动位置屏幕内**几何可见且非隐藏**(display:none/opacity:0/visibility:hidden)的元素——模拟 agent"看到的当前屏幕",视口外的内容(滚走的上面、未滚到的下面)被裁掉,视口外的祖先退化为纯容器骨架。**用法**:整页感知(默认)、缩小到某区域(`--xpath-file`)、或只看当前屏(`--visible-only`)三种粒度。注意 `--visible-only` 只看当前滚动位置——想感知别的区域要先 `scroll`/按键滚过去再 tree,或仍用整页/区域模式。
 
 **⚠️ 初次感知必须全量输出,别 `| head` 截断**:`tree` 已经足够精简,`head` 几十行会丢掉中后段大量信息(尤其 B站/知乎这类长列表页,头部只是导航栏,内容在中间)。首次看页面就跑完整 `tree` 拿全量;只有**已锁定目标小块**的二次查看才用 `--selector-file`/`--xpath-file` 限定区域。截断只用于"结构已知、确认某块",不用在首次感知。`--xpath-file` 是 **shadow 穿透版**,实现为 **fontoxpath(XPath 3.1 引擎)直接跑真实 DOM**:只用一个 shadow 穿透的 domFacade(getChildNodes 把 shadowRoot 顶层子拼进宿主、parent 穿透回宿主),让 shadow DOM 对 XPath 完全透明——`/`、`//` 与**全部标准轴(`parent::`/`ancestor::`/`self::`/`following-sibling::`…)天然穿透任意层嵌套 shadow**,谓词、`[n]`、函数(XPath 3.1)全部原生支持,直接返回真实元素。可照 tree 输出的结构(含 `[shadow]` 宿主)直接写一条连续路径,如 B站 `/html/body/div[2]/div[2]/div[1]/div[6]/bili-comments//bili-comment-thread-renderer[1]//bili-comment-reply-renderer//bili-rich-text//p/span` 直达评论文本;`[n]` 为标准 XPath 位置语义——候选须是其**逻辑父的拼接子**中匹配本步 node test 的第 n 个(1 基;shadow 子取宿主作逻辑父),如 `//bili-comments//bili-comment-thread-renderer[2]` 取第 2 条评论。**⚠️ 别照 tree 缩进反推 `[n]`**:tree 会折叠无文本的纯包装节点(一行 `div > div > div` 不代表真实 DOM 的三层),而 `div[n]` 是真实 DOM 里**含无文本兄弟在内**的第 n 个 div 子,tree 把无文本的都省了,所以从缩进反推位置路径基本必错。要精确定位用:①F12 右键 Copy full XPath(可直接用)②文本+谓词(如 `//*[contains(.,'…')]`)③**从文本叶向上推父链**(反推最稳):先取**最内层**含该文本的叶 `//*[contains(.,'…') and not(.//*[contains(.,'…')])]`,再 `parent::`/`ancestor::div[N]`/`ancestor-or-self::` 向上取容器。**⚠️ 别用 `[1]`**:`//*[contains(.,'…')][1]` 的 `[1]` 是 XPath 谓词、按文档序取**最外层**(html/body)——因为祖先的聚合文本(innerText 整段)也含 '…',`[1]` 选到的是 html 而非文本叶,再爬祖先只会得到整页级 junk。加 `and not(.//*[contains(.,'…')])`(自身含该文本、且任一子级都不含)才真正锁到最深处那格。④用 `cdp xpath` 分步诊断的"当时候选"逐段确认。**DevTools 右键 Copy full XPath 复制的完整路径可直接用**(含 `//` 的 shadow 穿透段);若复制的路径未命中,可用 `cdp xpath` 分步诊断定位断在哪一步。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。另注意 `//text()="X"` 这种"路径后直接等号"是**布尔 XPath**(返回 true/false,不返回节点集,现已按无命中处理不报错)——要做等值匹配应写 `//text()[.="X"]` 或 `//*[.="X"]`。**一律从文件读**:`cdp xpath` 直接以位置参数传 xpath 文件(`xpath <file>`),`tree` 用 `--selector-file`/`--xpath-file`(已删内联参数——Git Bash 会把行首 `//` 静默转成 `/`,如 `//h1`→`/h1`,内联必错);文件内容含 `//`、`[`、`]`、`"`、`'`、空格等都不受影响。
 
@@ -107,7 +107,7 @@ sites/
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `tree [--target] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector-file`/`--xpath-file` 可选,只建指定区域(取第一个匹配,selector 优先);`--xpath-file` 为 shadow 穿透版(XPath 3.1 引擎直接跑真实 DOM,递归任意深度);xpath/selector **一律从文件读**(免 shell 转义,行首 `//` 内联会被 shell 静默改) |
+| `tree [--target] [--selector-file <file>] [--xpath-file <file>] [--visible-only]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector-file`/`--xpath-file` 可选,只建指定区域(取第一个匹配,selector 优先);`--xpath-file` 为 shadow 穿透版(XPath 3.1 引擎直接跑真实 DOM,递归任意深度);`--visible-only` 只输出当前视口内几何可见且非隐藏的元素(模拟看到当前屏幕,视口外的裁掉);xpath/selector **一律从文件读**(免 shell 转义,行首 `//` 内联会被 shell 静默改) |
 | `xpath <file> [--target]` | **按 xpath 查元素(shadow 穿透,含分步诊断)**:打印全部命中(标签/文本/稳定 selector);未命中时打印**分步诊断**,精确指出断在哪一步、当时候选是谁——用于排查 DevTools 复制的路径为何不命中。xpath 直接以位置参数传**文件路径**(从文件读,免 shell 转义;行首 `//` 会被 shell 静默改成 `/`,内联必错) |
 | `click <selector> [--ref <n>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow) |
 | `fill <selector> <值> [--ref <n>] [--target]` | 填输入框并派发 input/change(selector 或 ref) |

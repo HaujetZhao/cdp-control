@@ -64,11 +64,11 @@ export async function navigate(target: Target, url: string): Promise<void> {
   });
 }
 
-export interface TreeOpts { selector?: string; xpath?: string }
+export interface TreeOpts { selector?: string; xpath?: string; visibleOnly?: boolean }
 
-/** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。 */
+/** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。visibleOnly 只输出视口内可见元素。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
-  return invoke(target, treeExpr(opts.selector, opts.xpath), 30000);
+  return invoke(target, treeExpr(opts.selector, opts.xpath, opts.visibleOnly), 30000);
 }
 
 /** 按 xpath 查元素(注入侧 xpathEval 解析,shadow 穿透,返回命中列表 + 分步诊断)。 */
