@@ -93,9 +93,6 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('snapshot', '提取可交互元素清单(标签/文本/选择器/坐标)')
-  .action(async (opts) => { const v = await api.snapshot(await needTarget(opts.target)); if (!Array.isArray(v) || !v.length) { console.log('(没有可交互元素)'); return; } console.log(v.map((e: any, i: number) => `${i + 1}. [${e.tag}] "${e.text || e.placeholder || ''}"  ${e.href || ''}  sel=${e.selector}`).join('\n')); });
-
 targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector/--xpath 只建指定区域)')
   .option('--selector <sel>', 'CSS 选择器')
   .option('--selector-file <file>', '从文件读 selector')
@@ -147,12 +144,6 @@ targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab').argume
 
 targetCmd('hover', '鼠标移到元素上').argument('<selector>', 'selector')
   .action(async (sel, opts) => { await api.hover(await needTarget(opts.target), sel); console.log(`已悬停: ${sel}`); });
-
-targetCmd('outline', '页面大纲:标题层级 + 关键链接')
-  .action(async (opts) => { const o = await api.outline(await needTarget(opts.target)); console.log(`标题: ${o.title}\nURL: ${o.url}\n`); console.log('— 标题层级 —'); console.log(o.headings.map((h: any) => '  '.repeat(Math.max(0, h.level - 1)) + `H${h.level}: ${h.text}  sel=${h.selector}`).join('\n') || '(无标题)'); console.log('\n— 关键链接 —'); console.log(o.links.map((l: any, i: number) => `${i + 1}. ${l.text}  ${l.href}`).join('\n') || '(无)'); });
-
-targetCmd('content', '提取主内容文本(去导航/页脚)')
-  .action(async (opts) => { const c = await api.content(await needTarget(opts.target)); console.log(`标题: ${c.title}\nURL: ${c.url}\n`); console.log(c.text || '(无正文)'); });
 
 targetCmd('shot', '截图').option('-f, --file <file>', '输出文件')
   .action(async (opts) => { const file = await api.shot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });

@@ -1,6 +1,6 @@
 /**
  * genSel.ts — 为 DOM 元素生成唯一选择器(优先 id,否则 tag:nth-of-type 路径)。
- * 被 snapshot / get-focus / outline 复用,打包打进各入口。
+ * 被 get-focus / xpath 复用,打包打进各入口。
  */
 
 /** 生成唯一 CSS 选择器;无效元素返回 null。 */

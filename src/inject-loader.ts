@@ -24,7 +24,7 @@ function read(name: string): string {
 
 /**
  * 生成注入表达式。
- * @param name 注入入口名(对应 dist/inject/<name>.js),如 'tree' / 'snapshot' / 'click'。
+ * @param name 注入入口名(对应 dist/inject/<name>.js),如 'tree' / 'xpath' / 'click'。
  * @param args 可选参数对象,序列化为 JSON 前置到 `var __CDP_ARG__`。无参数则不前置。
  */
 export function inject(name: string, args?: unknown): string {

@@ -64,11 +64,6 @@ export async function navigate(target: Target, url: string): Promise<void> {
   });
 }
 
-/** 提取 target 页面可交互元素清单。 */
-export async function snapshot(target: Target): Promise<any> {
-  return invoke(target, inject('snapshot'), 30000);
-}
-
 export interface TreeOpts { selector?: string; xpath?: string }
 
 /** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。 */
@@ -141,16 +136,6 @@ export async function getFocus(target: Target): Promise<any> {
   return invoke(target, inject('get-focus'));
 }
 
-/** 提取 target 页面大纲:标题层级(h1-h6)+ 关键链接。 */
-export async function outline(target: Target): Promise<any> {
-  return invoke(target, inject('outline'));
-}
-
-/** 提取 target 页面主内容文本(去导航/页脚/表单,截断)。 */
-export async function content(target: Target): Promise<any> {
-  return invoke(target, inject('content'), 30000);
-}
-
 /** 在 target 页面按真实键盘事件(组合键用 Ctrl+Shift+A 写法)。 */
 export async function pressKey(target: Target, keySpec: string): Promise<void> {
   const { key, code, kc, modifiers } = parseKeySpec(keySpec);
@@ -172,7 +157,7 @@ export async function hover(target: Target, selector: string): Promise<void> {
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  snapshot, tree, xpath, click, fill, waitFor, waitForFn, shot, focus, getFocus, outline, content, pressKey, hover,
+  tree, xpath, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };
