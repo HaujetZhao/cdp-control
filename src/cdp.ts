@@ -126,27 +126,49 @@ const refOpt = (c: any) => c
   .option('--ref <n>', '按 tree 输出的 ref 序号操作(穿透 shadow,与 selector 二选一)')
   .option('--ancestor <n>', '按 --ref 定位后向上爬 N 层父级再操作(默认 0;把内容叶子抬到区域容器)');
 
+/** 操作后自动反馈 option(click/fill/focus/hover/press-key 共用)。默认开启,等 feedbackDelay 后回报新增内容 + tab 变化。 */
+const feedbackOpt = (c: any) => c
+  .option('--no-feedback', '关闭操作后自动反馈(不等待、不观察、不 diff tab)')
+  .option('--feedback-delay <ms>', '操作后等待时长,毫秒(默认 1000;给异步/懒加载内容出现留时间)', (v: string) => parseInt(v, 10), 1000);
+
+/** 组装反馈配置(供 api 动作方法):--no-feedback 或 --feedback-delay。 */
+const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } => ({
+  noFeedback: !!opts.noFeedback,
+  feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
+});
+
+/** 打印操作反馈:先新增内容 tree 行,再摘要 + tab 变化。fb 为 null(--no-feedback)时无输出。 */
+function printFeedback(fb: any): void {
+  if (!fb) return;
+  if (fb.lines?.length) console.log(fb.lines.join('\n'));
+  const parts: string[] = [];
+  if (fb.summary) parts.push(fb.summary);
+  if (fb.tabs?.opened?.length) parts.push('新开 tab: ' + fb.tabs.opened.map((t: any) => t.title || t.url).join(' | '));
+  if (fb.tabs?.closed?.length) parts.push('关闭 tab: ' + fb.tabs.closed.map((t: any) => t.title || t.url).join(' | '));
+  if (parts.length) console.log(parts.join('; '));
+}
+
 /** 日志用目标描述:selector 或 ref=12(↑3 表示爬 3 层父)。 */
 const argLabel = (a: string | { ref: number; ancestor?: number }): string =>
   typeof a === 'string' ? a : 'ref=' + a.ref + (a.ancestor ? `↑${a.ancestor}` : '');
 
-refOpt(targetCmd('click', '点击元素')).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg); console.log(`已点击: ${argLabel(arg)} (${r.tag})`); });
+feedbackOpt(refOpt(targetCmd('click', '点击元素'))).argument('[selector]', 'selector 或 --ref')
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg, feedbackCfg(opts)); console.log(`已点击: ${argLabel(arg)} (${r.tag})`); printFeedback(r.feedback); });
 
-refOpt(targetCmd('fill', '填输入框并触发 input/change')).argument('[selector]', 'selector 或 --ref').argument('<value>', '值')
-  .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); await api.fill(await needTarget(opts.target), arg, val); console.log(`已填入: ${argLabel(arg)} ← ${val}`); });
+feedbackOpt(refOpt(targetCmd('fill', '填输入框并触发 input/change'))).argument('[selector]', 'selector 或 --ref').argument('<value>', '值')
+  .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.fill(await needTarget(opts.target), arg, val, feedbackCfg(opts)); console.log(`已填入: ${argLabel(arg)} ← ${val}`); printFeedback(r.feedback); });
 
-refOpt(targetCmd('focus', '聚焦元素')).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg); console.log(`已聚焦: ${argLabel(arg)} (${r.tag})`); });
+feedbackOpt(refOpt(targetCmd('focus', '聚焦元素'))).argument('[selector]', 'selector 或 --ref')
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg, feedbackCfg(opts)); console.log(`已聚焦: ${argLabel(arg)} (${r.tag})`); printFeedback(r.feedback); });
 
 targetCmd('get-focus', '查看当前焦点元素在哪')
   .action(async (opts) => { const f = await api.getFocus(await needTarget(opts.target)); if (!f) { console.log('(当前无焦点元素)'); return; } console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`); });
 
-targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab').argument('<key>', '按键')
-  .action(async (key, opts) => { await api.pressKey(await needTarget(opts.target), key); console.log(`已按键: ${key}`); });
+feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab')).argument('<key>', '按键')
+  .action(async (key: string, opts: any) => { const r = await api.pressKey(await needTarget(opts.target), key, feedbackCfg(opts)); console.log(`已按键: ${key}`); printFeedback(r?.feedback); });
 
-refOpt(targetCmd('hover', '鼠标移到元素上')).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); await api.hover(await needTarget(opts.target), arg); console.log(`已悬停: ${argLabel(arg)}`); });
+feedbackOpt(refOpt(targetCmd('hover', '鼠标移到元素上'))).argument('[selector]', 'selector 或 --ref')
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.hover(await needTarget(opts.target), arg, feedbackCfg(opts)); console.log(`已悬停: ${argLabel(arg)}`); printFeedback(r?.feedback); });
 
 targetCmd('shot', '截图').option('-f, --file <file>', '输出文件')
   .action(async (opts) => { const file = await api.shot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });
