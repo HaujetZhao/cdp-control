@@ -88,8 +88,9 @@ sites/
 `tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector-file <file>` / `--xpath-file <file>` 只建指定区域(从文件读,免 shell 转义;取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath-file` 是 **shadow 穿透版**,实现为 **fontoxpath(XPath 3.1 引擎)直接跑真实 DOM**:只用一个 shadow 穿透的 domFacade(getChildNodes 把 shadowRoot 顶层子拼进宿主、parent 穿透回宿主),让 shadow DOM 对 XPath 完全透明——`/`、`//` 与**全部标准轴(`parent::`/`ancestor::`/`self::`/`following-sibling::`…)天然穿透任意层嵌套 shadow**,谓词、`[n]`、函数(XPath 3.1)全部原生支持,直接返回真实元素。可照 tree 输出的结构(含 `[shadow]` 宿主)直接写一条连续路径,如 B站 `/html/body/div[2]/div[2]/div[1]/div[6]/bili-comments//bili-comment-thread-renderer[1]//bili-comment-reply-renderer//bili-rich-text//p/span` 直达评论文本;`[n]` 为标准 XPath 位置语义——候选须是其**逻辑父的拼接子**中匹配本步 node test 的第 n 个(1 基;shadow 子取宿主作逻辑父),如 `//bili-comments//bili-comment-thread-renderer[2]` 取第 2 条评论。**⚠️ 别照 tree 缩进反推 `[n]`**:tree 会折叠无文本的纯包装节点(一行 `div > div > div` 不代表真实 DOM 的三层),而 `div[n]` 是真实 DOM 里**含无文本兄弟在内**的第 n 个 div 子,tree 把无文本的都省了,所以从缩进反推位置路径基本必错。要精确定位用:①F12 右键 Copy full XPath(可直接用)②文本+谓词(如 `//*[contains(.,'…')]`)③**从文本叶向上推父链**(反推最稳):先取**最内层**含该文本的叶 `//*[contains(.,'…') and not(.//*[contains(.,'…')])]`,再 `parent::`/`ancestor::div[N]`/`ancestor-or-self::` 向上取容器。**⚠️ 别用 `[1]`**:`//*[contains(.,'…')][1]` 的 `[1]` 是 XPath 谓词、按文档序取**最外层**(html/body)——因为祖先的聚合文本(innerText 整段)也含 '…',`[1]` 选到的是 html 而非文本叶,再爬祖先只会得到整页级 junk。加 `and not(.//*[contains(.,'…')])`(自身含该文本、且任一子级都不含)才真正锁到最深处那格。④用 `cdp xpath` 分步诊断的"当时候选"逐段确认。**DevTools 右键 Copy full XPath 复制的完整路径可直接用**(含 `//` 的 shadow 穿透段);若复制的路径未命中,可用 `cdp xpath` 分步诊断定位断在哪一步。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。另注意 `//text()="X"` 这种"路径后直接等号"是**布尔 XPath**(返回 true/false,不返回节点集,现已按无命中处理不报错)——要做等值匹配应写 `//text()[.="X"]` 或 `//*[.="X"]`。**一律从文件读**:`cdp xpath` 直接以位置参数传 xpath 文件(`xpath <file>`),`tree` 用 `--selector-file`/`--xpath-file`(已删内联参数——Git Bash 会把行首 `//` 静默转成 `/`,如 `//h1`→`/h1`,内联必错);文件内容含 `//`、`[`、`]`、`"`、`'`、空格等都不受影响。
 
 - **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。**带 shadowRoot 的宿主节点 tag 会追加 `[shadow]`**(如 `bili-comments[shadow]`、`bili-rich-text[shadow]`):表示其下的子树来自 shadow DOM,**CSS 选择器不能穿透**,要定位这些子树下的元素须用 `--xpath-file`(shadow 穿透版),别直接拿 tree 里的标签反推 CSS 选择器。
-- 想**操作**(点/填)→ 用 `tree --xpath-file` 圈到目标块、按 tree 结构构建 xpath 定位,或用 `cdp xpath` 拿该元素的稳定 selector。
+- 想**操作**(点/填)→ **优先用 ref**:tree 输出里带 `[ref=i]` 的项,直接用 `click {ref:i}` / `click --ref i` 操作,**零 XPath、穿透 shadow**(ref 是登记的真实元素引用,不生成选择器字符串)。CSS selector 穿不透 shadow,而 ref 能——这是操作 shadow 内元素(如 B站评论按钮、web-app 自定义组件里的输入框)的**主路径**。XPath 兜底"批量/精确查询"(取所有作者、第 N 条、正则匹配)。
 - `tree` 不带状态前缀(无 `[看]`/`[架]`/`[X]`),只看文本与结构。
+- **ref 只标注在可操作叶**(interactive 或有直接文本的节点),纯包装节点/`[shadow]` 宿主不标——看到 `[ref=i]` 就能直接点。ref 是**会话内句柄**:存页面 `window.__cdpRefs`,页面刷新即失效;每次 `tree` 都会重建 ref 序号。所以**每回合先 tree 拿 ref 再操作**,跨回合/刷新/动态加载后序号漂移是预期,别记死。
 - 结论:**感知一律走 `tree`**(唯一感知命令)。
 
 ## Quick Reference
@@ -106,12 +107,12 @@ sites/
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `tree [--target] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector-file`/`--xpath-file` 可选,只建指定区域(取第一个匹配,selector 优先);`--xpath-file` 为 shadow 穿透版(XPath 3.1 引擎直接跑真实 DOM,递归任意深度);xpath/selector **一律从文件读**(免 shell 转义,行首 `//` 内联会被 shell 静默改) |
 | `xpath <file> [--target]` | **按 xpath 查元素(shadow 穿透,含分步诊断)**:打印全部命中(标签/文本/稳定 selector);未命中时打印**分步诊断**,精确指出断在哪一步、当时候选是谁——用于排查 DevTools 复制的路径为何不命中。xpath 直接以位置参数传**文件路径**(从文件读,免 shell 转义;行首 `//` 会被 shell 静默改成 `/`,内联必错) |
-| `click <selector> [--target]` | 点击元素(selector 用 `cdp xpath` 输出的稳定 selector) |
-| `fill <selector> <值> [--target]` | 填输入框并派发 input/change |
-| `focus <selector> [--target]` | 聚焦元素(配合按键用) |
+| `click <selector> [--ref <n>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow) |
+| `fill <selector> <值> [--ref <n>] [--target]` | 填输入框并派发 input/change(selector 或 ref) |
+| `focus <selector> [--ref <n>] [--target]` | 聚焦元素(selector 或 ref,配合按键用) |
 | `get-focus [--target]` | 查看当前焦点元素在哪 |
 | `press-key <键> [--target]` | 真实按键/组合键,如 `Enter`、`Tab`、`Ctrl+Shift+A` |
-| `hover <selector> [--target]` | 鼠标移到元素上(触发 mouseover/mouseenter) |
+| `hover <selector> [--ref <n>] [--target]` | 鼠标移到元素上(selector 或 ref,触发 mouseover/mouseenter) |
 | `shot [--file out.png] [--target]` | 截图 |
 | `logs [--target] [--level error,warn] [--since <ms>] [--json]` | 读 target 控制台日志(见下方「读控制台日志」) |
 | `listen` | 前台运行控制台监听 daemon(常驻后台,一般不手动调) |
@@ -188,13 +189,17 @@ await cdp.close(t);
 | `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版(拼接树模型,`/`与`//`都跨任意层 shadow,支持 `[n]` 标准位置索引(逻辑父下第 n 个匹配兄弟)与 `[contains(...)]` 谓词,递归任意深度) |
 | `cdp.xpath(target, path)` | 对象,字符串 | 按 xpath 查元素(shadow 穿透):`{count, matches:[{tag,text,selector}], trace:[{text,axis,input,matched,sample?}]}`;`count===0` 为未命中,`trace` 含分步诊断 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
+| `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 tree 输出的 ref 序号点真实元素(穿透 shadow,零 XPath) |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
+| `cdp.fill(target, {ref: 12}, value)` | 对象,`{ref:n}`,字符串 | 按 ref 填值(穿透 shadow) |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
 | `cdp.waitForFn(target, jsExpr, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(等 JS 布尔表达式为真,超时抛错) |
 | `cdp.focus(target, selector)` | 对象,字符串 | 聚焦结果 |
+| `cdp.focus(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 聚焦(穿透 shadow) |
 | `cdp.getFocus(target)` | 对象 | 焦点元素信息或 null |
 | `cdp.pressKey(target, "Ctrl+Shift+A")` | 对象,字符串 | — |
 | `cdp.hover(target, selector)` | 对象,字符串 | — |
+| `cdp.hover(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 悬停(穿透 shadow) |
 | `cdp.shot(target, file?)` | 对象,字符串可选 | 截图文件路径 |
 | `cdp.logs(target, opts?)` | 对象,`{level,since}` | 控制台日志条目数组(自动拉起 daemon) |
 
