@@ -85,7 +85,7 @@ sites/
 
 ## 感知页面(核心:`tree`,唯一感知命令)
 
-`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**:对 document + 各 shadowRoot 的顶层子元素各求值一次取首个命中,所以能定位深嵌 web component 的区域(如 B站 `//bili-rich-text`)。**xpath/selector 含 `"`、`//`、`[contains(...)]` 等 shell 难转义的字符时,改存进文件用 `--xpath-file <file>` / `--selector-file <file>` 传**(内联与文件同给时内联优先)。
+`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**:递归穿透任意深度 shadow DOM(各 shadowRoot 顶层子元素按文档序求值),深层元素也能按文档序取首个命中(如 B站 `//bili-comment-renderer` 取到第一条评论);注意 `//a//b` 这类**跨 shadow 组合路径不可行**(xpath 不跨 shadow 组合)。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。**xpath/selector 含 `"`、`//`、`[contains(...)]` 等 shell 难转义的字符时,改存进文件用 `--xpath-file <file>` / `--selector-file <file>` 传**(内联与文件同给时内联优先)。
 
 - **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。
 - **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。
@@ -95,7 +95,7 @@ sites/
 
 ## Quick Reference
 
-所有命令可选 `--target <匹配>`(target id 或 url/title 子串;不传则自动选第一个普通网页)。
+所有命令可选 `--target <匹配>`(target id 或 url/title 子串;不传则自动选第一个普通网页)。每个命令支持 `--help`/`-h` 查看自身用法(顶层 `cdp --help` 或 `cdp help` 看全部)。命令名统一 **kebab-case**。
 
 | 子命令 | 作用 |
 |---|---|
@@ -106,14 +106,14 @@ sites/
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
-| `tree [--target] [--selector <sel>] [--xpath <xp>] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector`/`--xpath`(或从文件 `--selector-file`/`--xpath-file` 读,省 shell 转义)可选,只建指定区域(取第一个匹配,selector 优先);`--xpath` 为 shadow 穿透版(能命中深嵌 web component 的区域);内联与文件同给时内联优先 |
+| `tree [--target] [--selector <sel>] [--xpath <xp>] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector`/`--xpath`(或从文件 `--selector-file`/`--xpath-file` 读,省 shell 转义)可选,只建指定区域(取第一个匹配,selector 优先);`--xpath` 为 shadow 穿透版(递归任意深度,深层元素按文档序取首个命中);内联与文件同给时内联优先 |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
 | `fill <selector> <值> [--target]` | 填输入框并派发 input/change |
 | `focus <selector> [--target]` | 聚焦元素(配合按键用) |
-| `get_focus [--target]` | 查看当前焦点元素在哪 |
-| `press_key <键> [--target]` | 真实按键/组合键,如 `Enter`、`Tab`、`Ctrl+Shift+A` |
+| `get-focus [--target]` | 查看当前焦点元素在哪 |
+| `press-key <键> [--target]` | 真实按键/组合键,如 `Enter`、`Tab`、`Ctrl+Shift+A` |
 | `hover <selector> [--target]` | 鼠标移到元素上(触发 mouseover/mouseenter) |
 | `shot [--file out.png] [--target]` | 截图 |
 | `logs [--target] [--level error,warn] [--since <ms>] [--json]` | 读 target 控制台日志(见下方「读控制台日志」) |
@@ -189,7 +189,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
-| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版 |
+| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版(递归任意深度) |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |

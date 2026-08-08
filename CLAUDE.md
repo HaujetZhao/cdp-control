@@ -8,15 +8,15 @@
 本项目的 `dist/`(实际运行产物)不提交 git,改动源码后需重建:
 
 ```bash
-npm install      # 首次:装 esbuild / typescript / @types/node
+npm install      # 首次:装 esbuild / typescript / @types/node / commander
 npm run build    # tsc --noEmit(类型检查) + esbuild(编译 + 打包注入脚本)
 npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
 ```
 
 `npm run build` 产出的 `dist/` 结构:
 ```
-dist/cdp.js              入口(require.main 守卫,组装 api + CLI)
-dist/*.js                其余 Node 侧(api/transport/monitor/browser/inject-loader/cli-args/keys)
+dist/cdp.js              入口 bundle(commander + 全部 src 模块,自包含:拷走 dist 即可运行)
+dist/*.js                其余 Node 侧(api/transport/monitor/browser/inject-loader/keys,转译保留)
 dist/inject/*.js         注入到浏览器页面跑的 JS(esbuild 打包成自包含 IIFE)
 ```
 
@@ -24,7 +24,7 @@ dist/inject/*.js         注入到浏览器页面跑的 JS(esbuild 打包成自�
 
 | 目录 | 内容 | 运行环境 | 编译 |
 |---|---|---|---|
-| `src/*.ts` | Node 侧(连接 CDP、CLI、api、纯函数模块) | Node | esbuild 转译 CJS(不打包) |
+| `src/*.ts` | Node 侧(连接 CDP、CLI、api、纯函数模块) | Node | `src/cdp.ts` 入口 esbuild bundle(含 commander)→ `dist/cdp.js`;其余转译 CJS(不打包) |
 | `src/inject/*.ts` | 注入浏览器页面执行的 JS(入口) | 浏览器(DOM lib) | esbuild bundle 成 IIFE → `dist/inject/` |
 | `src/inject/lib/` | 注入侧共享模块(genSel/result/arg/monitor-inject/tree-utils/tree-format/find-root) | 浏览器 | 打进各入口 |
 
@@ -49,7 +49,7 @@ Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注�
 ## 测试
 
 - `tests/*.test.ts` 用 Node 内置 `node:test` + `node:assert/strict`,零运行时依赖。
-- 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/inject/lib/tree-format.ts`(formatTree/markText,结构树折叠内联的纯变换)、`src/keys.ts`(parseKeySpec)、`src/cli-args.ts`(parseArgs)、`src/transport.ts`(resolveTarget)。
+- 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/inject/lib/tree-format.ts`(formatTree/markText,结构树折叠内联的纯变换)、`src/keys.ts`(parseKeySpec)、`src/transport.ts`(resolveTarget)。
 - 注入侧 DOM 相关逻辑(如 tree 的 simplify(DOM 采集)、find-root 的 shadow 穿透)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。
 
 ## 文档分工

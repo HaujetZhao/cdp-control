@@ -42,7 +42,7 @@ a "下载客户端"   # 若为字面文本则无标记
 - [src/inject/lib/find-root.ts](src/inject/lib/find-root.ts) 的 `shadowContexts`:从「document + 各 shadowRoot 顶层子元素」改为**递归收集 document + 所有元素(任意深度)的 shadowRoot** 作为求值 context,按 DFS 预序排列(宿主文档序在前)。
 - `xpathRoot`:对每个 context 求 `FIRST_ORDERED_NODE_TYPE`,取**首个非空命中**。context 顺序按 DFS 预序(document 的 light DOM 在前,shadow 按宿主文档序),保证深层元素也按文档序取到第一个。
 - 性能:B 站评论区多层嵌套 shadow,但只在显式传 `--xpath` 时执行,且首个命中即短路,可接受。
-- **验收**(浏览器实测):`//bili-comment-renderer` 稳定取到第一条评论(林韵子墨);`//bili-comments//bili-comment-renderer` 能命中。
+- **验收**(浏览器实测):`//bili-comment-renderer` 稳定取到第一条评论(林韵子墨)。注意 `//bili-comments//bili-comment-renderer` 这类**跨 shadow 组合路径不可行**(`document.evaluate` 不穿透 shadow 做组合),改用 `//bili-comments` 建选区(树穿透显示全部评论)。
 
 ## 5. 坑 3:commander 重构 CLI
 
