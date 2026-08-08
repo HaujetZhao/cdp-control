@@ -13,6 +13,7 @@ export interface TreeNode {
   agg?: boolean;   // 显示文本来自 innerText/grabText 兜底(聚合文本)而非直接文本节点
   shadow?: boolean; // 宿主带 shadowRoot:其下子节点来自 shadow DOM,CSS 选择器不能穿透,须用 xpath 定位
   ref?: number;    // tree 登记的全局引用序号(见 __cdpRefs),输出标注 [ref=i],agent 用它直接操作真实元素
+  hasInter?: boolean; // 自身或任一后代可交互——含交互子代的包装节点不可内联折叠,否则交互叶的 ref 被整颗吞掉
 }
 
 /** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */
@@ -21,11 +22,14 @@ const tagLabel = (n: TreeNode) => n.tag + (n.shadow ? '[shadow]' : '');
 /** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素。 */
 const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + ']' : '');
 
-/** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代)。返回根节点结果。 */
+/** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代),并顺带计算 hasInter(自身或任一后代可交互)。
+ * 返回根节点"是否有文本"结果。hasInter 用于内联折叠判断:含交互子代的包装节点不能折叠,否则交互叶的 ref 丢失。 */
 export function markText(n: TreeNode): boolean {
   let h = !!(n.text || n.imgAlt);
-  for (const k of n.kids) if (markText(k)) h = true;
+  let hi = !!n.inter;
+  for (const k of n.kids) { if (markText(k)) h = true; if (k.hasInter) hi = true; }
   n.hasText = h;
+  n.hasInter = hi;
   return h;
 }
 
@@ -88,8 +92,9 @@ export function formatTree(tree: TreeNode): string[] {
     const productive = kids.filter(k => (k.hasText && !isTrivialLeaf(k)) || k.inter);
     if (productive.length === 1) { walk(productive[0], depth, newPath); return; }
     if (productive.length >= 2) {
-      // 交互/带 ref 节点不内联折叠:必须各自成行,否则 [ref=i] 标注被吞、agent 拿不到可操作句柄。
-      if (productive.every(k => inlineable(k) && !k.inter && k.ref == null)) {
+      // 交互/带 ref/含交互子代的节点不内联折叠:必须各自成行,否则 [ref=i] 标注被吞、agent 拿不到可操作句柄。
+      // 含交互子代(hasInter)也不能折叠——纯包装 DIV 内含按钮时,内联只取第一个文本,把其它交互叶的 ref 整颗吞掉(如知乎评论动作行)。
+      if (productive.every(k => inlineable(k) && !k.inter && !k.hasInter && k.ref == null)) {
         const items = productive.map(inlineLabel).join(' ');
         out.push('  '.repeat(depth) + (newPath.length ? newPath.join(' > ') + ' ' : '') + items);
         return;

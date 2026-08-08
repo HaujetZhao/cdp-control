@@ -136,3 +136,24 @@ test('formatTree: 交互/带 ref 节点不内联折叠,各自成行且标注可�
   // 按钮不并入文本行,独立成行带 [ref=4];span 也被拆到各自行
   assert.deepEqual(formatTree(root), ['html', '  div', '    "外部文本"', '    button "shadow按钮" [ref=4]']);
 });
+
+test('formatTree: 含交互子代的纯包装节点不可内联,交互叶各自出 [ref](知乎评论动作行场景)', () => {
+  // 复现知乎评论动作行 bug:css-18opwoy 是纯包装 DIV,子代是"回复"+点赞两个按钮。
+  // 旧逻辑只看包装自身(非交互、无 ref)就内联折叠,leafText 只取第一个文本"回复",点赞按钮的 "85" 和 ref 被整颗吞掉。
+  const reply = mk({ tag: 'button', isContent: true, text: '回复', inter: true, size: 1, ref: 5 });
+  const like = mk({ tag: 'button', isContent: true, text: '85', inter: true, size: 1, ref: 6 });
+  const actionRow = mk({ tag: 'div', isContent: false, size: 3, kids: [reply, like] }); // 纯包装,含交互子代
+  const timeText = mk({ tag: 'span', isContent: true, text: '18 小时前', size: 1 });
+  const meta = mk({ tag: 'div', isContent: false, size: 5, kids: [timeText, actionRow] });
+  const root = mk({ tag: 'html', isContent: false, size: 6, kids: [meta] });
+  markText(root);
+  // actionRow 因含交互子代(hasInter)不可内联:meta 不折叠成 "18 小时前" "回复",两个按钮各自成行带 ref
+  assert.deepEqual(formatTree(root), [
+    'html',
+    '  div',
+    '    "18 小时前"',
+    '    div',
+    '      button "回复" [ref=5]',
+    '      button "85" [ref=6]',
+  ]);
+});
