@@ -106,7 +106,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 每次操作命令后自动等约 1s(给异步/懒加载内容出现留时间),然后回报 **页面新增内容 tree + tab 变化**,agent 一轮拿到结果,不必再手动 `tree`/`list` 补查:
 
 - **内容反馈**:记录本次操作期间新增的顶层内容块,CLI 先打一行 `→ 本次操作后页面变化(新增内容):` 作标题,再逐块 tree 拼出带 `[ref]` 的行 + 摘要(如 `新增 3 个内容块; 文本变化: 583 → 584`)。**文本变化报前后值**(点赞后数字 583→584 直接可见);点"显示评论"后评论进来,反馈里直接看得到。
-- **tab 变化**:操作前后 diff `/json/list`。点 `target=_blank` 链接新开 tab 后,反馈直接告诉你 `新开 tab: <title> <url>`,直接 `tree --target <新tab>` 继续,不必先 `list`。
+- **tab 变化**:操作前后 diff `/json/list`。点 `target=_blank` 链接新开 tab 后,反馈直接告诉你 `新开 tab: <title> <url> [<targetId>]`,直接 `tree --target <targetId>`(或 title/url 子串)继续,不必先 `list` 拿 id。
 - **`--no-feedback`**:关闭(不等待、不观察、不 diff tab),高频率操作想快时用。
 - **`--feedback-delay <ms>`**:自定义等待时长,默认 1000。
 - **反馈树 ref 是增量号,不顶掉旧 ref**:反馈新增内容里的 `[ref]` 从当前已有号继续递增(整页 tree 才从 0 重置)。反馈后 agent 既可用反馈树的增量 ref 操作新增内容(如点刚加载的"显示更多"),**原整页 ref 依旧有效**。注意:增量 ref 适合即时 `click`/`fill` 操作;要 `tree --ref` 局部回看/`locate` 反查稳定定位器时,请先用整页 `tree` 重建 ref(反馈增量号与整页 ref 是两套编号)。
