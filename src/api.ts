@@ -21,11 +21,27 @@ async function invoke<T>(target: Target, expr: string, timeout?: number): Promis
   return r as T;
 }
 
-/** 新开一个 tab,返回 targetId。 */
-export async function open(url = 'about:blank'): Promise<string> {
+/**
+ * 连接抽象:开 target 页 ws → 执行回调(回调收到已连接的 ws)→ finally 关闭。返回回调返回值。
+ * 消除「拿 ws → 用 → 关」样板,关闭时机统一在 finally,保证异常/正常路径都关。
+ */
+async function withPage<T>(target: Target, fn: (ws: WebSocket) => Promise<T>): Promise<T> {
+  const ws = await pageWs(target);
+  try { return await fn(ws); } finally { ws.close(); }
+}
+
+/** 连接抽象:开浏览器级 ws → 执行回调 → finally 关闭。返回回调返回值。 */
+async function withBrowser<T>(fn: (ws: WebSocket) => Promise<T>): Promise<T> {
   const ws = await browserWs();
-  const { targetId } = await send(ws, 'Target.createTarget', { url, newWindow: false });
-  ws.close();
+  try { return await fn(ws); } finally { ws.close(); }
+}
+
+/** 新开一个 tab,返回 targetId。ws 在 maybeSpawnDaemon() 之前已关闭。 */
+export async function open(url = 'about:blank'): Promise<string> {
+  const { targetId } = await withBrowser(async (ws) => {
+    const r = await send(ws, 'Target.createTarget', { url, newWindow: false });
+    return { targetId: r.targetId };
+  });
   maybeSpawnDaemon();
   try {
     const t = await resolve(targetId);
@@ -36,16 +52,16 @@ export async function open(url = 'about:blank'): Promise<string> {
 
 /** 关闭 target。 */
 export async function close(target: Target): Promise<void> {
-  const ws = await browserWs();
-  await send(ws, 'Target.closeTarget', { targetId: target.id });
-  ws.close();
+  await withBrowser(async (ws) => {
+    await send(ws, 'Target.closeTarget', { targetId: target.id });
+  });
 }
 
 /** 导航 target 到 url。 */
 export async function navigate(target: Target, url: string): Promise<void> {
-  const ws = await pageWs(target);
-  await send(ws, 'Page.navigate', { url });
-  ws.close();
+  await withPage(target, async (ws) => {
+    await send(ws, 'Page.navigate', { url });
+  });
 }
 
 /** 提取 target 页面可交互元素清单。 */
@@ -76,7 +92,10 @@ export async function pollWait(target: Target, expression: string, desc: string,
   const start = Date.now();
   try {
     while (true) {
-      const v = await evalJs(ws, `Boolean(${expression})`);
+      // 单次 eval 的超时时限 = pollWait 剩余时间;剩余已耗尽则直接按超时抛错,不让 evalJs 独占默认 20s。
+      const remaining = timeout - (Date.now() - start);
+      if (remaining <= 0) throw new Error(`等待超时( ${timeout}ms ): ${desc}`);
+      const v = await evalJs(ws, `Boolean(${expression})`, remaining);
       if (v) return true;
       if (Date.now() - start > timeout) throw new Error(`等待超时( ${timeout}ms ): ${desc}`);
       await sleep(interval);
@@ -96,11 +115,11 @@ export async function waitForFn(target: Target, expression: string, opts?: any):
   return pollWait(target, expression, expression, opts);
 }
 
-/** 截图 target 页面到文件,返回文件路径。 */
+/** 截图 target 页面到文件,返回文件路径。写文件在关闭 ws 之后做。 */
 export async function shot(target: Target, file?: string): Promise<string> {
-  const ws = await pageWs(target);
-  const r = await send(ws, 'Page.captureScreenshot', { format: 'png' });
-  ws.close();
+  const r = await withPage(target, async (ws) => {
+    return await send(ws, 'Page.captureScreenshot', { format: 'png' });
+  });
   if (!r.data) throw new Error('截图失败:无数据');
   const out = file || `shot_${Date.now()}.png`;
   writeFileSync(pathResolve(out), Buffer.from(r.data, 'base64'));
@@ -130,19 +149,19 @@ export async function content(target: Target): Promise<any> {
 /** 在 target 页面按真实键盘事件(组合键用 Ctrl+Shift+A 写法)。 */
 export async function pressKey(target: Target, keySpec: string): Promise<void> {
   const { key, code, kc, modifiers } = parseKeySpec(keySpec);
-  const ws = await pageWs(target);
-  await send(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
-  await send(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
-  ws.close();
+  await withPage(target, async (ws) => {
+    await send(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
+    await send(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
+  });
 }
 
-/** 将鼠标移到 target 页面指定元素中心(触发 mouseover/mouseenter)。 */
+/** 将鼠标移到 target 页面指定元素中心(触发 mouseover/mouseenter)。坐标获取那段保持不动。 */
 export async function hover(target: Target, selector: string): Promise<void> {
   const pos = await invoke<{ ok: boolean; x: number; y: number }>(target, hoverExpr(selector));
   if (!pos?.ok) throw new Error('未找到: ' + selector);
-  const ws = await pageWs(target);
-  await send(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: pos.x, y: pos.y });
-  ws.close();
+  await withPage(target, async (ws) => {
+    await send(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: pos.x, y: pos.y });
+  });
 }
 
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
