@@ -67,10 +67,12 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `--xpath-file <f>` / `--selector-file <f>` | 筛选指定区域 |
 | `--ref <n>` | 以某 ref 的元素为树根(与 --selector-file/--xpath-file 互斥) |
 | `--ancestor <k>` | 从锚点(任意)向上爬 k 层父级再建树;多与 --ref 配合把"内容叶子"抬到"区域容器" |
-| `--visible-only` | 筛选当前视口内可见元素 |
-| `--scroll-to-load` | 先上下滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动;遇到"内容没显示/找不到评论区"先试它,别以为页面没有 |
+| `--visible-only` | 筛选当前视口内可见元素(**仅用于"看当前屏幕上有啥",绝不用来做首次整页感知**) |
+| `--scroll-to-load` | 固定距离滚动触发懒加载(评论区等首屏外的内容)再建树——向下滚一屏、向上滚一屏(都是固定一屏高),触发当前位置上下各一屏的懒加载后回到原位。**只会移动当前位置附近 ±1 屏,不会拉飞视口**;内容在远处时先自己滚到附近再建树 |
 
-**铁律**:初次查看页面要看完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
+**铁律(首次感知 = 完整 tree,禁 `--visible-only`)**:
+- **第一次看页面必须用完整 `tree`(看全部内容,别 `| head` 截断,也别 `--visible-only`)**。`--visible-only` 只输出当前视口内的元素——页面下方/后面的回答、评论区等**视口外的容器会被整段漏掉**,导致你以为页面只有首屏那么点东西,找不到后面的内容(曾因只看可见区域找不到第 2 个回答)。
+- 完整 `tree` 会把整页(含视口外)的文本+结构+ref 一次给全;要用 `--visible-only` 只有在"专门确认当前屏幕可见区域"时。
 
 **定位 = 从已有的 tree 出发,别 JS 探查(最重要)**:
 - 你已经看过整页 tree,**层级、内容、ref 全在眼前**,不需要再猜结构。要定位区域/元素,一律从 tree 里已有的 ref 出发,不要 `eval` 一段 JS 去分析原始 HTML 摸 DOM 结构——那是浪费轮次的弯路。
@@ -103,11 +105,11 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 
 每次操作命令后自动等约 1s(给异步/懒加载内容出现留时间),然后回报 **页面新增内容 tree + tab 变化**,agent 一轮拿到结果,不必再手动 `tree`/`list` 补查:
 
-- **内容反馈**:记录本次操作期间新增的顶层内容块,逐块 tree 拼出带 `[ref]` 的行 + 摘要(如 `新增 3 个内容块; 文本变化: "42"`)。点赞后数字变、点"显示评论"后评论进来,反馈里直接看得到。
+- **内容反馈**:记录本次操作期间新增的顶层内容块,CLI 先打一行 `→ 本次操作后页面变化(新增内容):` 作标题,再逐块 tree 拼出带 `[ref]` 的行 + 摘要(如 `新增 3 个内容块; 文本变化: 583 → 584`)。**文本变化报前后值**(点赞后数字 583→584 直接可见);点"显示评论"后评论进来,反馈里直接看得到。
 - **tab 变化**:操作前后 diff `/json/list`。点 `target=_blank` 链接新开 tab 后,反馈直接告诉你 `新开 tab: <title> <url>`,直接 `tree --target <新tab>` 继续,不必先 `list`。
 - **`--no-feedback`**:关闭(不等待、不观察、不 diff tab),高频率操作想快时用。
 - **`--feedback-delay <ms>`**:自定义等待时长,默认 1000。
-- **反馈树 ref 独立重排**:反馈里的 `[ref]` 从 0 重排,**会顶掉打开页时的全局 ref**;反馈之后 agent 可用反馈树里的 ref 直接操作新增内容(如点刚加载的"显示更多")。想再按原页面 ref 操作需重新整页 `tree`。
+- **反馈树 ref 是增量号,不顶掉旧 ref**:反馈新增内容里的 `[ref]` 从当前已有号继续递增(整页 tree 才从 0 重置)。反馈后 agent 既可用反馈树的增量 ref 操作新增内容(如点刚加载的"显示更多"),**原整页 ref 依旧有效**。
 - 脚本 API:`cdp.click(target, arg, { noFeedback?, feedbackDelay? })` → 返回 `{ok, tag, feedback:{lines, summary, tabs:{opened, closed}}}`(见下方脚本表)。
 
 ## Quick Reference
@@ -122,7 +124,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only] [--scroll-to-load]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树;--scroll-to-load 先上下滚动触发懒加载再建树(评论区等首屏外内容)。带 ref 的节点若在当前视区会标 `[ref=i·屏]`,否则 `[ref=i]`——看到未标 `·屏` 就知道它不在屏上,要先滚动/`--scroll-to-load` 再操作 |
+| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only] [--scroll-to-load]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树;--scroll-to-load 固定距离滚动(向下+向上各一屏,回原位)触发懒加载再建树。带 ref 的节点若在当前视区会标 `[ref=i·屏]`,否则 `[ref=i]`——看到未标 `·屏` 就知道它不在屏上,要先滚动/`--scroll-to-load` 再操作 |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定定位器(selector + xpath)**。ref 是会话句柄,页面刷新后失效;locate 把它翻译成刷新后仍可用的定位器,供 `tree --selector-file/--xpath-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈(见上) |
 | `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 填输入框并派发 input/change(selector 或 ref,--ancestor 爬父)。默认带操作后反馈 |
