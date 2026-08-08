@@ -45,7 +45,7 @@ const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 // ==================== CLI ====================
 
-const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since']); // 这些标志取下一个参数为值
+const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'xpath', 'selector', 'xpath-file', 'selector-file']); // 这些标志取下一个参数为值
 
 function parseArgs(argv) {
   const args = [];
@@ -58,6 +58,13 @@ function parseArgs(argv) {
     else args.push(a);
   }
   return { args, opts };
+}
+
+/** 从 --xpath-file/--selector-file 读内容(去首尾空白),没给 flag 返回 undefined。 */
+function readOptFile(fs, file) {
+  if (file === undefined) return undefined;
+  try { return fs.readFileSync(file, 'utf8').trim(); }
+  catch (e) { throw new Error(`读取参数文件失败: ${file} — ${e.message}`); }
 }
 
 async function main() {
@@ -73,7 +80,9 @@ async function main() {
   navigate <url> [--target]导航到 url
   eval "<js>" [--target]   在页面执行 JS,返回 JSON 值
   snapshot [--target]      提取可交互元素清单(标签/文本/选择器/坐标)
-  tree [--target]     结构树:整页 body 的文本+结构紧凑层级树(不做可见性判定,只输出文本与结构)
+  tree [--target] [--selector <sel>|--selector-file <file>] [--xpath <xp>|--xpath-file <file>]
+                       结构树:整页 body 的文本+结构紧凑层级树(不做可见性判定,只输出文本与结构);
+                       --selector/--xpath(或从文件读)可选,只建该区域(取第一个匹配)
   click <selector> [--target] 点击元素
   fill <selector> <值> [--target] 填入输入框并触发 input/change
   focus <selector> [--target] 聚焦元素(配合按键用)
@@ -217,7 +226,10 @@ async function main() {
       break;
     }
     case 'tree': {
-      const r = await api.tree(target);
+      const fs = await import('node:fs');
+      const sel = opts.selector ?? readOptFile(fs, opts['selector-file']);
+      const xp = opts.xpath ?? readOptFile(fs, opts['xpath-file']);
+      const r = await api.tree(target, { selector: sel, xpath: xp });
       if (!r.lines?.length) { console.log('(空树)'); break; }
       console.log(r.lines.join('\n'));
       break;

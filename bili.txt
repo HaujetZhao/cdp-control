@@ -1,0 +1,444 @@
+body
+  div
+    div > div > div
+      ul
+        li
+          a "首页"
+          div > div > div
+            div "番剧" "电影" "国创" "电视剧" "综艺" "纪录片" "动画" "游戏" "鬼畜" "音乐"
+            div "舞蹈" "影视" "娱乐" "知识" "科技数码" "资讯" "美食" "小剧场" "汽车" "时尚美妆"
+            div "体育运动" "动物" "vlog" "绘画" "人工智能" "家装房产" "户外潮流" "健身" "手工" "旅游出行"
+            div "三农" "亲子" "健康" "情感" "生活兴趣" "生活经验" "公益" "超高清" "视频播客"
+            div "专栏" "直播" "活动" "课堂" "社区中心" "新歌热榜"
+        li "番剧" "热门番剧"
+        a "直播"
+        li > div
+          a "游戏中心"
+          div > div > div
+            div "命运-冠位指定" "明日方舟：终末地"
+            div
+              div "新游预告"
+              div "蓝色星原：旅谣" "雾海之下" "群星征途2117" "苍蓝避风港" "白银之城" "崩坏：因缘精灵" "代号：神不言"
+        a "会员购"
+        li
+          a "漫画"
+          div > div > div
+            div "辉夜大小姐想让我告白 ~天才们的恋爱头脑战~" "天官赐福" "刀剑神域 Alicization篇" "石之海（乔乔的奇妙冒险第6部）"
+            div
+              div "人气漫画"
+              div "碧蓝之海 1碧蓝之海" "间谍过家家 2间谍过家家" "不小心救了江湖公敌 3不小心救了江湖公敌" "是师姐，我们有救了！ 4是师姐，我们有救了！" "杀死男主然后成为女魔头 5杀死男主然后成为女魔头" "航海王 6航海王"
+        li
+          a "赛事"
+          div > div > div > div
+            div "热门赛事"
+            div
+              a "12026LPL第三赛段 ：WE vs TT看直播"
+              a "22026KWC王者荣耀电竞世俱杯 ：KSG vs GK看直播"
+              a "32026VCT CN第二赛段 ：AG vs TE看直播"
+            div "精彩预告"
+            div
+              div
+                a "今天 18:002026VCT CN第二赛段 ：EDG vs TEC"
+                button "订阅"
+              div
+                a "今天 19:002026LPL第三赛段 ：BLG vs TES"
+                button "订阅"
+              div
+                a "今天 20:002026KWC王者荣耀电竞世俱杯 ：AG.AL vs ROC"
+                button "订阅"
+        a "一打歌一打歌"
+        a "下载客户端"
+      ul
+        li > div > div > div "bili_23340912234" "硬币:0" "答题转正直升Lv.1" "0关注" "我的大会员" "个人中心" "主题： 浅色" "退出登录"
+        div > li
+          div > div > div > div
+            div > div "大会员特权" "热剧抢先看"
+            div "首月15元" "成为大会员"
+        li "消息" "回复我的"
+        li "动态" "动态"
+        li > li "投稿" "专栏投稿"
+    div
+      div
+        div
+          div > div > h1 "一口气看完《末日山宿》4K 超清完整版，爆肝千小时耗资上万！"
+          div > div "全站排行榜最高第17名" "690.7万" "2.6万" "2026-07-04 20:00:00" "含AI生成内容"
+        div > div > div > div
+          div
+            div
+              div > div > div "ovo" "欢迎回来" "ovo" "做的实在是太好了，目前看到最好的AI剧了！" "二刷" ""我叫老周，在这山里当了二十多年的护林员“" "66666" "恭喜你们发现了值得多次观看的中国AI丧尸片。" "火啊！给我火啊！" "ovo" "9分钟前" "温馨提示:请关闭弹幕观看" "二刷纪念，视频挺好看的" "很不错的一部ai短剧" "ovo" "居然不是古神文字" "[ovo]" "ovo" "呜呜呜" "ovo" "ovo" "ovo"
+              div > div
+                div "一口气看完《末日山宿》4K 超清完整版，爆肝千小时耗资上万！"
+                div > div "关注"
+              div > div "正在缓冲..."
+              div > div
+                div > div > div > div > div > div "为TA充电后即可观看" "41:13"
+                div
+                  div > div > div "00:02" "47:59"
+                  div
+                    div > div > div > div > div > div "双语字幕"
+                    div
+                      div "自动"
+                      div > ul "4K 超高清" "1080P 高码率" "1080P 高清" "720P 准高清" "480P 标清" "360P 流畅" "自动(1080P 高清)"
+                    div
+                      div "倍速"
+                      ul "2.0x" "1.5x" "1.25x" "1.0x" "0.75x" "0.5x"
+                      div "倍速" "登录可享"
+                    div
+                      div > div "字幕"
+                      div > div > div > div > div
+                        div > div
+                          div "关闭" "登录可享" "原声翻译体验反馈"
+                          div > div
+                            div "字幕" "添加字幕"
+                            div "关闭"
+                            div > div "关闭"
+                            div > div "登录可享"
+                            div > div > label "双语字幕"
+                            div
+                              div "暂无字幕"
+                              div
+                                div "主字幕"
+                                div > div "中文" "English" "日本語" "Español" "العربية" "Português"
+                              div
+                                div "副字幕"
+                                div > div "中文" "English" "日本語" "Español" "العربية" "Português"
+                            div > div > label "双语字幕"
+                            div "字幕设置"
+                          div > div
+                            p "B站自研的AI原声翻译功能通过大模型翻译、音色克隆、中文字幕改写、口型匹配等AI能力，将中文原生视频转化为"外语原生视频"
+                            ul
+                              li "• 将中文内容翻译为外语"
+                              li "• 保留原视频内说话人的音色、语调和话语节奏"
+                              li "• 在可能的情况下，会同步将原视频内的中文字幕擦除并匹配对应外语字幕、将讲中文的嘴型匹配为外语嘴型"
+                        div > div
+                          div "字幕大小" "字幕颜色"
+                          div
+                            div "描边方式" "无描边"
+                            div "默认位置" "底部居中"
+                          div > div "背景不透明度"
+                          div "其它设置" "等比缩放"
+                          div > div "恢复默认设置"
+                    div > div > div "100"
+                    div > div > div > div > div > div
+                      div > div "镜像画面" "单集循环" "自动开播" "更多播放设置"
+                      div > div "播放方式" "视频比例" "播放策略" "音量均衡" "其他设置"
+                div > div "打开《高能进度条》常驻"
+              div
+                div
+                  div "网络状况异常，请刷新后重试"
+                  div > div
+                    div "您的浏览器还未开启本地网络访问权限，可能会影响视频内容的正常播放。"
+                    div
+                      p "1. 您可在浏览器通知中允许 bilibili.com 查找并连接本设备的请求；"
+                      p "2. 您可进入浏览器在"设置">"隐私和安全">"网站设置">"查看各网站的权限及存储数据"找到 www.bilibil"
+                button "刷新"
+            div > div
+              div > div "535"
+              div
+                div > div > div > div > div > div
+                  div > div "按类型过滤" "弹幕随屏幕缩放" "弹幕观看屏蔽词" "显示区域" "弹幕密度" "不透明度" "弹幕字号" "弹幕速度" "高级设置"
+                  div > div
+                    div "更多弹幕设置"
+                    div > span > div > label "弹幕速度同步播放倍数"
+                    div
+                      div "弹幕字体"
+                      div > div > div > div > div
+                        div "黑体"
+                        div > ul "黑体" "宋体" "新宋体" "仿宋" "微软雅黑" "微软雅黑 Light" "Noto Sans DemiLight" "Noto Sans Regular"
+                      div > span > div > label "粗体"
+                    div "描边类型" "重墨"
+                    div > div "恢复默认设置"
+                div "离转正还差一点点" "发送"
+          div "优先使用播放器内置策略播放" "优先使用 AV1 编码视频播放" "优先使用 HEVC/H.265 编码视频播放" "优先使用 AVC/H.264 编码视频播放" "自动平衡不同视频间的音量大小" "平衡音量同时保留更多声音细节" "关闭音量均衡" "本视频开启原声翻译时不支持关闭字幕" "关闭弹幕 (d)" "视频底部15%部分为空白保留区" "特殊颜色、运动形式的弹幕" "反馈" "开启画中画" "进入全屏 (f)" "宽屏模式" "网页全屏"
+        div
+          div > div "22.9万" "15.0万" "16.6万" "4.7万"
+          div
+            div "稿件举报"
+            div "记笔记" "笔记" "公开发布笔记"
+            div "用手机看 稍后再看"
+        div > div "末日" "丧尸" "一口气看" "末日山宿" "末日求生" "一口气" "合集" "一口气看完" "末日文"
+        div > bili-comments
+          div > bili-comments-header-renderer
+            div "评论" "最热"
+            div > bili-comment-box > div "这里需要一条查重率0%的评论" "选择或输入你想@的人"
+          div
+            div
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "林韵子墨"
+                  div > bili-rich-text > p "突然发现，无论是欧美的末日片还是丧尸片宣传的还是他们那套丛林法则，把人性的劣根性展露无疑，而中国的末日片和丧尸片从根本上"
+                  div > bili-comment-action-buttons-renderer "2026-07-27 15:35" "197" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div
+                      a "胧月霜月"
+                      bili-rich-text > p "首先中国好没有什么大组织下场的丧尸剧，其次，在你说这话前可以去看看现在的末日小说…… 这个作者的初衷好跟末日后宫文那是一"
+                    div > bili-comment-action-buttons-renderer "2026-07-27 15:37" "回复" "复制评论链接"
+                  div > div "共15条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "Crush正版服务器"
+                  div > bili-rich-text > p "和服务器玩家一起看！！"
+                  div > bili-comment-action-buttons-renderer "2026-07-16 21:11" "888" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div "弧旋制造者小秦" "我去现在服务器都有这玩意了这么高级"
+                    div > bili-comment-action-buttons-renderer "2026-07-17 12:24" "194" "回复" "复制评论链接"
+                  div > div "共11条回复 ，" "点击查看"
+              bili-comment-thread-renderer > bili-comment-renderer > div > div
+                a "bff丶"
+                div > bili-rich-text > p "非常完美了，而且比大部分电影剧情还吸引人，丧失会动脑这种压迫感相当强，真牛逼"
+                div > bili-comment-action-buttons-renderer "1小时前" "回复" "复制评论链接"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "炫了这碗干拌面"
+                  div > bili-rich-text > p "这视频避开了末世题材文化作品中的社会达尔文主义、勾心斗角和强行降智三大毒点。光是这个就已经超过了B站99%的同类视频。太"
+                  div > bili-comment-action-buttons-renderer "2026-07-06 01:26" "11751" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div
+                      a "mika2A"
+                      bili-rich-text > p "而且立意也不错，结局也没有强行解决危机或者来个坏结局，而是很符合现实的漫长作战"
+                    div > bili-comment-action-buttons-renderer "2026-07-06 13:48" "2444" "回复" "复制评论链接"
+                  bili-comment-reply-renderer > div
+                    div
+                      a "夕雾晚晴"
+                      bili-rich-text > p "结尾做的真的特别棒，体现出了人民面对共同敌人时的勇气与浪漫，真的是同题材作品中的佼佼者"
+                    div > bili-comment-action-buttons-renderer "2026-07-06 21:50" "917" "回复" "复制评论链接"
+                  div > div "共82条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  div "Eternity永e" "NO. 008351"
+                  div > bili-rich-text > p
+                    "看完真的很感慨，紧凑的剧情，强大的ai调教能力，我在平板前吃着芋圆喝着可乐，这跟看电影有啥区别啊"
+                    "希望能有越来越高质的长视频"
+                    "ai就该这么用！"
+                  div > bili-comment-action-buttons-renderer "2026-07-06 15:38" "1735" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div "小周阿看" "ai强大，更强大的是使用者"
+                    div > bili-comment-action-buttons-renderer "2026-07-06 17:05" "387" "回复" "复制评论链接"
+                  div > div "共32条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  div "艾薇莫宁" "NO. 000248"
+                  div > bili-rich-text > p "好看好看好看"
+                  div > bili-comment-action-buttons-renderer "2026-07-07 02:08" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div > div > div "共2条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "板灵根"
+                  div > bili-rich-text > p "整篇下来没有强行降智很舒服，有一个疑点是开头提到的空气传播和潜伏期设定，现在社会背景下确实需要空气传播才能在初期就形成末"
+                  div > bili-comment-action-buttons-renderer "2026-07-06 04:04" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div > div > div "共1条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "巨大幽浮"
+                  div > bili-rich-text > p "開探照燈bug解了，給好評"
+                  div > bili-comment-action-buttons-renderer "2026-07-05 22:45" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div > div > div "共2条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  div "Reecavi" "NO. 007316"
+                  div > bili-rich-text > p "感到无比的惊叹，ai时代居然只需要一个人就能创作出完成度如此高的末日电影，而且看的时候几乎没有那种突兀的“AI感”，就连"
+                  div > bili-comment-action-buttons-renderer "2026-07-05 06:37" "3716" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div
+                      a "岁月如飞刀刀催人老"
+                      bili-rich-text > p "这需要大量高质量的提示词和插件，还得有一台牛逼得电脑"
+                    div > bili-comment-action-buttons-renderer "2026-07-05 07:24" "802" "回复" "复制评论链接"
+                  bili-comment-reply-renderer > div
+                    div "囧囧侠吖" "并不是一个人，有团队的，只是和电影比人数没那么多"
+                    div > bili-comment-action-buttons-renderer "2026-07-05 11:07" "296" "回复" "复制评论链接"
+                  div > div "共33条回复 ，" "点击查看"
+              bili-comment-thread-renderer > bili-comment-renderer > div > div "wijxbsnk1s" "夯爆了！" "3小时前"
+              bili-comment-thread-renderer > bili-comment-renderer > div > div "帅到没锅" "还不错" "48分钟前"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  div "要s啊你" "CD. 012619"
+                  div > bili-rich-text > p "这群人是不是该搞个面壁者计划" "丧尸拿到对讲机就跟智子一样"
+                  div > bili-comment-action-buttons-renderer "2026-07-06 18:17" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div > div > div "共2条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "不跟你丶多BB"
+                  div > bili-rich-text > p "尸潮转圈圈那里看见弹幕上说“滔博来了”，笑死我了"
+                  div > bili-comment-action-buttons-renderer "2026-07-06 23:10" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div > div > div "共1条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "-_很牛逼也很好看_-"
+                  div > bili-rich-text > p "up和ai的关系:"
+                  div > bili-comment-action-buttons-renderer "2026-07-08 00:31" "6533" "回复" "复制评论链接"
+                  div > div "UP主觉得很赞"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div "爱柚偎" "没那么生疏"
+                    div > bili-comment-action-buttons-renderer "2026-07-08 02:59" "851" "回复" "复制评论链接"
+                  bili-comment-reply-renderer > div
+                    div "一呀一棵" "有没有可能up就是ai本i"
+                    div > bili-comment-action-buttons-renderer "2026-07-08 03:02" "409" "回复" "复制评论链接"
+                  div > div "共15条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "简单的幸福_-"
+                  div > bili-rich-text > p "我现在看到34分钟了，有点不敢看下去了。有没有看完的人给我剧透"
+                  div > bili-comment-action-buttons-renderer "2026-07-06 23:20" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div > div > div "共8条回复 ，" "点击查看"
+              bili-comment-thread-renderer > bili-comment-renderer > div > div
+                div "flag回收机" "NO. 144901"
+                div > bili-rich-text > p "后续加油！非常优秀的质量了，后续最好提前写点大纲什么的，尽量避免不合理和高血压的剧情"
+                div > bili-comment-action-buttons-renderer "2026-07-04 22:44" "回复" "复制评论链接"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "du钓寒茳雪"
+                  div > bili-rich-text > p "现在还属于ai早期，等日后技术彻底成熟了那些演员可咋整"
+                  div > bili-comment-action-buttons-renderer "2026-07-18 02:04" "310" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div
+                      a "拜拜拜拜855888"
+                      bili-rich-text > p "短剧演员24年爆火，26年就基本凉凉，似的最快的群体"
+                    div > bili-comment-action-buttons-renderer "2026-07-18 02:31" "332" "回复" "复制评论链接"
+                  bili-comment-reply-renderer > div
+                    div "MrYious" "挺好的，两百万一天的工资，也该处理处理了"
+                    div > bili-comment-action-buttons-renderer "2026-07-18 15:43" "回复" "复制评论链接"
+                  div > div "共40条回复 ，" "点击查看"
+              bili-comment-thread-renderer > bili-comment-renderer > div > div
+                a "喵咪猫猫喵咪咪咪咪"
+                div > bili-rich-text > p "跟我一样熬夜看的扣一"
+                div > bili-comment-action-buttons-renderer "2026-08-06 23:46" "回复" "复制评论链接"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "Zhs_Jason"
+                  div > bili-rich-text > p "把张叔开灯删了，好评！"
+                  div > bili-comment-action-buttons-renderer "2026-07-04 20:04" "999" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div
+                  bili-comment-reply-renderer > div
+                    div "关渐帧" "确实高血压，尽量给大家一个更好的体验"
+                    div > bili-comment-action-buttons-renderer "2026-07-04 20:31" "498" "回复" "复制评论链接"
+                  bili-comment-reply-renderer > div
+                    div "Zhs_Jason" "这是我目前看过最好的末日ai"
+                    div > bili-comment-action-buttons-renderer "2026-07-04 20:16" "104" "回复" "复制评论链接"
+                  div > div "共24条回复 ，" "点击查看"
+              bili-comment-thread-renderer
+                bili-comment-renderer > div > div
+                  a "bili_15248316234"
+                  div > bili-rich-text > p "好看，好看，但是这里的丧尸也太猛了吧，有集体意识会作战围捕人类，还会说话模仿人类。这也太厉害了吧，遇到这种丧尸怎么打呀？"
+                  div > bili-comment-action-buttons-renderer "2026-07-06 15:20" "回复" "复制评论链接"
+                div > bili-comment-replies-renderer > div > div > div > div "共3条回复 ，" "点击查看"
+            div > bili-comment-box > div "请输入内容" "选择或输入你想@的人"
+      div > div
+        div > div > div
+          div > div
+            div "关渐帧" "发消息"
+            div "电影学硕士/ AIGC导演 All in AI！！ 用电影级的标准，搞原创制作。 经费预算在燃烧，门槛之内，全是诚意。"
+          div > div "充电" "关注 23.0万"
+        div > div > div > div > div > div > div "弹幕列表" "弹幕列表填充中..."
+        div > div
+          div > a > div "广告" "豆包，离了你我可咋办啊"
+          div > span > div > div
+            div "屏蔽广告" "不想看该内容"
+            div "我为什么会看到此广告" "我要投诉"
+        div
+          div
+            div
+              div "接下来播放" "自动连播"
+              div > div
+                div "2:35:17" "正在缓冲..."
+                div
+                  a "【互动视频】当丧尸遍布全城！你！能否活着离开这座死亡之城？！"
+                  a "末世云夜"
+                  div "902.0万 13.6万"
+            div
+              div > div
+                div > div "1:36:56"
+                div "极寒末日96分钟无删减合集" "华萧AIGC" "200.1万 1.9万"
+              div > div
+                div > div "46:05"
+                div "《执念尸》第一季合集" "老宫特西范" "396.9万 1.5万"
+              div > div
+                div "1:46:13" "正在缓冲..."
+                div "死疫 整部完结" "沙雕动画潇洒哥" "1098.1万 10.9万"
+              div > div
+                div > div "1:15:31"
+                div
+                  a "萌新原创末日故事连载《归墟》1-9【AI全民制作人】"
+                  a "泫九AI"
+                  div "64.6万 9902"
+              div > div
+                div "45:36" "正在缓冲..."
+                div "【第一季完结】"回家后，发现爸妈变得很怪..."" "禁忌主角" "840.7万 5312"
+              div > div
+                div > div "15:20"
+                div
+                  a "末日降临前，我在深山打造了绝佳庇护所！一口气看末日惊变1-5合集 4K版"
+                  a "关渐帧"
+                  div "37.4万 821"
+              div > div
+                div > div "36:10"
+                div "极寒末日第一季（1-9）36分钟一口气看完" "华萧AIGC" "35.9万 1248"
+              div > div
+                div "2:05:33" "正在缓冲..."
+                div
+                  a "4K超清《冰封末日》2026最新美国动作惊悚灾难大片"
+                  a "艺点点剧场"
+                  div "17.3万 678"
+              div > div
+                div > div "15:23"
+                div "《安宁大厦生存守则》" "Fel探险记" "493.6万 5704"
+              div > div
+                div > div "48:56"
+                div "假如暴雨末世来临而你被困在家里！！【第一季完结】" "不是帅哥w" "847.3万 7062"
+              div > div
+                div > div "15:10"
+                div
+                  a "末日临近，我将打造终极山中避难所 末日山宿1-4集 4K版"
+                  a "关渐帧"
+                  div "520.1万 2849"
+              div > div
+                div > div "5:17:37"
+                div "历时7个月！！！《绝望疗法》——合集 一口气看完" "动画马蹄疾" "327.5万 2.7万"
+              div > div
+                div > div "1:03:22"
+                div "一口气看完丧尸动画《尸潮》第二季" "安夏原创动画" "76.8万 2399"
+              div > div
+                div > div "8:06:24"
+                div
+                  a "大学生下乡锻炼遭遇远超想象的丧尸危机！十万字全文完结！一口气看完！"
+                  a "我是咕咕本人"
+                  div "59.7万 1713"
+              div > div
+                div > div "58:43"
+                div "末日地堡第一季（合集）" "超能太闲" "39.8万 1975"
+              div > div
+                div > div "19:51"
+                div "【末世学园：真实求生路】一口气看完 第一季" "-薛定猫" "28.0万 881"
+              div > div
+                div > div "2:50:29"
+                div "韩国高分丧尸片【活着 】" "耿叔电影院" "20.7万 2799"
+              div > div
+                div > div "57:05"
+                div
+                  a "一小时超长合集 惊变500天养老生存用科技对抗丧尸！"
+                  a "迷人Rui_"
+                  div "1014.1万 2.1万"
+              div > div
+                div > div "4:43:17"
+                div
+                  a "历时1年6个月《遗尸》整部 完结 一口气看完大合集"
+                  a "弱坤-"
+                  div "474.3万 10.0万"
+            div "展开"
+          a "投稿安利动画，解锁现金好礼！"
+      div "小窗" "客服" "顶部"
+    div > div "课程总结" "暂无课程总结"
+  div "赛事库" "课堂" "2021拜年纪"
+  div > div
+    div
+      div
+        div > div "一口气看完《末日山宿》4K 超清完整版，爆肝千小时耗资上万！"
+        div "从 开始分享" "获取视频分享链接"
+      div > p "手机扫码观看/分享"
+    div > div "动态" "微信" "QQ空间" "微博" "贴吧" "嵌入代码"

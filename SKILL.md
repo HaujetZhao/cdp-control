@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 无参输出整页 body 的文本+结构紧凑树,不做可见性判定;勿盲用 snapshot/class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,不做可见性判定,可选 `--selector`/`--xpath`(或 `--selector-file`/`--xpath-file` 从文件读,免 shell 转义)只建指定区域;勿盲用 snapshot/class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -96,7 +96,7 @@ sites/
 
 ## 感知页面(核心:`tree`,唯一感知命令)
 
-`tree` 是**唯一感知命令**,无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。
+`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**:对 document + 各 shadowRoot 的顶层子元素各求值一次取首个命中,所以能定位深嵌 web component 的区域(如 B站 `//bili-rich-text`)。**xpath/selector 含 `"`、`//`、`[contains(...)]` 等 shell 难转义的字符时,改存进文件用 `--xpath-file <file>` / `--selector-file <file>` 传**(内联与文件同给时内联优先)。
 
 - **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。
 - **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。
@@ -117,7 +117,7 @@ sites/
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
-| `tree [--target]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,无参数、不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM) |
+| `tree [--target] [--selector <sel>] [--xpath <xp>] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector`/`--xpath`(或从文件 `--selector-file`/`--xpath-file` 读,省 shell 转义)可选,只建指定区域(取第一个匹配,selector 优先);`--xpath` 为 shadow 穿透版(能命中深嵌 web component 的区域);内联与文件同给时内联优先 |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -200,7 +200,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
-| `cdp.tree(target)` | 对象 | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;无参数、不做可见性判定,输出纯文本与结构 |
+| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
