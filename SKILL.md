@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,可选 `--selector-file`/`--xpath-file` 从文件读(免 shell 转义)只建指定区域、或 `--visible-only` 只看当前视口内可见元素;勿盲用 class selector 读内容(会漏文本块、命中滚出屏的旧元素)。**定位一律从 tree 已有的 ref 出发**:要局部 tree 用 `tree --ref <n> --ancestor <k>`、要刷新后仍可用的稳定定位器用 `locate <n> [--ancestor <k>]`;**不要用 eval JS 去分析原始 HTML 摸结构**。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**感知页面内容用 `tree`，它会输出整页 body 的文本+结构紧凑树，并生成便捷操作的 ref，`tree --ref <n> --ancestor <k>` 可以查看局部， 也可以用 `--selector-file`/`--xpath-file` 局部定位。可用 `locate` 从 ref 得到 xpath 和 selector 用作刷新后的快速定位。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -9,23 +9,19 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 
 本 Skill 所在目录有一个零依赖 Node 脚本 `dist/cdp.js` ，可直接连 Chrome/Edge 的 CDP 端口(默认 9222),取代 chrome-devtools MCP。核心价值:**能看到并操作手动打开的 tab**(MCP 因 Puppeteer attach 竞态会漏看)。
 
-**重要原则——自动化时优先写脚本文件**:凡是"打开→跳转→等元素→点击→填表→读结果"这类多步操作,**不要一步步调单个命令**(那会每次发一个模型请求、每次都 prefill+decode 全量上下文)。而是把整段操作写成一个 `.js` 脚本文件,用 `node "<本 SKILL 所在目录>/dist/cdp.js" run 脚本.js` **一次执行**。脚本可反复修改重跑。
 
-## 协作原则(重要)
+重要原则：
 
-- **浏览器窗口必须可见,严禁隐藏启动**。agent 和用户**共同操作同一个浏览器**:agent 驱动页面时,用户能看到并随时介入(登录、验证码、确认弹窗、agent 做不了/做错的事,用户直接在那个窗口接手)。
-- 所以启动/确保浏览器时**不要用 `-WindowStyle Hidden` / headless**,要让窗口真正显示出来。
-- 若 agent 卡在某一步(页面行为异常、需要人工确认等),停下来让用户在当前可见窗口里处理,不要自说自话绕开。
+- 用 `ensure` 可确保 CDP 浏览器启动，意外的页面变化多由用户手动操作引起，模型不必猜测。
+- 打开页面后，优先用 `tree` 查看页面整体内容并生成 ref，selector 优先用 `locate ref --ancestor <k>` 获取，而非 JS 探查 DOM，以节省注意力
+- 多步交互操作优先写成一个 `.js` 脚本文件,用 `node "<本 SKILL 所在目录>/dist/cdp.js" run 脚本.js` 一次执行，节省模型API调用次数
 
 ## When to Use
 
-- 需要读取/操作浏览器里已手动打开的页面(知乎、财联社这种 tab)。
+- 需要读取/操作浏览器里已手动打开的页面(知乎、财联社这种 tab)，用 `tree` 获取页面内容。
 - 做多步自动化(填表、爬取、提交)时——此时**写脚本文件 + run** 是首选,省往返、可复用、易改。
-- 只想快速看一个页面有什么元素时——用 `snapshot` 探路。
 
-## ⚠️ 调用前唯一入口:`ensure`(必走,别自己探端口)
-
-**不确定 CDP 浏览器是否启动时，先跑一遍 `ensure`**,`ensure` 自己处理"浏览器开没开、用哪个、要不要启动":
+## 调用前唯一入口:`ensure`
 
 ```bash
 node "<本 SKILL 所在目录>/dist/cdp.js" ensure          # 确保浏览器已通过 CDP 就绪(不导航)
@@ -38,22 +34,17 @@ node "<本 SKILL 所在目录>/dist/cdp.js" ensure --url "<网页地址>"   # �
 3. 用**独立用户数据目录**启动它(默认 `~/.cdp-browser`,可用环境变量 `CDP_USER_DATA` 覆盖)。
 4. 轮询等待浏览器 ready(最多 ~15s),然后(若给了 `--url`)打开它。**冷启动**(本次由 ensure 启动的浏览器)会直接复用首个空白 tab 导航,不额外开 tab;**热启动**(浏览器已就绪)才新开一个 tab 放链接,不覆盖你现有页面。
 
-**规范要点:**
-- **必须先 `ensure`,不要一上来就 `list`/`open`**——浏览器没开时这些会报连接失败。
-- 对小白用户,整个流程 agent 一次 `ensure` 完成,用户无需知道开哪个浏览器、用户数据在哪。
 
-## 调用方式
+## 脚本调用方式
 
 ```bash
 node "<本 SKILL 所在目录>/dist/cdp.js" <子命令> [参数]
 node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"   # 在项目根执行自动化脚本
 ```
 
-## 脚本放置规范(重要)
+## 脚本放置规范
 
-**两类脚本,放两处**:
-
-- **任务性一次性脚本**(针对某次具体任务的打开→跳转→填表→抓取)→ 写到**当前项目的根目录**(或项目内临时目录，如 `scripts` 或 `tmp`),**不写进 skill 目录**。运行用 **`dist/cdp.js` 的绝对路径**,在项目根执行:
+写到**当前项目的根目录**(或项目内临时目录，如 `scripts` 或 `tmp`),**不写进 skill 目录**。运行用 **`dist/cdp.js` 的绝对路径**,在项目根执行:
 
 ```bash
 node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js"
@@ -61,29 +52,9 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 
 - **为什么**:`run` 读取脚本和脚本里的相对路径输出(截图等)都以 `cwd`(你执行命令的那个目录)为基准。在项目根运行 → 脚本能被读、截图/生成文件直接落到项目根,**skill 目录保持干净、只有工具本身**,不会被业务脚本和输出污染。
 - **绝对路径调 dist/cdp.js**:不要 `cd` 进 skill 目录再跑(那会把 cwd 变成 skill 目录,输出写进 skill)。
-- **脚本自包含**:每个脚本自己用 `cdp.open(url)` 或 `cdp.resolve(url/title子串)` 定位 target,不假设"当前选中页"。这样并行跑多个脚本互不影响。
 - **脚本运行环境**:`run` 脚本里只有全局 `cdp` + **白名单 `require`**(可用 `os`/`path`/`fs`/`child_process`/`crypto`/`util`/`stream`/`url`)。取临时目录/写文件:``const path = require('path'), os = require('os')``,用 `path.join(os.tmpdir(), name)` 拼路径——**勿直接用 `/tmp/xx` 前缀**(Windows 会被 `path.resolve` 解析成盘根 `D:\xx` 而 ENOENT)。
-- **可复用站点原语**(针对某站点、可反复用、已验证的**单用途**脚本,如"抓某站评论"、"在某站回复")→ 升格进 **skill 的 `sites/<域名>/` 目录**(见下方「站点脚本库 sites/」)。新任务遇到同站点先查该目录,能复用的直接 `run`,避免重写。
 
-## 站点脚本库 sites/(可复用原语)
-
-`<本 SKILL 所在目录>/sites/` 按站点组织**已验证可复用的单用途脚本** + 每站 README 导航:
-
-```
-sites/
-├── README.md            # 总索引:有哪些站、各站 README 指向、原语放置/生命周期规范
-├── zhihu/
-│   ├── README.md        # 此站导航:已知结构、可用原语清单、坑、验证状态
-│   └── get-comments.js  # 单用途原语,头部注释含元信息
-└── _template/           # 新站点脚手架(README + primitive.js 模板)
-```
-
-- **原语自包含**:每个脚本自己 `cdp.resolve(url/title 子串)` 定位 target,不假设"当前选中页";用 `cdp` 全局 + 白名单 `require`(规范与上同)。用绝对路径 `dist/cdp.js run sites/<域名>/<原语>.js` 执行。
-- **头部注释模板**(每个原语必带):`用途 / 用法 / 返回结构 / 依赖的 DOM 结构假设 / 最后验证日期 / 状态(✅已验证 | ⚠️失效待修)`。
-- **生命周期**:实测验证通过 → 更新"最后验证/状态";站点改版失效 → **更新或删除原语**并在该站 README 标记。README 维护"可用/失效"清单。
-- **新任务流程**:用到某站 → 先看该站 README + 目录里有没有现成原语 → 能复用直接 `run`,缺什么就写新的并升格进目录(验证通过后)。
-
-## 感知页面(核心:`tree`)
+## 感知页面
 
 `tree`:将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。
 
@@ -121,9 +92,9 @@ sites/
   ```
   tree --target ...            # 1. 看整页,记下区域里某个内容叶子的 ref(如 [ref=53])
   cdp locate 53 --ancestor 4   # 2. 反查该区域容器的 selector + xpath(直接贴出来)
-  cdp tree --xpath-file f      # 3. 刷新后,把上一步的 xpath 写入 f,照样定位这块区域
+  cdp tree --selector-file f   # 3. 刷新后,把上一步的 selector 写入 f,照样定位这块区域
   ```
-  (locate 的 xpath 是"同名兄弟序号"语义,与 DevTools Copy full XPath 一致;`--selector-file` 同理)
+  **首选 selector**(CSS,最可读、最稳);xpath 是**就近 id 锚定**版(就近祖先有 id 就 `//*[@id=…]`,否则回退 `html/body/div[1]…` 位置链),也可靠,但长路径在动态页有位置漂移风险。若页面刷新/改版后定位器失效,重新 `tree` 拿 ref 再 `locate` 一次即可。
 - **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别去找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,或各自 `locate`,再并列看。别因此绕回 JS 探查。
 
 ## Quick Reference
@@ -224,7 +195,7 @@ await cdp.close(t);
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.fill(target, {ref: 12}, value)` | 对象,`{ref:n}`,字符串 | 按 ref 填值(穿透 shadow) |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
-| `cdp.waitForFn(target, jsExpr, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(等 JS 布尔表达式为真,超时抛错) |
+| `cdp.waitForFn(target, jsExpr, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(等 JS 布尔表达式为真,超时抛错)。**只吃同步布尔表达式**,如 `document.querySelector('#x') !== null`;别传 async/Promise/`return` 函数(会 `Unexpected token`) |
 | `cdp.focus(target, selector)` | 对象,字符串 | 聚焦结果 |
 | `cdp.focus(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 聚焦(穿透 shadow) |
 | `cdp.getFocus(target)` | 对象 | 焦点元素信息或 null |

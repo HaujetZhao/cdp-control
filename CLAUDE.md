@@ -42,7 +42,7 @@ esbuild 会把入口包进 module wrapper、吞掉返回值,故:
 
 **新增注入入口的步骤**:在 `src/inject/` 加一个 `.ts`(顶层,不进 lib/),用 `setResult` + 可选 `__CDP_ARG__`,重建即可自动打包成 `dist/inject/<名>.js`。**注意**:注入侧代码跑在浏览器,不能用 Node API;类型只在编译期(DOM lib)。
 
-**ref 登记表契约**:tree 遍历时把内容/交互元素登记进 `window.__cdpRefs`,`[ref=i]` 序号即其下标;tree 每次重建时**先清空再重排**(序号随树变,别跨树假设)。`tree`/`locate`/`click`/`fill`/`focus`/`hover` 都靠它按 ref 定位。共享解析在 `lib/find-root.ts` 的 `refElement`(ref→元素)+ `climbAncestors`(向上爬父,`--ancestor` 用);`locate`(注入入口 `src/inject/ref.ts`)用它们把 ref 翻译成稳定定位器:`genSel`(CSS selector)+ `genXpath`(绝对 xpath,同名兄弟序号语义,与 DevTools Copy full XPath 一致;仅覆盖 light DOM——shadow 内元素 parentElement 在边界为 null,路径断)。`genXpath` 的 `tag[n]` 是"同名兄弟序号",不是"第 n 个元素子"(曾因此 bug 未命中),已加单测锁定。
+**ref 登记表契约**:tree 遍历时把内容/交互元素登记进 `window.__cdpRefs`,`[ref=i]` 序号即其下标;tree 每次重建时**先清空再重排**(序号随树变,别跨树假设)。`tree`/`locate`/`click`/`fill`/`focus`/`hover` 都靠它按 ref 定位。共享解析在 `lib/find-root.ts` 的 `refElement`(ref→元素)+ `climbAncestors`(向上爬父,`--ancestor` 用);`locate`(注入入口 `src/inject/ref.ts`)用它们把 ref 翻译成稳定定位器:`genSel`(CSS selector)+ `genXpath`(就近 id 锚定:`//*[@id=…]`+下方位置链;无 id 才回退全位置路径 `html/body/div[n]…`;同名兄弟序号语义,与 DevTools Copy full XPath 一致;仅覆盖 light DOM——shadow 内元素 parentElement 在边界为 null,路径断)。`genXpath` 的 `tag[n]` 是"同名兄弟序号",不是"第 n 个元素子"(曾因此 bug 未命中);id 锚定让 xpath 不随重排漂移(曾间歇性未命中),均已加单测锁定。
 
 ## 返回契约(api.ts 的 `invoke`)
 
@@ -70,3 +70,5 @@ Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注�
 重构、加新功能，在新的 branch 做，以迭代的方式分阶段提交，最后 merge 到 main。
 
 这个项目是为服务 Agent 更好地读网页写的，一切以服务 Agent 为目标，所有的不合理通通可被扔，一切的重构要激进，要以最优为先，无需背负兼容性顾虑。
+
+临时路径用项目根目录里的 `./tmp`
