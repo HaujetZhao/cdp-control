@@ -4,11 +4,10 @@
  * 运行 `node dist/cdp.js <子命令>`;require 本文件时导出 api。
  */
 import { program } from 'commander';
-import { readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
-import { sleep } from './transport';
 import { coreApi } from './api';
-import { logs, cmdListen, daemonHealthy, LOGS_PORT, pidFilePath as joinPidPath } from './monitor';
+import { logs, cmdListen } from './monitor';
 import { ensureBrowser } from './browser';
 
 const api = { ...coreApi, logs, ensure: ensureBrowser };
@@ -64,17 +63,10 @@ program.command('open').argument('<url>', '要打开的网址').description('新
 program.command('close').argument('<target>', '目标匹配').description('关闭 tab')
   .action(async (tgt) => { const t = await api.resolve(tgt); await api.close(t); console.log(`已关闭: ${t.title || t.url}`); });
 
-program.command('listen').description('启动/前台运行控制台监听 daemon')
+// 隐藏命令:内部 daemon 自重生入口(cmdListen)。用户不直接调——监听 daemon 由 open/ensure/logs
+// 自动拉起,浏览器关闭后看门狗自退,无需手动 listen/listen-stop 管理(见 SKILL「读控制台日志」)。
+program.command('__daemon', { hidden: true }).description('(内部)控制台监听注入守护')
   .action(async () => { await cmdListen(); });
-
-program.command('listen-stop').description('停止控制台监听 daemon')
-  .action(async () => {
-    try { await fetch(`http://127.0.0.1:${LOGS_PORT}/shutdown`, { method: 'POST' }); } catch {}
-    let stopped = false; const t0 = Date.now();
-    while (Date.now() - t0 < 3000) { if (!(await daemonHealthy(LOGS_PORT))) { stopped = true; break; } await sleep(200); }
-    if (!stopped) { const pf = joinPidPath(); if (existsSync(pf)) { const pid = Number(readFileSync(pf, 'utf8')); try { process.kill(pid); stopped = true; } catch {} try { unlinkSync(pf); } catch {} } }
-    console.log(stopped ? '已停止监听 daemon' : '未发现运行中的监听 daemon');
-  });
 
 program.command('run').argument('<file>', '脚本文件').description('执行自动化脚本(脚本里用全局 cdp API,可顶层 await)')
   .action(async (file) => {
@@ -112,26 +104,6 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
     console.log(r.lines.join('\n'));
   });
 
-targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)')
-  .argument('<file>', 'xpath 文件路径(从文件读 xpath,免 shell 转义)')
-  .action(async (file, opts) => {
-    const xp = readOptFile(file);
-    if (!xp) throw new Error('需传 xpath 文件');
-    const r = await api.xpath(await needTarget(opts.target), xp);
-    if (!r.count) {
-      console.log(`未命中: ${xp}`);
-      console.log('— 分步诊断 —');
-      for (const s of r.trace || []) {
-        const axis = s.axis === 'desc' ? '//' : '/';
-        console.log(`  ${axis}${s.text}  输入 ${s.input} → 命中 ${s.matched}${s.sample ? `   (当时候选: <${s.sample}>)` : ''}`);
-      }
-      return;
-    }
-    console.log(`命中 ${r.count} 个:`);
-    for (const m of r.matches || []) console.log(`  [${m.tag}] "${m.text || ''}"  sel=${m.selector || ''}`);
-    if (r.count > (r.matches || []).length) console.log(`  …(还有 ${r.count - (r.matches || []).length} 个未列出)`);
-  });
-
 targetCmd('locate', '从 tree 的 ref 序号反查稳定定位器(selector + xpath)。ref 是会话句柄,页面刷新后失效;此命令把 ref 翻译成刷新后仍可用的定位器,供 tree --selector-file/--xpath-file 复用')
   .argument('<n>', 'tree 输出的 ref 序号')
   .option('--ancestor <n>', '向上爬 N 层父级再定位(默认 0;把内容叶子抬升到语义区域容器)')
@@ -143,21 +115,27 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定定位器(selector + xpa
   });
 
 // ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。
-function refOrSel(sel: string | undefined, opts: any): string | { ref: number } {
-  if (opts.ref != null) return { ref: Number(opts.ref) };
+function refOrSel(sel: string | undefined, opts: any): string | { ref: number; ancestor?: number } {
+  if (opts.ref != null) return { ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined };
   if (sel) return sel;
   throw new Error('需提供 selector 或 --ref');
 }
-const refOpt = (c: any) => c.option('--ref <n>', '按 tree 输出的 ref 序号操作(穿透 shadow,与 selector 二选一)');
+const refOpt = (c: any) => c
+  .option('--ref <n>', '按 tree 输出的 ref 序号操作(穿透 shadow,与 selector 二选一)')
+  .option('--ancestor <n>', '按 --ref 定位后向上爬 N 层父级再操作(默认 0;把内容叶子抬到区域容器)');
+
+/** 日志用目标描述:selector 或 ref=12(↑3 表示爬 3 层父)。 */
+const argLabel = (a: string | { ref: number; ancestor?: number }): string =>
+  typeof a === 'string' ? a : 'ref=' + a.ref + (a.ancestor ? `↑${a.ancestor}` : '');
 
 refOpt(targetCmd('click', '点击元素')).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg); console.log(`已点击: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref} (${r.tag})`); });
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg); console.log(`已点击: ${argLabel(arg)} (${r.tag})`); });
 
 refOpt(targetCmd('fill', '填输入框并触发 input/change')).argument('[selector]', 'selector 或 --ref').argument('<value>', '值')
-  .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); await api.fill(await needTarget(opts.target), arg, val); console.log(`已填入: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref} ← ${val}`); });
+  .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); await api.fill(await needTarget(opts.target), arg, val); console.log(`已填入: ${argLabel(arg)} ← ${val}`); });
 
 refOpt(targetCmd('focus', '聚焦元素')).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg); console.log(`已聚焦: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref} (${r.tag})`); });
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg); console.log(`已聚焦: ${argLabel(arg)} (${r.tag})`); });
 
 targetCmd('get-focus', '查看当前焦点元素在哪')
   .action(async (opts) => { const f = await api.getFocus(await needTarget(opts.target)); if (!f) { console.log('(当前无焦点元素)'); return; } console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`); });
@@ -166,7 +144,7 @@ targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab').argume
   .action(async (key, opts) => { await api.pressKey(await needTarget(opts.target), key); console.log(`已按键: ${key}`); });
 
 refOpt(targetCmd('hover', '鼠标移到元素上')).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); await api.hover(await needTarget(opts.target), arg); console.log(`已悬停: ${typeof arg === 'string' ? arg : 'ref=' + arg.ref}`); });
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); await api.hover(await needTarget(opts.target), arg); console.log(`已悬停: ${argLabel(arg)}`); });
 
 targetCmd('shot', '截图').option('-f, --file <file>', '输出文件')
   .action(async (opts) => { const file = await api.shot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });

@@ -18,7 +18,7 @@ export function pidFilePath(): string {
 
 async function spawnDaemon(): Promise<void> {
   const script = process.argv[1] || __filename;
-  const child = spawn(process.execPath, [script, 'listen'], { detached: true, stdio: 'ignore' });
+  const child = spawn(process.execPath, [script, '__daemon'], { detached: true, stdio: 'ignore' });
   child.unref();
 }
 
@@ -54,10 +54,10 @@ async function attachInject(ws: WebSocket): Promise<void> {
 }
 
 /**
- * 注入守护 daemon(listen 子命令)。不做日志缓冲/读取——职责是保证**每个 tab 都装上
- * 页面监控脚本**。attach 时 Page.addScriptToEvaluateOnNewDocument 注册一次,之后每次
- * document 创建(含刷新)自动重跑监控脚本 → 刷新自动补,无需探测。轮询 /json/list 自动
- * 覆盖新开的 tab(含手动开的)。读取交给 logs 命令去 eval 页面 window.__cdpLogs。
+ * 注入守护 daemon(隐藏 __daemon 命令,spawnDaemon 自重生入口)。不做日志缓冲/读取——
+ * 职责是保证**每个 tab 都装上页面监控脚本**。attach 时 Page.addScriptToEvaluateOnNewDocument
+ * 注册一次,之后每次 document 创建(含刷新)自动重跑监控脚本 → 刷新自动补,无需探测。
+ * 轮询 /json/list 自动覆盖新开的 tab(含手动开的)。读取交给 logs 命令去 eval 页面 window.__cdpLogs。
  */
 export async function cmdListen(): Promise<never> {
   const attached = new Map<string, WebSocket>();

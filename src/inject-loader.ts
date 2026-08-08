@@ -39,11 +39,6 @@ export function treeExpr(selector?: string, xpath?: string, visibleOnly?: boolea
   return inject('tree', { selector, xpath, visibleOnly: visibleOnly || undefined, ref, ancestor });
 }
 
-/** xpath 查元素入口(shadow 穿透,返回命中列表 + 分步诊断)。 */
-export function xpathExpr(path: string): string {
-  return inject('xpath', { path });
-}
-
 /** locate:按 tree 的 ref 反查稳定定位器(selector + xpath),可选 --ancestor 爬父。 */
 export function locateExpr(ref: number, ancestor?: number): string {
   return inject('ref', { ref, ancestor });
