@@ -21,6 +21,16 @@ test('normalize: 以 / 开头不改(绝对或 //)', () => {
 test('normalize: 无前置斜杠的相对路径补 //(desc 搜索)', () => {
   assert.equal(normalizeXpath('div'), '//div');
   assert.equal(normalizeXpath('html/body'), '//html/body');
+  assert.equal(normalizeXpath('bili-comments//div[2]/span'), '//bili-comments//div[2]/span');
+});
+
+test('normalize: 完整表达式(括号/函数/字面量/数字)原样不加前缀', () => {
+  assert.equal(normalizeXpath('(//div)[1]'), '(//div)[1]');           // 括号分组取第 1 个
+  assert.equal(normalizeXpath('count(//div)'), 'count(//div)');        // 函数调用
+  assert.equal(normalizeXpath('1 + 2'), '1 + 2');                      // 算术(数字开头)
+  assert.equal(normalizeXpath('"首页"'), '"首页"');                    // 字符串字面量
+  assert.equal(normalizeXpath("'x'"), "'x'");                          // 单引号字面量
+  assert.equal(normalizeXpath('$var'), '$var');                        // 变量
 });
 
 /* ================= splitAxis ================= */

@@ -19,16 +19,18 @@
 import * as fontoxpath from 'fontoxpath';
 import type { Bucket, IDomFacade, Node as FontoNode } from 'fontoxpath';
 
-const { domFacade: rawFacade, evaluateXPathToNodes } = fontoxpath;
+const { domFacade: rawFacade, evaluateXPath, evaluateXPathToNodes, ReturnType } = fontoxpath;
 
 /** 分步诊断信息。input=上一步命中的数量;matched=本步命中数;sample=断在该步时上一步命中的标签摘要。 */
 export interface XpStepInfo { text: string; axis: 'child' | 'desc'; input: number; matched: number; sample?: string }
 
-/** xpath 求值结果:全部命中(真实元素)+ 分步诊断。 */
+/** xpath 求值结果:全部命中(真实元素)+ 可选标量值 + 分步诊断。 */
 export interface XpathEvalResult {
   ok: boolean;
   count: number;
   nodes: Element[];
+  /** 标量表达式的值(count()/算术/字符串字面量等);节点查询时为 null。 */
+  value: number | string | boolean | null;
   trace: XpStepInfo[];
 }
 
@@ -91,10 +93,11 @@ const shadowFacade: IDomFacade = {
 
 /* —— 求值 —— */
 
-/** 在真实 DOM 上求值整条路径,命中节点归一化为元素(文本节点归到其父元素)。
- * 表达式返回非节点集(布尔/数字/字符串,如 `//text()="首页"`)时 evaluateXPathToNodes
- * 会抛 TypeError——这里 try/catch 按无命中处理,不让工具崩掉。 */
-function evalFonto(normalized: string): Element[] {
+/** 在真实 DOM 上求值整条路径,用 ANY_TYPE 统一处理节点集与标量:
+ * 结果若是数组 = 节点集,归一化为元素(文本节点归到其父元素);否则为标量(count()/算术/字面量)。
+ * 任何异常(语法错等)按无命中处理,不让工具崩掉。 */
+function evalFonto(normalized: string): { nodes: Element[]; value: number | string | boolean | null } {
+  // 先按节点查询:evaluateXPathToNodes 稳定返回节点数组。
   try {
     const nodes = evaluateXPathToNodes(normalized, document, shadowFacade) as Node[];
     const out: Element[] = [];
@@ -102,15 +105,35 @@ function evalFonto(normalized: string): Element[] {
       const real = n.nodeType === 1 ? (n as Element) : n.nodeType === 3 ? (n as Text).parentElement : null;
       if (real && !out.includes(real)) out.push(real);
     }
-    return out;
+    return { nodes: out, value: null };
   } catch {
-    return [];
+    // 表达式非节点集(count()/算术/字面量/布尔,如 `//text()="X"`)→ ANY 取标量值。
+    try {
+      const res = evaluateXPath(normalized, document, shadowFacade, null, ReturnType.ANY, null) as unknown;
+      return { nodes: [], value: (typeof res === 'number' || typeof res === 'string' || typeof res === 'boolean') ? res as number | string | boolean : null };
+    } catch {
+      return { nodes: [], value: null };
+    }
   }
 }
 
-/** 路径规范化:无前置斜杠的当作 descendant 搜索(与旧引擎相对路径默认 desc 一致)。 */
+/** 是否为可逐轴分步的"节点路径":以 `/` 开头的绝对路径,或以标签/通配符开头的相对路径。
+ * 括号分组 `(//x)[1]`、函数调用 `count(//x)`、字面量、数字、`$` 变量等都是**完整表达式**而非节点路径,
+ * 不该补 `//` 前缀、也不做 splitAxis 分步诊断。 */
+function isNodePath(xp: string): boolean {
+  if (xp.startsWith('/')) return true;
+  if (xp.startsWith('(')) return false;
+  if (/^[0-9"'$]/.test(xp)) return false;          // 数字 / 字符串字面量 / 变量
+  if (/^[A-Za-z_][\w.-]*\(/.test(xp)) return false; // 函数调用如 count(
+  return true;                                      // 标签 / 通配符 / 属性开头的相对路径
+}
+
+/** 路径规范化:绝对路径原样;节点路径(相对)补 `//` 当作 descendant 搜索(与旧引擎默认 desc 一致);
+ * 完整表达式(括号/函数/字面量)原样。
+ * 旧实现只判 `startsWith('/')`,给 `(//x)[1]`/`count(//x)` 补成 `//(//x)[1]`——非法表达式让引擎 O(N²) 慢两个数量级且 count() 加错前缀。 */
 export function normalizeXpath(xp: string): string {
-  return xp.startsWith('/') ? xp : '//' + xp;
+  if (xp.startsWith('/') || !isNodePath(xp)) return xp;
+  return '//' + xp;
 }
 
 /** 把路径按顶层 `/`/`//` 切成 (axis, step) 序列;跳过 [] 与引号内的 `/`,支持嵌套括号。纯字符串,可单测。 */
@@ -150,7 +173,7 @@ function buildTrace(normalized: string): XpStepInfo[] {
   let prevTag: string | undefined;
   for (let i = 0; i < segs.length; i++) {
     const prefix = segs.slice(0, i + 1).map(s => (s.axis === 'desc' ? '//' : '/') + s.step).join('');
-    const nodes = evalFonto(prefix);
+    const { nodes } = evalFonto(prefix);
     const matched = nodes.length;
     trace.push({ text: segs[i].step, axis: segs[i].axis, input, matched, sample: matched ? undefined : prevTag });
     if (matched === 0) break;
@@ -160,12 +183,14 @@ function buildTrace(normalized: string): XpStepInfo[] {
   return trace;
 }
 
-/** 用 fontoxpath 求全部命中 + 分步诊断。 */
+/** 用 fontoxpath 求全部命中 + 分步诊断。`(` 开头的完整表达式(括号/函数)非轴序列,单步诊断。 */
 export function xpathEval(xp: string): XpathEvalResult {
   const normalized = normalizeXpath(xp);
-  const nodes = evalFonto(normalized);
-  const trace = buildTrace(normalized);
-  return { ok: nodes.length > 0, count: nodes.length, nodes, trace };
+  const { nodes, value } = evalFonto(normalized);
+  const trace = isNodePath(normalized)
+    ? buildTrace(normalized)
+    : [{ text: normalized, axis: 'desc' as const, input: 1, matched: nodes.length }];
+  return { ok: nodes.length > 0 || value !== null, count: nodes.length, nodes, value, trace };
 }
 
 /** 用 fontoxpath 求第一个元素命中;无命中返回 null。 */
