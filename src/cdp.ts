@@ -105,10 +105,10 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 
   });
 
 targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)')
-  .option('--xpath-file <file>', '从文件读 xpath')
-  .action(async (opts) => {
-    const xp = readOptFile(opts.xpathFile);
-    if (!xp) throw new Error('需传 --xpath-file');
+  .argument('<file>', 'xpath 文件路径(从文件读 xpath,免 shell 转义)')
+  .action(async (file, opts) => {
+    const xp = readOptFile(file);
+    if (!xp) throw new Error('需传 xpath 文件');
     const r = await api.xpath(await needTarget(opts.target), xp);
     if (!r.count) {
       console.log(`未命中: ${xp}`);
