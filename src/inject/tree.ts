@@ -7,7 +7,7 @@
  * 输出为带缩进文本行数组(标签 + 引用文本),无 [看]/[架]/[X] 状态前缀。
  */
 import { setResult } from './lib/result';
-import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf } from './lib/tree-utils';
+import { inlineable, leafText, firstTxt, isTrivialLeaf } from './lib/tree-utils';
 import type { TreeArgs } from './lib/arg';
 
 declare const __CDP_ARG__: TreeArgs;
@@ -26,7 +26,7 @@ declare const __CDP_ARG__: TreeArgs;
   const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
   const ownText = (el: Element) => {
     const parts: string[] = [];
-    for (const n of el.childNodes) if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim()) parts.push(n.nodeValue);
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim()) parts.push(n.nodeValue);
     return strip(parts.join(' '));
   };
   // 穿透 shadow DOM 收集整棵子树的文本(深度上限 d<8 防爆炸)。
@@ -34,7 +34,7 @@ declare const __CDP_ARG__: TreeArgs;
     const gt = el instanceof Element ? el.tagName : '';
     if (gt === 'STYLE' || gt === 'SCRIPT' || gt === 'TEMPLATE' || gt === 'NOSCRIPT' || gt === 'LINK' || gt === 'META' || gt === 'TITLE') return '';
     const parts: string[] = [];
-    for (const n of el.childNodes) if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim()) parts.push(n.nodeValue);
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim()) parts.push(n.nodeValue);
     if (d < 8) {
       if (el instanceof Element && el.shadowRoot) parts.push(grabText(el.shadowRoot, d + 1));
       for (let i = 0; i < el.children.length; i++) parts.push(grabText(el.children[i], d + 1));
@@ -78,7 +78,7 @@ declare const __CDP_ARG__: TreeArgs;
       node.kids.push(simplify(k, depth + 1));
     }
     if (!text && !node.kids.length) text = strip(grabText(el, 0)).slice(0, 120);
-    if (!text && (inter || (isEl && el.tagName === 'IMG')) && (el as Element).innerText) text = strip((el as Element).innerText).slice(0, 80);
+    if (!text && (inter || (isEl && el.tagName === 'IMG')) && (el as HTMLElement).innerText) text = strip((el as HTMLElement).innerText).slice(0, 80);
     node.text = text;
     node.isContent = !!text || (isEl && el.tagName === 'IMG') || inter;
     node.size = 1 + node.kids.reduce((a, k) => a + k.size, 0);

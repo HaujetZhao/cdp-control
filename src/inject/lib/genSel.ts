@@ -12,7 +12,7 @@ export function genSel(el: Element | null): string | null {
   while (cur && cur.nodeType === 1) {
     if (cur.id) { path.unshift('#' + CSS.escape(cur.id)); break; }
     let part = cur.tagName.toLowerCase();
-    const parent = cur.parentElement;
+    const parent: Element | null = cur.parentElement;
     if (parent) {
       const sibs = Array.from(parent.children).filter(c => c.tagName === cur!.tagName);
       if (sibs.length > 1) part += ':nth-of-type(' + (sibs.indexOf(cur) + 1) + ')';
