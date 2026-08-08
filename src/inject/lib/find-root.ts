@@ -22,7 +22,7 @@
  */
 
 const XPATH_FIRST = 9;   // XPathResult.FIRST_ORDERED_NODE_TYPE
-const XPATH_BOOL = 1;    // XPathResult.BOOLEAN_TYPE
+const XPATH_BOOL = 3;    // XPathResult.BOOLEAN_TYPE
 
 /** 一个位置步。axis:child=`/`(直接拼接子),desc=`//`(拼接子孙-or-self)。 */
 export interface XpStep {
