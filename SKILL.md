@@ -13,7 +13,8 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 重要原则：
 
 - 用 `ensure` 可确保 CDP 浏览器启动，意外的页面变化多由用户手动操作引起，模型不必猜测。
-- 打开页面后，优先用 `tree` 查看页面整体内容并生成 ref，selector 优先用 `locate ref --ancestor <k>` 获取，而非 JS 探查 DOM，以节省注意力
+- 打开页面后，优先用 `tree` 查看页面整体内容并生成 ref，`tree` 的输出严禁用 `head` 或 `sed` 等过滤，只能用 `--ref n --ancestor k`/`--selector-file`/`--xpath-file`/`--visible-only` 来局部查看。
+- selector 只能用 `locate ref --ancestor <k>` 获取，严禁用 JS eval 探查 DOM
 - 多步交互操作优先写成一个 `.js` 脚本文件,用 `node "<本 SKILL 所在目录>/dist/cdp.js" run 脚本.js` 一次执行，节省模型API调用次数
 
 ## When to Use
@@ -122,6 +123,33 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `run <脚本文件>` | 执行自动化脚本(脚本里用全局 `cdp` API,可顶层 `await`) |
 
 环境变量:`CDP_HOST` / `CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(监听 daemon 端口,默认 9333)。
+
+## 命令示例(真实流程)
+
+> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→**核对落点/结果**"走。**别把 `tree` 输出丢给 `head`/`sed`/`grep` 过滤**(见上第 16 行限制),看局部只能用 `tree --ref/--ancestor/--selector-file/--xpath-file/--visible-only`。注意:**CLI 用 `--ref n`,脚本 API 才用 `{ref:n}`**——`cdp click "{ref:44}"` 会报"不是合法 selector"。
+
+### 逛页面 + 定位区域
+```bash
+cdp open "https://www.zhihu.com/"     # 开页
+cdp tree --target zhihu               # 看整页,拿 ref(别 head/sed 截断)
+cdp tree --ref 53 --ancestor 4 --target zhihu   # 从内容叶子 ref 爬到区域容器,只列问题+回答
+cdp locate 53 --ancestor 4 --target zhihu       # 要刷新后仍可用的定位器 → selector + xpath
+cdp tree --selector-file ./f --target zhihu     # 用定位器局部复看
+```
+
+### 点击可能开新 tab → 用 `list` 核对落点
+```bash
+cdp click --ref 44 --target zhihu    # 点卡片/链接
+cdp list                             # ⚠️ 很多站卡片是 target=_blank,点完别假设还在原页
+cdp tree --target "BV1..."           # 到新开的 tab 继续;原 tab 的 location 可能没变
+```
+
+### 改状态的操作(点赞/关注/提交)→ 复看结果
+```bash
+cdp tree --target "BV1..."                      # 先看点赞按钮当前的赞数 ref
+cdp click --ref 36 --target "BV1..."            # 点赞
+cdp tree --ref 35 --ancestor 2 --target "BV1..." # ⚠️ 点完复看赞数是否 +1;别只靠"无报错"当成功
+```
 
 ## 读控制台日志(console 监听)
 
