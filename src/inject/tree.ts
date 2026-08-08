@@ -16,6 +16,8 @@ declare const __CDP_ARG__: TreeArgs;
 (() => {
   const root = findRoot(__CDP_ARG__.selector, __CDP_ARG__.xpath);
   if (!root || root.nodeType !== 1) return setResult({ ok: false, err: '未找到匹配的根节点(selector/xpath 未命中)' });
+  // 全局 ref 登记表:本次 tree 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
+  (globalThis as any).__cdpRefs = [];
 
   const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
   const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
@@ -55,10 +57,16 @@ declare const __CDP_ARG__: TreeArgs;
     const inter = isEl ? interactive(el as Element) : false;
     const title = isEl ? (el.getAttribute('title') || '') : '';
     let text = isEl ? ownText(el as Element) : '';
+    // 登记可操作 ref:interactive 或有直接文本的 Element(纯包装节点/ShadowRoot 不登,防噪防膨胀)。
+    let ref: number | undefined;
+    if (isEl && (inter || !!text)) {
+      ref = (globalThis as any).__cdpRefs.length;
+      (globalThis as any).__cdpRefs.push(el as Element);
+    }
     const node: TreeNode = {
       tag,
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
-      text, inter,
+      text, inter, ref,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
       // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 xpath 定位
       shadow: isEl && !!(el as Element).shadowRoot,

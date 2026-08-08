@@ -12,10 +12,14 @@ export interface TreeNode {
   kids: TreeNode[]; size: number; hasText: boolean; leafValue?: string;
   agg?: boolean;   // 显示文本来自 innerText/grabText 兜底(聚合文本)而非直接文本节点
   shadow?: boolean; // 宿主带 shadowRoot:其下子节点来自 shadow DOM,CSS 选择器不能穿透,须用 xpath 定位
+  ref?: number;    // tree 登记的全局引用序号(见 __cdpRefs),输出标注 [ref=i],agent 用它直接操作真实元素
 }
 
 /** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */
 const tagLabel = (n: TreeNode) => n.tag + (n.shadow ? '[shadow]' : '');
+
+/** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素。 */
+const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + ']' : '');
 
 /** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代)。返回根节点结果。 */
 export function markText(n: TreeNode): boolean {
@@ -36,7 +40,7 @@ export function formatTree(tree: TreeNode): string[] {
     let l = tagLabel(n);
     if (n.tag === 'img' && n.imgAlt) l += ' "' + n.imgAlt.slice(0, 40) + '"';
     else if (n.text) l += (n.agg ? ' ~' : ' ') + '"' + n.text.slice(0, 60) + '"';
-    return l;
+    return l + refTag(n);
   };
   const inlineLabel = (n: TreeNode) => {
     if (n.tag === 'img' && n.imgAlt) return 'img "' + n.imgAlt.slice(0, 20) + '"';
@@ -49,7 +53,7 @@ export function formatTree(tree: TreeNode): string[] {
       if (n.leafValue) {
         const val = firstTxt(n.kids);
         const head = path.length ? path.join(' > ') + ' > ' : '';
-        out.push('  '.repeat(depth) + head + '"' + n.leafValue + (val ? ' ' + val.slice(0, 60) : '') + '"');
+        out.push('  '.repeat(depth) + head + '"' + n.leafValue + (val ? ' ' + val.slice(0, 60) : '') + '"' + refTag(n));
         return;
       }
       const hasChildText = n.kids.some(k => k.hasText);
@@ -61,7 +65,7 @@ export function formatTree(tree: TreeNode): string[] {
         if (n.tag === 'span') {
           if (n.text) {
             const head = path.length ? path.join(' > ') : '';
-            out.push('  '.repeat(depth) + (head ? head + ' ' : '') + '"' + n.text.slice(0, 60) + '"');
+            out.push('  '.repeat(depth) + (head ? head + ' ' : '') + '"' + n.text.slice(0, 60) + '"' + refTag(n));
           }
           return;
         }
@@ -73,7 +77,7 @@ export function formatTree(tree: TreeNode): string[] {
       // 下方 productive 折叠/走子只输出子节点、把自身文本整段吞掉——先把它作为本节点文本行保住。
       if (n.text) {
         const head = path.length ? path.join(' > ') + ' ' : '';
-        out.push('  '.repeat(depth) + head + '"' + n.text.slice(0, 60) + '"');
+        out.push('  '.repeat(depth) + head + '"' + n.text.slice(0, 60) + '"' + refTag(n));
       }
     }
     const kids = n.kids;

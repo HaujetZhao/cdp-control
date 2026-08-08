@@ -102,3 +102,26 @@ test('formatTree: 聚合文本节点(agg)输出 ~ 前缀,字面文本不加', ()
   markText(root);
   assert.deepEqual(formatTree(root), ['nav', '  a ~"首页"', '  a "下载"']);
 });
+
+test('formatTree: 登记过 ref 的叶子输出 [ref=i] 标注', () => {
+  const btn = mk({ tag: 'button', isContent: true, text: '登录', inter: true, size: 1, ref: 3 });
+  const p = mk({ tag: 'p', isContent: true, text: '评论文本', size: 1, ref: 7 });
+  const root = mk({ tag: 'div', isContent: false, size: 3, kids: [btn, p] });
+  markText(root);
+  // inter 叶 + 文本叶各自带 ref 标注;纯包装 div 无 ref 不标
+  assert.deepEqual(formatTree(root), ['div', '  button "登录" [ref=3]', '  p "评论文本" [ref=7]']);
+});
+
+test('formatTree: 无 ref 节点不标 [ref=i](不回归)', () => {
+  const a = mk({ tag: 'a', isContent: true, text: '首页', inter: true, size: 1 });
+  const root = mk({ tag: 'nav', isContent: false, size: 2, kids: [a] });
+  markText(root);
+  assert.deepEqual(formatTree(root), ['nav', '  a "首页"']);
+});
+
+test('formatTree: leafValue 与 span 文本行也带 ref 标注', () => {
+  const item = mk({ tag: 'li', isContent: true, leafValue: '点赞', size: 2, ref: 5, kids: [mk({ tag: 'span', isContent: true, text: '22.9万', size: 1 })] });
+  const root = mk({ tag: 'div', isContent: false, size: 3, kids: [item] });
+  markText(root);
+  assert.deepEqual(formatTree(root), ['div', '  "点赞 22.9万" [ref=5]']);
+});
