@@ -74,6 +74,16 @@ test('formatTree: leafish 叶(inter 或 img)输出 leafLabel 行', () => {
   assert.deepEqual(formatTree(root), ['div', '  img "封面"', '  button "登录"']);
 });
 
+test('formatTree: 自身直接文本 + 文本子节点并存时,ownText 不丢(富文本段落)', () => {
+  // 模拟知乎富文本段落 <p>own<span>nested</span></p>:p 既有自身文本又有文本子节点。
+  const span = mk({ tag: 'span', isContent: true, text: '你的大脑其实已经在腹腔了。', size: 1 });
+  const p = mk({ tag: 'p', isContent: true, text: '肠子才是动物进化路中最先出现的大脑，', size: 2, kids: [span] });
+  const root = mk({ tag: 'div', isContent: false, size: 3, kids: [p] });
+  markText(root);
+  // p 的 ownText 必须出现,不能只显示子 span(否则段落前半截整段丢失)
+  assert.deepEqual(formatTree(root), ['div', '  "肠子才是动物进化路中最先出现的大脑，"', '  p "你的大脑其实已经在腹腔了。"']);
+});
+
 test('markText: 自身文本或后代文本都置 hasText=true', () => {
   const child = mk({ tag: 'span', isContent: true, text: '子', size: 1 });
   const root = mk({ tag: 'div', isContent: false, size: 2, kids: [child] });

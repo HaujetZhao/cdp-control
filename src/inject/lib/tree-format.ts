@@ -69,6 +69,12 @@ export function formatTree(tree: TreeNode): string[] {
         out.push(line);
         return;
       }
+      // 自身直接文本 + 文本子节点并存(富文本段落,如知乎 <p>own<span>nested</span></p>):
+      // 下方 productive 折叠/走子只输出子节点、把自身文本整段吞掉——先把它作为本节点文本行保住。
+      if (n.text) {
+        const head = path.length ? path.join(' > ') + ' ' : '';
+        out.push('  '.repeat(depth) + head + '"' + n.text.slice(0, 60) + '"');
+      }
     }
     const kids = n.kids;
     if (!kids.length) return;
