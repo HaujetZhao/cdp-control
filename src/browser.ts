@@ -18,13 +18,17 @@ async function isBrowserReady(): Promise<boolean> {
 }
 
 async function findBrowserExe(): Promise<string | null> {
+  // 用环境变量取安装根目录,避免硬编码 C:(系统盘不在 C: 时仍能探测到默认安装路径)。
+  const pf = process.env.PROGRAMFILES || 'C:/Program Files';
+  const pf86 = process.env['PROGRAMFILES(X86)'] || 'C:/Program Files (x86)';
+  const la = process.env.LOCALAPPDATA || '';
   const cands = [
-    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-    'C:/Program Files/Google/Chrome/Application/chrome.exe',
-    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-    `${process.env.LOCALAPPDATA || ''}/Microsoft/Edge/Application/msedge.exe`,
-    `${process.env.LOCALAPPDATA || ''}/Google/Chrome/Application/chrome.exe`,
+    `${pf86}/Microsoft/Edge/Application/msedge.exe`,
+    `${pf}/Microsoft/Edge/Application/msedge.exe`,
+    `${pf}/Google/Chrome/Application/chrome.exe`,
+    `${pf86}/Google/Chrome/Application/chrome.exe`,
+    `${la}/Microsoft/Edge/Application/msedge.exe`,
+    `${la}/Google/Chrome/Application/chrome.exe`,
   ];
   return cands.find(p => existsSync(p)) || null;
 }
