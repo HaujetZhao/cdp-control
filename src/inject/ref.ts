@@ -1,0 +1,21 @@
+/**
+ * ref.ts — locate 注入入口:按 tree 的 ref 序号反查稳定定位器(selector + xpath)。
+ * ref 是会话句柄(存 window.__cdpRefs),页面刷新后失效;此命令把 ref 翻译成
+ * 刷新后仍可用的 CSS selector 与绝对 xpath,供 tree --selector-file / --xpath-file 复用。
+ * 可选 --ancestor 向上爬 N 层父级,把"内容叶子的 ref"抬升到"语义区域容器"。
+ */
+import { setResult } from './lib/result';
+import { refElement, climbAncestors } from './lib/find-root';
+import { genSel, genXpath } from './lib/genSel';
+import type { LocateArgs } from './lib/arg';
+
+declare const __CDP_ARG__: LocateArgs;
+
+(() => {
+  const base = refElement(__CDP_ARG__.ref);
+  if (!base) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 无效或已失效(ref 是会话句柄,页面刷新后失效;需先重新 tree 拿到新 ref)` });
+  const el = climbAncestors(base, __CDP_ARG__.ancestor || 0);
+  if (!el) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 向上爬 ${__CDP_ARG__.ancestor || 0} 层后无元素` });
+  const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  return setResult({ ok: true, tag: el.tagName.toLowerCase(), text, selector: genSel(el), xpath: genXpath(el) });
+})();

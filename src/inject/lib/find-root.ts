@@ -207,3 +207,25 @@ export function findRoot(selector?: string, xpath?: string): Element | null {
   if (xpath) return xpathRoot(xpath);
   return document.body;
 }
+
+/**
+ * 按 tree 输出的 ref 序号取真实元素(ref 存于 window.__cdpRefs,会话句柄)。
+ * 页面刷新后 __cdpRefs 随 document 重建而清空,此时返回 null(ref 失效)。
+ * tree / locate 共用同一解析:先取 ref 元素,再 climbAncestors 爬到目标容器。
+ */
+export function refElement(ref: number): Element | null {
+  const arr = (globalThis as any).__cdpRefs;
+  const el = arr && arr[ref];
+  return el && el.nodeType === 1 ? (el as Element) : null;
+}
+
+/**
+ * 从元素向上爬 ancestor 层父级(默认 0 = 不爬,返回自身)。
+ * 用来把"内容叶子的 ref"抬升到"语义区域容器"——纯包装容器本身无 ref,只能从叶子往上爬。
+ * 遇无父元素(html 或 shadow 边界)即停。
+ */
+export function climbAncestors(el: Element | null, ancestor = 0): Element | null {
+  let e = el;
+  for (let i = 0; i < ancestor; i++) if (e && e.parentElement) e = e.parentElement;
+  return e;
+}
