@@ -99,7 +99,7 @@ sites/
 
 **铁律**:初次查看页面要看完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
 
-**定位**:层数=数折叠链(`div>div>div`=3层);但同类序号 `n` **不能**从 tree 反推(含无文本兄弟)。已带 `[ref]` 直接 ref 操作。拿准序号:①F12 Copy full XPath ②文本谓词 `//*[contains(.,'…')]` ③文本叶推父链(最稳)④`cdp xpath` 分步诊断。
+**定位**:层数=数折叠链(`div>div>div`=3层);但同类序号 `n` **不能**从 tree 反推(含无文本兄弟)。已带 `[ref]` 直接 ref 操作。拿准序号:①F12 Copy full XPath ②文本谓词 `//*[contains(.,'…')]` ③文本叶推父链(最稳)④`cdp locate <ref>` 反查稳定定位器(见下方「区域定位」)。
 
 **易错**:
 - `//*[contains(.,'…')][1]` 的 `[1]` 取最外层,须加 `and not(.//*[contains(.,'…')])` 锁最深
@@ -136,17 +136,14 @@ sites/
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树 |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定定位器(selector + xpath)**。ref 是会话句柄,页面刷新后失效;locate 把它翻译成刷新后仍可用的定位器,供 `tree --selector-file/--xpath-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
-| `xpath <file> [--target]` | **按 xpath 查元素(shadow 穿透,含分步诊断)**:打印全部命中(标签/文本/稳定 selector);未命中时打印**分步诊断**,精确指出断在哪一步、当时候选是谁——用于排查 DevTools 复制的路径为何不命中。xpath 直接以位置参数传**文件路径**(从文件读,免 shell 转义;行首 `//` 会被 shell 静默改成 `/`,内联必错) |
-| `click <selector> [--ref <n>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow) |
-| `fill <selector> <值> [--ref <n>] [--target]` | 填输入框并派发 input/change(selector 或 ref) |
-| `focus <selector> [--ref <n>] [--target]` | 聚焦元素(selector 或 ref,配合按键用) |
+| `click <selector> [--ref <n>] [--ancestor <k>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow;--ancestor 定位后爬父) |
+| `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--target]` | 填输入框并派发 input/change(selector 或 ref,--ancestor 爬父) |
+| `focus <selector> [--ref <n>] [--ancestor <k>] [--target]` | 聚焦元素(selector 或 ref,--ancestor 爬父,配合按键用) |
 | `get-focus [--target]` | 查看当前焦点元素在哪 |
 | `press-key <键> [--target]` | 真实按键/组合键,如 `Enter`、`Tab`、`Ctrl+Shift+A` |
-| `hover <selector> [--ref <n>] [--target]` | 鼠标移到元素上(selector 或 ref,触发 mouseover/mouseenter) |
+| `hover <selector> [--ref <n>] [--ancestor <k>] [--target]` | 鼠标移到元素上(selector 或 ref,--ancestor 爬父,触发 mouseover/mouseenter) |
 | `shot [--file out.png] [--target]` | 截图 |
 | `logs [--target] [--level error,warn] [--since <ms>] [--json]` | 读 target 控制台日志(见下方「读控制台日志」) |
-| `listen` | 前台运行控制台监听 daemon(常驻后台,一般不手动调) |
-| `listen-stop` | 停止控制台监听 daemon |
 | `run <脚本文件>` | 执行自动化脚本(脚本里用全局 `cdp` API,可顶层 `await`) |
 
 环境变量:`CDP_HOST` / `CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(监听 daemon 端口,默认 9333)。
@@ -163,7 +160,7 @@ sites/
   - `--since <毫秒时间戳>` 只取该时间点之后。
   - 默认人类可读 `[HH:MM:SS][level] args`;`--json` 输出完整结构(嵌套对象 + `stack` 调用链)给脚本/agent。
   - **读时自动补种**:`logs` 本身也会幂等注入监控脚本(防 daemon 未及装),所以对任意 tab 读都有效。
-- **停止**:`node dist/cdp.js listen-stop`。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
+- **无需手动管理**:监听 daemon 由 `open`/`ensure`/`logs` **自动拉起**(隐藏 `__daemon` 入口,无 `listen`/`listen-stop` 命令)。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
 - **生命周期**:daemon 在**浏览器关闭后约 5s 自动退出**(看门狗),不留孤儿进程;下次 `open`/`ensure`/`logs` 会自动重新拉起。所以无需手动担心残留。
 - **脚本模式**:`cdp.logs(target, {level, since})` → 返回结构化日志数组,可与 `cdp.click`/`cdp.waitForFn` 配合做"跑完流程断言无报错"。
 
@@ -177,7 +174,7 @@ sites/
 
 **先探后写、写成文件、一次执行**——避免多次模型往返:
 
-1. **探明页面**:不知道元素时,先 `node dist/cdp.js list`(看有哪些 tab)+ `node dist/cdp.js tree --target <匹配>`(感知整页结构);要操作再 `cdp xpath` 拿目标元素的稳定 selector。
+1. **探明页面**:不知道元素时,先 `node dist/cdp.js list`(看有哪些 tab)+ `node dist/cdp.js tree --target <匹配>`(感知整页结构);要操作再 `cdp locate <ref>` 反查目标元素的稳定定位器。
 2. **写脚本文件**:把整段操作写成一个 `.js` 放到**项目根**(见上方"脚本放置规范"),用全局 `cdp` API。直接复制下面「脚本示例」即可(无内置模板)。
 3. **执行**:在项目根用绝对路径运行 `node "<本 SKILL 所在目录>/dist/cdp.js" run ./你的脚本.js`。出错改文件再跑,不重新生成;截图等输出直接落项目根。
 
@@ -217,8 +214,7 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?,ref?,ancestor?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;锚点互斥:ref 优先,其次 selector,最后 xpath,缺省 body;`opts.ancestor` 统一向上爬 k 层父级;`opts.xpath` 为 shadow 穿透版(拼接树模型,`/`与`//`都跨任意层 shadow,支持 `[n]` 标准位置索引(逻辑父下第 n 个匹配兄弟)与 `[contains(...)]` 谓词,递归任意深度) |
-| `cdp.locate(target, ref, ancestor?)` | 对象,数字,数字可选 | 从 tree 的 ref 序号反查稳定定位器:`{ok, tag, text, selector, xpath}`;可选 ancestor 向上爬 k 层。返回的 selector/xpath 刷新后仍可用,喂给 `tree`/`locate` 复用 |
-| `cdp.xpath(target, path)` | 对象,字符串 | 按 xpath 查元素(shadow 穿透):`{count, matches:[{tag,text,selector}], trace:[{text,axis,input,matched,sample?}]}`;`count===0` 为未命中,`trace` 含分步诊断 |
+| `cdp.locate(target, ref, ancestor?)` | 对象,数字,数字可选 | 从 tree 的 ref 序号反查稳定定位器:`{ok, tag, text, selector, xpath}`;可选 ancestor 向上爬 k 层。返回的 selector/xpath 刷新后仍可用,喂给 `tree` 复用 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 tree 输出的 ref 序号点真实元素(穿透 shadow,零 XPath) |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
@@ -246,4 +242,4 @@ await cdp.close(t);
 - **fill 对富文本框无效** → 已派发 input/change;React 等框架可能需额外 setter,改用 `eval` 按框架方式设值。
 - **logs 拿不到历史日志** → daemon 只在 attach **之后**才收;页面加载早期的日志、attach 前已有的日志读不到。想抓加载期日志要在导航**前**种上监听(open/ensure 已自动种)。
 - **`--target 5173` 匹配到 DevTools 窗** → DevTools 的 url/title 也含 `5173`。用**完整 targetId** 精确指定(见 `list`)。
-- **listen-stop 报"未发现"** → 若 health 已不可达说明其实已停(判定是轮询 health 而不是看返回值);仍想确认看 `node dist/cdp.js logs` 是否还能拉起。
+- **监听 daemon 没起/日志读空** → 无需手动管 daemon(无 listen/listen-stop);`logs` 本身会幂等拉起并补种监控。若仍读空,多半是刚开的新 tab(见上方「已知限制」~0.5–2s 才装上),先 `await sleep(1500)` 再读。
