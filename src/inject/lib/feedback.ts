@@ -30,9 +30,10 @@ export function startFeedback(): void {
     for (const m of ms) {
       for (const n of Array.from(m.addedNodes)) st.added.push(n);
       if (m.type === 'characterData' && m.target.nodeType === 3) {
-        // 原地改字符:只有新值。如输入框打字。
-        const t = (m.target.nodeValue || '').trim();
-        if (t) st.changes.push({ after: t });
+        // 原地改字符(如点赞数字 textContent 直接改 data):characterDataOldValue 记录了旧值,拼成 旧→新。
+        const before = (m.oldValue || '').trim();
+        const after = ((m.target as Text).nodeValue || '').trim();
+        if (after && before !== after) st.changes.push(before ? { before, after } : { after });
       } else if (m.type === 'childList') {
         // 文本替换(如 element.textContent=值 删旧加新 Text):removedNodes=旧值、addedNodes=新值,一对一配对成 旧→新。
         const befores = textNodes(m.removedNodes);
@@ -43,7 +44,7 @@ export function startFeedback(): void {
       }
     }
   });
-  mo.observe(document, { childList: true, subtree: true, characterData: true });
+  mo.observe(document, { childList: true, subtree: true, characterData: true, characterDataOldValue: true });
   (globalThis as any).__cdpFeedback = { mo, state: st };
 }
 
