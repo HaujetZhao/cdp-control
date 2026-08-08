@@ -93,25 +93,22 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector/--xpath 只建指定区域)')
-  .option('--selector <sel>', 'CSS 选择器')
+targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector-file/--xpath-file 只建指定区域)')
   .option('--selector-file <file>', '从文件读 selector')
-  .option('--xpath <xp>', 'XPath(shadow 穿透,任意深度)')
   .option('--xpath-file <file>', '从文件读 xpath')
   .action(async (opts) => {
-    const sel = readOptFile(opts.selectorFile) ?? opts.selector;
-    const xp = readOptFile(opts.xpathFile) ?? opts.xpath;
+    const sel = readOptFile(opts.selectorFile);
+    const xp = readOptFile(opts.xpathFile);
     const r = await api.tree(await needTarget(opts.target), { selector: sel, xpath: xp });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));
   });
 
 targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)')
-  .argument('[path]', 'xpath(可选,与 --xpath-file 二选一;含空格/特殊字符用文件传更稳)')
   .option('--xpath-file <file>', '从文件读 xpath')
-  .action(async (path, opts) => {
-    const xp = readOptFile(opts.xpathFile) ?? (path as string);
-    if (!xp) throw new Error('需传 xpath 位置参数或 --xpath-file');
+  .action(async (opts) => {
+    const xp = readOptFile(opts.xpathFile);
+    if (!xp) throw new Error('需传 --xpath-file');
     const r = await api.xpath(await needTarget(opts.target), xp);
     if (!r.count) {
       console.log(`未命中: ${xp}`);
