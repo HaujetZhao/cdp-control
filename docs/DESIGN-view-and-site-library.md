@@ -1,4 +1,6 @@
-# 设计:agent 的"视力"增强(view 几何视图)+ 站点脚本库(sites/)
+# 设计:agent 的"视力"增强(view 几何视图,规划未实现)+ 站点脚本库(sites/,已落地)
+
+> 状态:本文为**设计规划**,记录了想做什么与怎么想。**`view` 几何视图尚未实现**(当前感知靠 `tree`,见 SKILL.md);`sites/` 站点脚本库已落地。实现决策以 docs/superpowers/specs/ 为准。
 
 日期:2026-08-07
 
@@ -100,7 +102,7 @@ sites/
 /**
  * 站点: zhihu.com
  * 用途: 抓取当前问题下全部评论(正文+回复者用户名+点赞)
- * 用法: node cdp.js run sites/zhihu/get-comments.js -- …(或直接 run)
+ * 用法: node dist/cdp.js run sites/zhihu/get-comments.js -- …(或直接 run)
  * 返回: [{author, body, likes, replies: [...]}]
  * 依赖的 DOM 结构假设: 评论在 .CommentList 内,.CommentItem 为项,
  *                     用户名在 .CommentItem-author 下 a,正文在 .CommentItem-content
