@@ -93,6 +93,8 @@ sites/
 |---|---|
 | (默认) | 整页 |
 | `--xpath-file <f>` / `--selector-file <f>` | 筛选指定区域 |
+| `--ref <n>` | 以某 ref 的元素为树根(与 --selector-file/--xpath-file 互斥) |
+| `--ancestor <k>` | 从锚点(任意)向上爬 k 层父级再建树;多与 --ref 配合把"内容叶子"抬到"区域容器" |
 | `--visible-only` | 筛选当前视口内可见元素 |
 
 **铁律**:初次查看页面要看完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
@@ -110,6 +112,16 @@ sites/
 - 操作优先 `[ref=i]`(`click {ref:i}`,零 XPath,shadow 内也能定位);XPath 兜底批量/精确查询
 - ref 是会话句柄:存 `window.__cdpRefs`,页面刷新失效,每次 tree 重建。**每回合先 tree 拿 ref 再操作**,刷新/动态加载后序号漂移是预期
 
+**区域定位两种姿势(想 tree 一块"语义区域"而不是单个叶子时)**:
+- **同会话立即看**:`tree --ref <n> --ancestor <k>`——拿区域内任一内容叶子的 ref,向上爬 k 层到容器直接建树。如 `tree --ref 53 --ancestor 4` 从"964,599"爬到统计块容器。
+- **刷新后仍可用(更常用)**:`locate <n> [--ancestor <k>]` 把 ref 翻译成**稳定 selector + xpath**,写进文件后 `tree --selector-file/--xpath-file` 复用。ref 是会话句柄刷新即失效,locate 得到的定位器不依赖 ref、刷新后照样局部 tree。流程:
+  ```
+  tree --target ...            # 1. 看整页,记下区域里某个内容叶子的 ref(如 [ref=53])
+  cdp locate 53 --ancestor 4   # 2. 反查该区域容器的 selector + xpath(直接贴出来)
+  cdp tree --xpath-file f      # 3. 刷新后,把上一步的 xpath 写入 f,照样定位这块区域
+  ```
+  (locate 的 xpath 是"同名兄弟序号"语义,与 DevTools Copy full XPath 一致;`--selector-file` 同理)
+
 ## Quick Reference
 
 所有命令可选 `--target <匹配>`(target id 或 url/title 子串;不传则自动选第一个普通网页)。每个命令支持 `--help`/`-h` 查看自身用法(顶层 `cdp --help` 或 `cdp help` 看全部)。命令名统一 **kebab-case**。
@@ -122,7 +134,8 @@ sites/
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `tree [--target] [--selector-file <file>] [--xpath-file <file>] [--visible-only]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector-file`/`--xpath-file` 可选,只建指定区域(取第一个匹配,selector 优先);`--xpath-file` 为 shadow 穿透版(XPath 3.1 引擎直接跑真实 DOM,递归任意深度);`--visible-only` 只输出当前视口内几何可见且非隐藏的元素(模拟看到当前屏幕,视口外的裁掉);xpath/selector **一律从文件读**(免 shell 转义,行首 `//` 内联会被 shell 静默改) |
+| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树 |
+| `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定定位器(selector + xpath)**。ref 是会话句柄,页面刷新后失效;locate 把它翻译成刷新后仍可用的定位器,供 `tree --selector-file/--xpath-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
 | `xpath <file> [--target]` | **按 xpath 查元素(shadow 穿透,含分步诊断)**:打印全部命中(标签/文本/稳定 selector);未命中时打印**分步诊断**,精确指出断在哪一步、当时候选是谁——用于排查 DevTools 复制的路径为何不命中。xpath 直接以位置参数传**文件路径**(从文件读,免 shell 转义;行首 `//` 会被 shell 静默改成 `/`,内联必错) |
 | `click <selector> [--ref <n>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow) |
 | `fill <selector> <值> [--ref <n>] [--target]` | 填输入框并派发 input/change(selector 或 ref) |
@@ -203,7 +216,8 @@ await cdp.close(t);
 | `cdp.close(target)` | 对象 | — |
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
-| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版(拼接树模型,`/`与`//`都跨任意层 shadow,支持 `[n]` 标准位置索引(逻辑父下第 n 个匹配兄弟)与 `[contains(...)]` 谓词,递归任意深度) |
+| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?,ref?,ancestor?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;锚点互斥:ref 优先,其次 selector,最后 xpath,缺省 body;`opts.ancestor` 统一向上爬 k 层父级;`opts.xpath` 为 shadow 穿透版(拼接树模型,`/`与`//`都跨任意层 shadow,支持 `[n]` 标准位置索引(逻辑父下第 n 个匹配兄弟)与 `[contains(...)]` 谓词,递归任意深度) |
+| `cdp.locate(target, ref, ancestor?)` | 对象,数字,数字可选 | 从 tree 的 ref 序号反查稳定定位器:`{ok, tag, text, selector, xpath}`;可选 ancestor 向上爬 k 层。返回的 selector/xpath 刷新后仍可用,喂给 `tree`/`locate` 复用 |
 | `cdp.xpath(target, path)` | 对象,字符串 | 按 xpath 查元素(shadow 穿透):`{count, matches:[{tag,text,selector}], trace:[{text,axis,input,matched,sample?}]}`;`count===0` 为未命中,`trace` 含分步诊断 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 tree 输出的 ref 序号点真实元素(穿透 shadow,零 XPath) |

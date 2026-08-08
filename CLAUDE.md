@@ -42,6 +42,8 @@ esbuild 会把入口包进 module wrapper、吞掉返回值,故:
 
 **新增注入入口的步骤**:在 `src/inject/` 加一个 `.ts`(顶层,不进 lib/),用 `setResult` + 可选 `__CDP_ARG__`,重建即可自动打包成 `dist/inject/<名>.js`。**注意**:注入侧代码跑在浏览器,不能用 Node API;类型只在编译期(DOM lib)。
 
+**ref 登记表契约**:tree 遍历时把内容/交互元素登记进 `window.__cdpRefs`,`[ref=i]` 序号即其下标;tree 每次重建时**先清空再重排**(序号随树变,别跨树假设)。`tree`/`locate`/`click`/`fill`/`focus`/`hover` 都靠它按 ref 定位。共享解析在 `lib/find-root.ts` 的 `refElement`(ref→元素)+ `climbAncestors`(向上爬父,`--ancestor` 用);`locate`(注入入口 `src/inject/ref.ts`)用它们把 ref 翻译成稳定定位器:`genSel`(CSS selector)+ `genXpath`(绝对 xpath,同名兄弟序号语义,与 DevTools Copy full XPath 一致;仅覆盖 light DOM——shadow 内元素 parentElement 在边界为 null,路径断)。`genXpath` 的 `tag[n]` 是"同名兄弟序号",不是"第 n 个元素子"(曾因此 bug 未命中),已加单测锁定。
+
 ## 返回契约(api.ts 的 `invoke`)
 
 Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注入脚本成功返回任意值(可含 `{ok:true}`);失败返回 `{ok:false, err}`。`invoke` 统一把 `{ok:false}` 抛成异常,调用方无需各自判 ok。数据类入口(tree/xpath 等返回裸对象)自然通过。改 api 方法时统一走 `invoke`,别再散落 `r?.ok` 检查。
@@ -49,7 +51,7 @@ Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注�
 ## 测试
 
 - `tests/*.test.ts` 用 Node 内置 `node:test` + `node:assert/strict`,零运行时依赖。
-- 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/inject/lib/tree-format.ts`(formatTree/markText,结构树折叠内联的纯变换)、`src/keys.ts`(parseKeySpec)、`src/transport.ts`(resolveTarget)。
+- 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/inject/lib/tree-format.ts`(formatTree/markText,结构树折叠内联的纯变换)、`src/inject/lib/genSel.ts`(genSel/genXpath)、`src/inject/lib/find-root.ts`(normalizeXpath/splitAxis/refElement/climbAncestors,后两者用假元素链模拟 DOM)、`src/keys.ts`(parseKeySpec)、`src/transport.ts`(resolveTarget)。
 - 注入侧 DOM 相关逻辑(如 tree 的 simplify(DOM 采集)、find-root 的 shadow 穿透)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。
 
 ## 文档分工
