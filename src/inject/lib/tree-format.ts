@@ -12,16 +12,24 @@ export interface TreeNode {
   kids: TreeNode[]; size: number; hasText: boolean; leafValue?: string;
   agg?: boolean;   // 显示文本来自 innerText/grabText 兜底(聚合文本)而非直接文本节点
   shadow?: boolean; // 宿主带 shadowRoot:其下子节点来自 shadow DOM,CSS 选择器不能穿透,须用 xpath 定位
+  ref?: number;    // tree 登记的全局引用序号(见 __cdpRefs),输出标注 [ref=i],agent 用它直接操作真实元素
+  hasInter?: boolean; // 自身或任一后代可交互——含交互子代的包装节点不可内联折叠,否则交互叶的 ref 被整颗吞掉
 }
 
 /** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */
 const tagLabel = (n: TreeNode) => n.tag + (n.shadow ? '[shadow]' : '');
 
-/** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代)。返回根节点结果。 */
+/** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素。 */
+const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + ']' : '');
+
+/** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代),并顺带计算 hasInter(自身或任一后代可交互)。
+ * 返回根节点"是否有文本"结果。hasInter 用于内联折叠判断:含交互子代的包装节点不能折叠,否则交互叶的 ref 丢失。 */
 export function markText(n: TreeNode): boolean {
   let h = !!(n.text || n.imgAlt);
-  for (const k of n.kids) if (markText(k)) h = true;
+  let hi = !!n.inter;
+  for (const k of n.kids) { if (markText(k)) h = true; if (k.hasInter) hi = true; }
   n.hasText = h;
+  n.hasInter = hi;
   return h;
 }
 
@@ -36,7 +44,7 @@ export function formatTree(tree: TreeNode): string[] {
     let l = tagLabel(n);
     if (n.tag === 'img' && n.imgAlt) l += ' "' + n.imgAlt.slice(0, 40) + '"';
     else if (n.text) l += (n.agg ? ' ~' : ' ') + '"' + n.text.slice(0, 60) + '"';
-    return l;
+    return l + refTag(n);
   };
   const inlineLabel = (n: TreeNode) => {
     if (n.tag === 'img' && n.imgAlt) return 'img "' + n.imgAlt.slice(0, 20) + '"';
@@ -49,19 +57,20 @@ export function formatTree(tree: TreeNode): string[] {
       if (n.leafValue) {
         const val = firstTxt(n.kids);
         const head = path.length ? path.join(' > ') + ' > ' : '';
-        out.push('  '.repeat(depth) + head + '"' + n.leafValue + (val ? ' ' + val.slice(0, 60) : '') + '"');
+        out.push('  '.repeat(depth) + head + '"' + n.leafValue + (val ? ' ' + val.slice(0, 60) : '') + '"' + refTag(n));
         return;
       }
       const hasChildText = n.kids.some(k => k.hasText);
       if (leafish(n) && n.size <= 8) {
-        if (n.text || n.imgAlt) out.push('  '.repeat(depth) + leafLabel(n));
+        // 交互节点(含空 input)无文本也输出裸标签行——否则 fill 目标在 tree 里不可见、ref 拿不到
+        if (n.text || n.imgAlt || n.inter) out.push('  '.repeat(depth) + leafLabel(n));
         return;
       }
       if (!hasChildText) {
         if (n.tag === 'span') {
           if (n.text) {
             const head = path.length ? path.join(' > ') : '';
-            out.push('  '.repeat(depth) + (head ? head + ' ' : '') + '"' + n.text.slice(0, 60) + '"');
+            out.push('  '.repeat(depth) + (head ? head + ' ' : '') + '"' + n.text.slice(0, 60) + '"' + refTag(n));
           }
           return;
         }
@@ -73,16 +82,19 @@ export function formatTree(tree: TreeNode): string[] {
       // 下方 productive 折叠/走子只输出子节点、把自身文本整段吞掉——先把它作为本节点文本行保住。
       if (n.text) {
         const head = path.length ? path.join(' > ') + ' ' : '';
-        out.push('  '.repeat(depth) + head + '"' + n.text.slice(0, 60) + '"');
+        out.push('  '.repeat(depth) + head + '"' + n.text.slice(0, 60) + '"' + refTag(n));
       }
     }
     const kids = n.kids;
     if (!kids.length) return;
     const newPath = path.concat([tagLabel(n)]);
-    const productive = kids.filter(k => k.hasText && !isTrivialLeaf(k));
+    // productive = 有文本且非琐碎叶,或可交互(空 input 等无文本交互节点也要纳入,否则 tree 里不可见、ref 拿不到)
+    const productive = kids.filter(k => (k.hasText && !isTrivialLeaf(k)) || k.inter);
     if (productive.length === 1) { walk(productive[0], depth, newPath); return; }
     if (productive.length >= 2) {
-      if (productive.every(inlineable)) {
+      // 交互/带 ref/含交互子代的节点不内联折叠:必须各自成行,否则 [ref=i] 标注被吞、agent 拿不到可操作句柄。
+      // 含交互子代(hasInter)也不能折叠——纯包装 DIV 内含按钮时,内联只取第一个文本,把其它交互叶的 ref 整颗吞掉(如知乎评论动作行)。
+      if (productive.every(k => inlineable(k) && !k.inter && !k.hasInter && k.ref == null)) {
         const items = productive.map(inlineLabel).join(' ');
         out.push('  '.repeat(depth) + (newPath.length ? newPath.join(' > ') + ' ' : '') + items);
         return;

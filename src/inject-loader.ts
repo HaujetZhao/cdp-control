@@ -43,11 +43,6 @@ export function xpathExpr(path: string): string {
   return inject('xpath', { path });
 }
 
-/** 悬停入口(返回元素中心视口坐标)。 */
-export function hoverExpr(sel: string): string {
-  return inject('hover', { sel });
-}
-
 /** 读控制台日志入口。 */
 export function readExpr(levelSet: string[] | null, since: number): string {
   return inject('read', levelSet ? { level: levelSet, since } : { since });

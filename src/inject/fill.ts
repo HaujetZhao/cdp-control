@@ -3,13 +3,14 @@
  * 派发 input/change 事件(触发 React/Vue 等受控组件)。
  */
 import { setResult } from './lib/result';
+import { findTarget, targetLabel } from './lib/find';
 import type { FillArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FillArgs;
 
 (() => {
-  const el = document.querySelector(__CDP_ARG__.sel) as HTMLElement | null;
-  if (!el) return setResult({ ok: false, err: '未找到: ' + __CDP_ARG__.sel });
+  const el = findTarget(__CDP_ARG__) as HTMLElement | null;
+  if (!el) return setResult({ ok: false, err: '未找到: ' + targetLabel(__CDP_ARG__) });
   if (!['INPUT', 'TEXTAREA', 'SELECT', '[contenteditable=true]'].some(x => el.matches(x)))
     return setResult({ ok: false, err: '不是输入元素: ' + el.tagName });
   const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype

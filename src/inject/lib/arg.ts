@@ -6,11 +6,11 @@
  * 各入口按需声明自己的参数形状。
  */
 
-/** click/focus:按 selector 定位并操作。 */
-export interface FindArgs { sel: string }
+/** click/focus/hover:按 selector 或 ref(真实元素引用,穿透 shadow)定位并操作。 */
+export interface FindArgs { sel?: string; ref?: number }
 
-/** fill:按 selector 填值。 */
-export interface FillArgs { sel: string; value: string }
+/** fill:按 selector 或 ref 填值。 */
+export interface FillArgs { sel?: string; ref?: number; value: string }
 
 /** tree:按 selector / xpath 求建树根元素(注入侧 findRoot 解析,含 shadow 穿透)。 */
 export interface TreeArgs { selector?: string; xpath?: string }
