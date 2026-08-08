@@ -26,7 +26,7 @@ dist/inject/*.js         注入到浏览器页面跑的 JS(esbuild 打包成自�
 |---|---|---|---|
 | `src/*.ts` | Node 侧(连接 CDP、CLI、api、纯函数模块) | Node | `src/cdp.ts` 入口 esbuild bundle(含 commander)→ `dist/cdp.js`;其余转译 CJS(不打包) |
 | `src/inject/*.ts` | 注入浏览器页面执行的 JS(入口) | 浏览器(DOM lib) | esbuild bundle 成 IIFE → `dist/inject/` |
-| `src/inject/lib/` | 注入侧共享模块(genSel/result/arg/monitor-inject/tree-utils/tree-format/find-root) | 浏览器 | 打进各入口 |
+| `src/inject/lib/` | 注入侧共享模块(genSel/result/arg/monitor-inject/tree-utils/tree-format/tree-core/feedback/find-root) | 浏览器 | 打进各入口 |
 
 依赖单向无环:`transport ← inject-loader/api ← monitor/browser ← cdp`。
 
@@ -42,7 +42,11 @@ esbuild 会把入口包进 module wrapper、吞掉返回值,故:
 
 **新增注入入口的步骤**:在 `src/inject/` 加一个 `.ts`(顶层,不进 lib/),用 `setResult` + 可选 `__CDP_ARG__`,重建即可自动打包成 `dist/inject/<名>.js`。**注意**:注入侧代码跑在浏览器,不能用 Node API;类型只在编译期(DOM lib)。
 
-**ref 登记表契约**:tree 遍历时把内容/交互元素登记进 `window.__cdpRefs`,`[ref=i]` 序号即其下标;tree 每次重建时**先清空再重排**(序号随树变,别跨树假设)。`tree`/`locate`/`click`/`fill`/`focus`/`hover` 都靠它按 ref 定位。共享解析在 `lib/find-root.ts` 的 `refElement`(ref→元素)+ `climbAncestors`(向上爬父,`--ancestor` 用);`locate`(注入入口 `src/inject/ref.ts`)用它们把 ref 翻译成稳定定位器:`genSel`(CSS selector)+ `genXpath`(就近 id 锚定:`//*[@id=…]`+下方位置链;无 id 才回退全位置路径 `html/body/div[n]…`;同名兄弟序号语义,与 DevTools Copy full XPath 一致;仅覆盖 light DOM——shadow 内元素 parentElement 在边界为 null,路径断)。`genXpath` 的 `tag[n]` 是"同名兄弟序号",不是"第 n 个元素子"(曾因此 bug 未命中);id 锚定让 xpath 不随重排漂移(曾间歇性未命中),均已加单测锁定。
+**建树 core(tree-core.ts)**:DOM 采集(simplify + visible-only 裁剪)抽在 `lib/tree-core.ts` 的 `buildTree(root, {visibleOnly, viewport})`,被 `tree` 入口与 `feedback-collect` 共享。**buildTree 只"追加" ref 到 `__cdpRefs`,不重置**——重置时机归调用方(tree 整页建树前;反馈拼接前重置一次使跨块 ref 连续)。`viewport:true` 时对带 ref 节点算便宜 `isInViewport`(rect+宽高,不查 computed style),存入 `node.view`,formatTree 据此输出 `[ref=i·屏]`(在视区)/`[ref=i]`。
+
+**操作反馈(feedback-start/collect)**:`lib/feedback.ts` 的 `startFeedback()` 装 MutationObserver 记 childList 新增 + characterData 文本变化;`collectFeedback()` 断开后取**顶层新增元素**(本次 addedNodes 中无元素祖先也在新增集合里的节点)逐块 `buildTree` 拼接 + 摘要。注入入口 `feedback-start`/`feedback-collect` **分两次 eval 协作**,observer 状态暂存全局 `__cdpFeedback`;中间 Node 侧(api.ts 的 `runWithFeedback`)执行动作 + `sleep(feedbackDelay)` + 前后各 `list()` 一次 diff tab(opened/closed)。`noFeedback` 时不观察/不等待/不 diff,`feedback:null`。
+
+**ref 登记表契约**:tree 遍历时把内容/交互元素登记进 `window.__cdpRefs`,`[ref=i]` 序号即其下标;tree 每次重建时**先清空再重排**(序号随树变,别跨树假设)。操作反馈的反馈树也独立重排(ref 从 0),**会顶掉打开页时的全局 ref**——反馈后 agent 用反馈树 ref 操作新增内容,想按原 ref 操作须重新整页 tree。`tree`/`locate`/`click`/`fill`/`focus`/`hover` 都靠它按 ref 定位。共享解析在 `lib/find-root.ts` 的 `refElement`(ref→元素)+ `climbAncestors`(向上爬父,`--ancestor` 用);`locate`(注入入口 `src/inject/ref.ts`)用它们把 ref 翻译成稳定定位器:`genSel`(CSS selector)+ `genXpath`(就近 id 锚定:`//*[@id=…]`+下方位置链;无 id 才回退全位置路径 `html/body/div[n]…`;同名兄弟序号语义,与 DevTools Copy full XPath 一致;仅覆盖 light DOM——shadow 内元素 parentElement 在边界为 null,路径断)。`genXpath` 的 `tag[n]` 是"同名兄弟序号",不是"第 n 个元素子"(曾因此 bug 未命中);id 锚定让 xpath 不随重排漂移(曾间歇性未命中),均已加单测锁定。
 
 ## 返回契约(api.ts 的 `invoke`)
 
@@ -52,7 +56,7 @@ Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注�
 
 - `tests/*.test.ts` 用 Node 内置 `node:test` + `node:assert/strict`,零运行时依赖。
 - 纯函数单测覆盖:`src/inject/lib/tree-utils.ts`(inlineLen/inlineable/leafText/firstTxt/isTrivialLeaf)、`src/inject/lib/tree-format.ts`(formatTree/markText,结构树折叠内联的纯变换)、`src/inject/lib/genSel.ts`(genSel/genXpath)、`src/inject/lib/find-root.ts`(normalizeXpath/splitAxis/refElement/climbAncestors,后两者用假元素链模拟 DOM)、`src/keys.ts`(parseKeySpec)、`src/transport.ts`(resolveTarget)。
-- 注入侧 DOM 相关逻辑(如 tree 的 simplify(DOM 采集)、find-root 的 shadow 穿透)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。
+- 注入侧 DOM 相关逻辑(如 tree-core 的 buildTree(DOM 采集)、feedback 的顶层新增元素判定、find-root 的 shadow 穿透)依赖真实 DOM,靠浏览器实测验收(见 SKILL.md 用法),不写单测。`formatTree` 的 `·屏`(view 分支)为纯变换,已加单测锁定。
 
 ## 文档分工
 
