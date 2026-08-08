@@ -64,12 +64,12 @@ export async function navigate(target: Target, url: string): Promise<void> {
   });
 }
 
-export interface TreeOpts { selector?: string; xpath?: string; visibleOnly?: boolean; ref?: number; ancestor?: number }
+export interface TreeOpts { selector?: string; xpath?: string; visibleOnly?: boolean; ref?: number; ancestor?: number; scrollToLoad?: boolean }
 
 /** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,最后 xpath,缺省 body;
- * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素。 */
+ * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先上下滚动触发懒加载再建树。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
-  return invoke(target, treeExpr(opts.selector, opts.xpath, opts.visibleOnly, opts.ref, opts.ancestor), 30000);
+  return invoke(target, treeExpr(opts.selector, opts.xpath, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad), 30000);
 }
 
 /** 按 tree 的 ref 序号反查稳定定位器(selector + xpath),可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的定位器复用。 */

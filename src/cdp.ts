@@ -91,6 +91,7 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
   .option('--selector-file <file>', '从文件读 selector')
   .option('--xpath-file <file>', '从文件读 xpath')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
+  .option('--scroll-to-load', '先上下滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动,防 agent 找不到未加载区域')
   .action(async (opts) => {
     const sel = readOptFile(opts.selectorFile);
     const xp = readOptFile(opts.xpathFile);
@@ -99,6 +100,7 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
       selector: sel, xpath: xp, visibleOnly: !!opts.visibleOnly,
       ref: opts.ref != null ? Number(opts.ref) : undefined,
       ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
+      scrollToLoad: !!opts.scrollToLoad,
     });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));

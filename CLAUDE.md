@@ -36,7 +36,7 @@ dist/inject/*.js         注入到浏览器页面跑的 JS(esbuild 打包成自�
 esbuild 会把入口包进 module wrapper、吞掉返回值,故:
 
 1. **结果写入**:注入脚本把结果写到全局 `globalThis.__cdpResult`(用 `src/inject/lib/result.ts` 的 `setResult`)。
-2. **footer 读取**:`build.mjs` 给每个入口统一追加 footer `;(()=>{const r=globalThis.__cdpResult;delete globalThis.__cdpResult;return r})()`——整体完成值即结果,且读完即删、无残留。
+2. **footer 读取**:`build.mjs` 给每个入口统一追加 footer `;(async()=>{const r=await globalThis.__cdpResult;delete globalThis.__cdpResult;return r})()`——整体完成值即结果,且读完即删、无残留。**footer 是 async 并 await `__cdpResult`**:同步入口传普通值(await 原样通过);异步入口(如 `tree --scroll-to-load` 先滚动再建树)可 `setResult(<promise>)` 传 promise,footer await 后拿到解析值。`Runtime.evaluate` 开了 `awaitPromise`。
 3. **参数传递**:注入脚本用自由标识符 `__CDP_ARG__`(TS 里 `declare const __CDP_ARG__: XxxArgs`),Node 侧 `src/inject-loader.ts` 注入前拼一行 `var __CDP_ARG__ = <json>;`。无需字符串替换。
 4. **入参数类型**在 `src/inject/lib/arg.ts`(FindArgs/FillArgs/TreeArgs/LocateArgs/ReadArgs)。
 

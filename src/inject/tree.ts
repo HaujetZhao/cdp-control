@@ -13,7 +13,8 @@ import type { TreeArgs } from './lib/arg';
 
 declare const __CDP_ARG__: TreeArgs;
 
-(() => {
+// 整段包成 async(通过 setResult 传 promise,footer await):支持 --scroll-to-load 先异步滚动再建树。
+setResult((async () => {
   // 锚点互斥:--ref 优先(读上一次 tree 登记的 __cdpRefs,须在下方清空表之前解析),
   // 其次 selector/xpath,缺省 body。--ancestor 为统一爬父修饰符,对任一锚点生效。
   let root: Element | null;
@@ -26,6 +27,17 @@ declare const __CDP_ARG__: TreeArgs;
   }
   // 全局 ref 登记表:本次 tree 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
   (globalThis as any).__cdpRefs = [];
+  // --scroll-to-load:先上下滚动触发懒加载(评论区等首屏外的内容),再建树。模拟真实用户滚动。
+  // 最多滚 steps 个视口高,不追求到底(防无限流加载爆炸);滚完回顶。
+  async function scrollToLoad() {
+    const steps = 6, pause = 120;
+    const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    const vh = innerHeight || document.documentElement.clientHeight || 800;
+    const target = Math.min(h, steps * vh);
+    for (let y = 0; y < target; y += vh) { window.scrollTo(0, y); await new Promise(r => setTimeout(r, pause)); }
+    window.scrollTo(0, 0); await new Promise(r => setTimeout(r, pause));
+  }
+  if (__CDP_ARG__.scrollToLoad) await scrollToLoad();
   // visible-only:只输出当前视口内几何可见、且非隐藏(display:none/opacity:0/visibility:hidden)的元素,
   // 模拟 agent"看到当前屏幕"。非视口但有视口内后代的节点退化为纯容器骨架,不输出自身文本/ref。
   const visibleOnly = !!__CDP_ARG__.visibleOnly;
@@ -125,4 +137,4 @@ declare const __CDP_ARG__: TreeArgs;
   if (visibleOnly) { tree.kids = tree.kids.filter(k => prune(k)); }
   markText(tree);
   return setResult({ ok: true, lines: formatTree(tree) });
-})();
+})());

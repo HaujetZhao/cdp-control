@@ -35,8 +35,8 @@ export function inject(name: string, args?: unknown): string {
 
 /** 结构树入口(唯一感知命令)。锚点互斥:ref 优先,其次 selector,最后 xpath,缺省整页 body;
  * visibleOnly 只输出视口内可见;ancestor 为统一爬父修饰符(对任一锚点生效)。 */
-export function treeExpr(selector?: string, xpath?: string, visibleOnly?: boolean, ref?: number, ancestor?: number): string {
-  return inject('tree', { selector, xpath, visibleOnly: visibleOnly || undefined, ref, ancestor });
+export function treeExpr(selector?: string, xpath?: string, visibleOnly?: boolean, ref?: number, ancestor?: number, scrollToLoad?: boolean): string {
+  return inject('tree', { selector, xpath, visibleOnly: visibleOnly || undefined, ref, ancestor, scrollToLoad: scrollToLoad || undefined });
 }
 
 /** locate:按 tree 的 ref 反查稳定定位器(selector + xpath),可选 --ancestor 爬父。 */

@@ -20,7 +20,9 @@ const src = join(__dirname, 'src');
 const dist = join(__dirname, 'dist');
 
 // 注入脚本统一的返回值 footer(读全局 + 删除 + 返回)。
-const RESULT_FOOTER = `;(() => { const r = globalThis.__cdpResult; delete globalThis.__cdpResult; return r; })()`;
+// async:支持入口把 __cdpResult 设成 promise(如 tree --scroll-to-load 先异步滚动再建树),
+// footer await 后返回解析值;同步入口 __cdpResult 是普通值,await 原样通过。awaitPromise 生效。
+const RESULT_FOOTER = `;(async () => { const r = await globalThis.__cdpResult; delete globalThis.__cdpResult; return r; })()`;
 
 async function main() {
   console.log('🔍 tsc --noEmit (类型检查)…');

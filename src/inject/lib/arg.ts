@@ -14,7 +14,7 @@ export interface FillArgs { sel?: string; ref?: number; ancestor?: number; value
 
 /** tree:按 selector / xpath / ref 求建树根元素(注入侧 findRoot + refElement/climbAncestors 解析,含 shadow 穿透)。
  * 三种锚点互斥:ref 优先,其次 selector,最后 xpath;缺省 body。ancestor 为统一爬父修饰符(对任一锚点生效)。 */
-export interface TreeArgs { selector?: string; xpath?: string; visibleOnly?: boolean; ref?: number; ancestor?: number }
+export interface TreeArgs { selector?: string; xpath?: string; visibleOnly?: boolean; ref?: number; ancestor?: number; scrollToLoad?: boolean }
 
 /** locate:按 tree 的 ref 序号反查稳定定位器(selector + xpath),可选 --ancestor 向上爬 N 层。 */
 export interface LocateArgs { ref: number; ancestor?: number }
