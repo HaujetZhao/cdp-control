@@ -29,15 +29,18 @@ setResult((async () => {
   }
   // 全局 ref 登记表:本次 tree 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
   (globalThis as any).__cdpRefs = [];
-  // --scroll-to-load:先上下滚动触发懒加载(评论区等首屏外的内容),再建树。模拟真实用户滚动。
-  // 最多滚 steps 个视口高,不追求到底(防无限流加载爆炸);滚完回顶。
+  // --scroll-to-load:固定距离滚动触发懒加载(评论区等首屏外的内容),再建树。
+  // 向下滚一屏、向上滚一屏,都是固定距离(= 一屏高),触发当前位置上下各一屏的懒加载后回到原位。
+  // 刻意不大范围滚多屏再回顶——那会拉飞视口、让 agent 在已展开长内容页时丢失当前位置(曾踩坑)。
   async function scrollToLoad() {
-    const steps = 6, pause = 120;
-    const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    const pause = 120;
     const vh = innerHeight || document.documentElement.clientHeight || 800;
-    const target = Math.min(h, steps * vh);
-    for (let y = 0; y < target; y += vh) { window.scrollTo(0, y); await new Promise(r => setTimeout(r, pause)); }
-    window.scrollTo(0, 0); await new Promise(r => setTimeout(r, pause));
+    const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    const start = Math.min(window.scrollY, Math.max(0, h - vh));
+    const down = Math.min(start + vh, Math.max(0, h - vh)); // 向下固定一屏(不超文档底)
+    window.scrollTo(0, down); await new Promise(r => setTimeout(r, pause));
+    window.scrollTo(0, Math.max(0, down - vh)); await new Promise(r => setTimeout(r, pause)); // 向上固定一屏
+    window.scrollTo(0, start); await new Promise(r => setTimeout(r, pause)); // 回原位
   }
   if (__CDP_ARG__.scrollToLoad) await scrollToLoad();
   const visibleOnly = !!__CDP_ARG__.visibleOnly;

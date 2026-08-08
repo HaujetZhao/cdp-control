@@ -138,10 +138,13 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
-/** 打印操作反馈:先新增内容 tree 行,再摘要 + tab 变化。fb 为 null(--no-feedback)时无输出。 */
+/** 打印操作反馈:先「页面变化」标题 + 新增内容 tree 行,再摘要 + tab 变化。fb 为 null(--no-feedback)时无输出。 */
 function printFeedback(fb: any): void {
   if (!fb) return;
-  if (fb.lines?.length) console.log(fb.lines.join('\n'));
+  if (fb.lines?.length) {
+    console.log('→ 本次操作后页面变化(新增内容):');
+    console.log(fb.lines.join('\n'));
+  }
   const parts: string[] = [];
   if (fb.summary) parts.push(fb.summary);
   if (fb.tabs?.opened?.length) parts.push('新开 tab: ' + fb.tabs.opened.map((t: any) => t.title || t.url).join(' | '));
