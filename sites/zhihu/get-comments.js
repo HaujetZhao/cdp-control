@@ -1,7 +1,7 @@
 /**
  * 站点: zhihu.com
  * 用途: 抓当前问题页已加载的评论(回复者用户名 + 正文 + 点赞)
- * 用法: node "<SKILL>/cdp.js" run sites/zhihu/get-comments.js
+ * 用法: node "<SKILL>/dist/cdp.js" run sites/zhihu/get-comments.js
  * 返回: [{author, body, likes}]
  * 依赖的 DOM 结构假设:
  *   - 评论项:   .CommentItem

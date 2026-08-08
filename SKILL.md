@@ -7,20 +7,9 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 
 ## Overview
 
-本 Skill 所在目录有一个零依赖 Node 脚本 `cdp.js` ，可直接连 Chrome/Edge 的 CDP 端口(默认 9222),取代 chrome-devtools MCP。核心价值:**能看到并操作手动打开的 tab**(MCP 因 Puppeteer attach 竞态会漏看)。
+本 Skill 所在目录有一个零依赖 Node 脚本 `dist/cdp.js` ，可直接连 Chrome/Edge 的 CDP 端口(默认 9222),取代 chrome-devtools MCP。核心价值:**能看到并操作手动打开的 tab**(MCP 因 Puppeteer attach 竞态会漏看)。
 
-**代码结构**(`cdp.js` 是单入口,逻辑按职责拆在 `lib/` 下):
-```
-cdp.js              入口:组装最终 api + CLI 子命令分发(require.main 守卫)
-lib/transport.js   低级连接与 target 级原语(getJson/ws/send/evaluate/resolve)
-lib/scripts.js     注入/读取到页面的 JS 字符串(页面操作 + 控制台监控 MONITOR_JS)
-lib/api.js         高层页面操作 API(snapshot/click/fill/wait/keyboard/...)
-lib/monitor.js     控制台监听:注入守护 daemon(cmdListen)+ logs 读取
-lib/browser.js     确保浏览器就绪(冷启动自动探测 Edge/Chrome)
-```
-依赖单向无环:`transport ← scripts/api ← monitor/browser ← cdp.js`。
-
-**重要原则——自动化时优先写脚本文件**:凡是"打开→跳转→等元素→点击→填表→读结果"这类多步操作,**不要一步步调单个命令**(那会每次发一个模型请求、每次都 prefill+decode 全量上下文)。而是把整段操作写成一个 `.js` 脚本文件,用 `node "<本 SKILL 所在目录>/cdp.js" run 脚本.js` **一次执行**。脚本可反复修改重跑。
+**重要原则——自动化时优先写脚本文件**:凡是"打开→跳转→等元素→点击→填表→读结果"这类多步操作,**不要一步步调单个命令**(那会每次发一个模型请求、每次都 prefill+decode 全量上下文)。而是把整段操作写成一个 `.js` 脚本文件,用 `node "<本 SKILL 所在目录>/dist/cdp.js" run 脚本.js` **一次执行**。脚本可反复修改重跑。
 
 ## 协作原则(重要)
 
@@ -39,8 +28,8 @@ lib/browser.js     确保浏览器就绪(冷启动自动探测 Edge/Chrome)
 **不确定 CDP 浏览器是否启动时，先跑一遍 `ensure`**,`ensure` 自己处理"浏览器开没开、用哪个、要不要启动":
 
 ```bash
-node "<本 SKILL 所在目录>/cdp.js" ensure          # 确保浏览器已通过 CDP 就绪(不导航)
-node "<本 SKILL 所在目录>/cdp.js" ensure --url "<网页地址>"   # 开浏览器并直接打开该页
+node "<本 SKILL 所在目录>/dist/cdp.js" ensure          # 确保浏览器已通过 CDP 就绪(不导航)
+node "<本 SKILL 所在目录>/dist/cdp.js" ensure --url "<网页地址>"   # 开浏览器并直接打开该页
 ```
 
 `ensure` 内部自动:
@@ -56,22 +45,22 @@ node "<本 SKILL 所在目录>/cdp.js" ensure --url "<网页地址>"   # 开浏�
 ## 调用方式
 
 ```bash
-node "<本 SKILL 所在目录>/cdp.js" <子命令> [参数]
-node "<本 SKILL 所在目录>/cdp.js" run "./scripts/你的脚本.js"   # 在项目根执行自动化脚本
+node "<本 SKILL 所在目录>/dist/cdp.js" <子命令> [参数]
+node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"   # 在项目根执行自动化脚本
 ```
 
 ## 脚本放置规范(重要)
 
 **两类脚本,放两处**:
 
-- **任务性一次性脚本**(针对某次具体任务的打开→跳转→填表→抓取)→ 写到**当前项目的根目录**(或项目内临时目录，如 `scripts` 或 `tmp`),**不写进 skill 目录**。运行用 **`cdp.js` 的绝对路径**,在项目根执行:
+- **任务性一次性脚本**(针对某次具体任务的打开→跳转→填表→抓取)→ 写到**当前项目的根目录**(或项目内临时目录，如 `scripts` 或 `tmp`),**不写进 skill 目录**。运行用 **`dist/cdp.js` 的绝对路径**,在项目根执行:
 
 ```bash
-node "<本 SKILL 所在目录>/cdp.js" run "./scripts/项目里的脚本.js"
+node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js"
 ```
 
 - **为什么**:`run` 读取脚本和脚本里的相对路径输出(截图等)都以 `cwd`(你执行命令的那个目录)为基准。在项目根运行 → 脚本能被读、截图/生成文件直接落到项目根,**skill 目录保持干净、只有工具本身**,不会被业务脚本和输出污染。
-- **绝对路径调 cdp.js**:不要 `cd` 进 skill 目录再跑(那会把 cwd 变成 skill 目录,输出写进 skill)。
+- **绝对路径调 dist/cdp.js**:不要 `cd` 进 skill 目录再跑(那会把 cwd 变成 skill 目录,输出写进 skill)。
 - **脚本自包含**:每个脚本自己用 `cdp.open(url)` 或 `cdp.resolve(url/title子串)` 定位 target,不假设"当前选中页"。这样并行跑多个脚本互不影响。
 - **脚本运行环境**:`run` 脚本里只有全局 `cdp` + **白名单 `require`**(可用 `os`/`path`/`fs`/`child_process`/`crypto`/`util`/`stream`/`url`)。取临时目录/写文件:``const path = require('path'), os = require('os')``,用 `path.join(os.tmpdir(), name)` 拼路径——**勿直接用 `/tmp/xx` 前缀**(Windows 会被 `path.resolve` 解析成盘根 `D:\xx` 而 ENOENT)。
 - **可复用站点原语**(针对某站点、可反复用、已验证的**单用途**脚本,如"抓某站评论"、"在某站回复")→ 升格进 **skill 的 `sites/<域名>/` 目录**(见下方「站点脚本库 sites/」)。新任务遇到同站点先查该目录,能复用的直接 `run`,避免重写。
@@ -89,7 +78,7 @@ sites/
 └── _template/           # 新站点脚手架(README + primitive.js 模板)
 ```
 
-- **原语自包含**:每个脚本自己 `cdp.resolve(url/title 子串)` 定位 target,不假设"当前选中页";用 `cdp` 全局 + 白名单 `require`(规范与上同)。用绝对路径 `cdp.js run sites/<域名>/<原语>.js` 执行。
+- **原语自包含**:每个脚本自己 `cdp.resolve(url/title 子串)` 定位 target,不假设"当前选中页";用 `cdp` 全局 + 白名单 `require`(规范与上同)。用绝对路径 `dist/cdp.js run sites/<域名>/<原语>.js` 执行。
 - **头部注释模板**(每个原语必带):`用途 / 用法 / 返回结构 / 依赖的 DOM 结构假设 / 最后验证日期 / 状态(✅已验证 | ⚠️失效待修)`。
 - **生命周期**:实测验证通过 → 更新"最后验证/状态";站点改版失效 → **更新或删除原语**并在该站 README 标记。README 维护"可用/失效"清单。
 - **新任务流程**:用到某站 → 先看该站 README + 目录里有没有现成原语 → 能复用直接 `run`,缺什么就写新的并升格进目录(验证通过后)。
@@ -136,17 +125,17 @@ sites/
 
 ## 读控制台日志(console 监听)
 
-`cdp.js` 用**常驻 daemon 给每个页面注入监控脚本**,把日志存进页面的 `window.__cdpLogs`,`logs` 命令再 eval 读出来——**保留对象的嵌套结构和调用链**(不是拍平的文本)。核心价值:能抓到**用户手动操作期间**打出的日志、跨多次命令/agent 回合累计、**刷新页面后监控自动补装**、支持过滤。
+`dist/cdp.js` 用**常驻 daemon 给每个页面注入监控脚本**,把日志存进页面的 `window.__cdpLogs`,`logs` 命令再 eval 读出来——**保留对象的嵌套结构和调用链**(不是拍平的文本)。核心价值:能抓到**用户手动操作期间**打出的日志、跨多次命令/agent 回合累计、**刷新页面后监控自动补装**、支持过滤。
 
 原理:直接监听 CDP 控制台事件拿到的只是描述文本,看不到对象嵌套结构。所以改成往页面注入 `console.*`/`onerror`/`unhandledrejection` 钩子,把**活的嵌套对象 + 调用链(stack)** 存进 `window.__cdpLogs`,读时结构化序列化。关键机制是 `Page.addScriptToEvaluateOnNewDocument`——注册在该 tab 的会话上,**每次 document 创建(含刷新)自动先跑监控脚本**,刷新自动补装,无需 daemon 探测。
 
 - **自动装监听**:`open` / `ensure --url` 打开页面时自动拉起 daemon,它轮询 `/json/list` 给**每个** tab(含手动开的)注册监控脚本。
-- **读**:`node cdp.js logs [--target <匹配>] [--level error,warn] [--since <ms>] [--json]`
+- **读**:`node dist/cdp.js logs [--target <匹配>] [--level error,warn] [--since <ms>] [--json]`
   - `--level` 逗号分隔按级别过滤(`debug/log/info/warn/error`);未捕获异常归 `error`。
   - `--since <毫秒时间戳>` 只取该时间点之后。
   - 默认人类可读 `[HH:MM:SS][level] args`;`--json` 输出完整结构(嵌套对象 + `stack` 调用链)给脚本/agent。
   - **读时自动补种**:`logs` 本身也会幂等注入监控脚本(防 daemon 未及装),所以对任意 tab 读都有效。
-- **停止**:`node cdp.js listen-stop`。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
+- **停止**:`node dist/cdp.js listen-stop`。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
 - **生命周期**:daemon 在**浏览器关闭后约 5s 自动退出**(看门狗),不留孤儿进程;下次 `open`/`ensure`/`logs` 会自动重新拉起。所以无需手动担心残留。
 - **脚本模式**:`cdp.logs(target, {level, since})` → 返回结构化日志数组,可与 `cdp.click`/`cdp.waitForFn` 配合做"跑完流程断言无报错"。
 
@@ -160,9 +149,9 @@ sites/
 
 **先探后写、写成文件、一次执行**——避免多次模型往返:
 
-1. **探明页面**:不知道元素时,先 `node cdp.js list`(看有哪些 tab)+ `node cdp.js snapshot --target <匹配>`(拿到可交互元素的 selector)。
+1. **探明页面**:不知道元素时,先 `node dist/cdp.js list`(看有哪些 tab)+ `node dist/cdp.js snapshot --target <匹配>`(拿到可交互元素的 selector)。
 2. **写脚本文件**:把整段操作写成一个 `.js` 放到**项目根**(见上方"脚本放置规范"),用全局 `cdp` API。直接复制下面「脚本示例」即可(无内置模板)。
-3. **执行**:在项目根用绝对路径运行 `node "<本 SKILL 所在目录>/cdp.js" run ./你的脚本.js`。出错改文件再跑,不重新生成;截图等输出直接落项目根。
+3. **执行**:在项目根用绝对路径运行 `node "<本 SKILL 所在目录>/dist/cdp.js" run ./你的脚本.js`。出错改文件再跑,不重新生成;截图等输出直接落项目根。
 
 脚本示例(等价于 9 个单命令调用,但只发一次模型请求):
 
@@ -227,4 +216,4 @@ await cdp.close(t);
 - **fill 对富文本框无效** → 已派发 input/change;React 等框架可能需额外 setter,改用 `eval` 按框架方式设值。
 - **logs 拿不到历史日志** → daemon 只在 attach **之后**才收;页面加载早期的日志、attach 前已有的日志读不到。想抓加载期日志要在导航**前**种上监听(open/ensure 已自动种)。
 - **`--target 5173` 匹配到 DevTools 窗** → DevTools 的 url/title 也含 `5173`。用**完整 targetId** 精确指定(见 `list`)。
-- **listen-stop 报"未发现"** → 若 health 已不可达说明其实已停(判定是轮询 health 而不是看返回值);仍想确认看 `node cdp.js logs` 是否还能拉起。
+- **listen-stop 报"未发现"** → 若 health 已不可达说明其实已停(判定是轮询 health 而不是看返回值);仍想确认看 `node dist/cdp.js logs` 是否还能拉起。

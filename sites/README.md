@@ -10,7 +10,7 @@
 
 ## 规范
 
-- **原语自包含**:每个脚本自己 `cdp.resolve(url/title 子串)` 定位 target,不假设"当前选中页";用 `cdp` 全局 + 白名单 `require`。用绝对路径 `cdp.js run sites/<域名>/<原语>.js` 执行。
+- **原语自包含**:每个脚本自己 `cdp.resolve(url/title 子串)` 定位 target,不假设"当前选中页";用 `cdp` 全局 + 白名单 `require`。用绝对路径 `dist/cdp.js run sites/<域名>/<原语>.js` 执行。
 - **头部注释模板**(每个原语必带),见 [_template/primitive.js](_template/primitive.js):
   - `站点 / 用途 / 用法 / 返回结构 / 依赖的 DOM 结构假设 / 最后验证日期 / 状态`
 - **生命周期**:

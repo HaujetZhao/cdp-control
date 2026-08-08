@@ -1,7 +1,7 @@
 /**
  * 站点: <域名>
  * 用途: <单用途一句话,如"抓当前页全部评论(正文+回复者用户名+点赞)">
- * 用法: node "<SKILL>/cdp.js" run sites/<域名>/<名字>.js
+ * 用法: node "<SKILL>/dist/cdp.js" run sites/<域名>/<名字>.js
  * 返回: <返回结构,如 [{author, body, likes, replies:[...]}]>
  * 依赖的 DOM 结构假设:
  *   - 评论容器: .CommentList
