@@ -1,21 +1,25 @@
 /**
  * find-root.ts — 从 selector / xpath 求建树根元素(注入侧,无 Node 依赖)。
- * 被 tree 入口复用。xpath 用「合成拼接树 + 原生 evaluate」激进重做。
+ * 被 tree 入口复用。xpath 用 fontoxpath(XPath 3.1 引擎)直接跑真实 DOM。
  *
- * —— 为什么重做 ——
- * 原生 document.evaluate 有两个无法绕开的限制:①shadowRoot(DocumentFragment)
- * 不能作 context 节点;②`//` 轴不跨 shadow 边界。旧实现因此手写分词 + 逐层遍历 +
- * 手算 `[n]`/`siblingPos`,脆弱且缺轴支持(还出过 XPATH_BOOL 常量错)。
- * 新实现把页面「合成」成一棵**没有 shadow 的拼接树**:shadowRoot 顶层子元素直接
- * 拼进宿主,整棵镜像进一个独立 detached Document,然后用户路径**整条**交给原生
- * document.evaluate 在这棵树上跑——轴/谓词/`[n]`/函数全部由浏览器标准 XPath 引擎
- * 实现,命中的合成节点再经 WeakMap 映射回真实元素。于是 parent::/ancestor:: 等
- * 一切标准轴免费可用,谓词/索引语义原生正确,手写引擎整层删除。
+ * —— 为什么换 fontoxpath ——
+ * 旧引擎把整页镜像成"无 shadow 的合成树",再交浏览器原生 document.evaluate(XPath 1.0)
+ * 求值,靠 WeakMap 映射回真实元素。缺点:每查一次就要克隆整页(detached Document),
+ * 克隆有损(丢动态值)、开销大、且原生引擎只支持 XPath 1.0。
+ * 新引擎把页面**原样**交给 fontoxpath 求值,只提供一个 shadow 穿透的 IDomFacade:
+ * getChildNodes 把 shadowRoot 顶层子拼进宿主(与旧合成树同语义:light 在前、shadow 在后),
+ * getParentNode 把 shadowRoot(节点)穿透回宿主——于是 shadow DOM 对 XPath 完全透明,
+ * `//` 轴、parent::/ancestor::、谓词、`[n]` 全部由 XPath 3.1 引擎原生实现,且直接返回真实节点,
+ * 无需克隆、无需映射。合成树物化那整层删除。
  *
  * —— 可测性 ——
- * 纯字符串逻辑(normalize / splitAxis)可单测;合成树物化 + 原生求值 + 映射依赖
+ * 纯字符串逻辑(normalize / splitAxis)可单测;shadow 穿透 facade + fontoxpath 求值依赖
  * 真实 DOM 全局 `document`,按项目约定靠浏览器实测验收。
  */
+import * as fontoxpath from 'fontoxpath';
+import type { Bucket, IDomFacade, Node as FontoNode } from 'fontoxpath';
+
+const { domFacade: rawFacade, evaluateXPathToNodes } = fontoxpath;
 
 /** 分步诊断信息。input=上一步命中的数量;matched=本步命中数;sample=断在该步时上一步命中的标签摘要。 */
 export interface XpStepInfo { text: string; axis: 'child' | 'desc'; input: number; matched: number; sample?: string }
@@ -28,43 +32,80 @@ export interface XpathEvalResult {
   trace: XpStepInfo[];
 }
 
-/** 合成拼接树:独立 detached Document 里,shadowRoot 顶层子拼进宿主,无 shadow 隔离。 */
-interface ComposedBuild {
-  sd: Document;
-  mapEl: WeakMap<Element, Element>;    // 合成元素 → 真实元素
-  mapText: WeakMap<Text, Text>;        // 合成文本节点 → 真实文本节点
+/* —— shadow 穿透 IDomFacade:把 shadowRoot 当作透明,child 拼进宿主,parent 穿透回宿主 —— */
+
+/** 节点的展平子列表:light DOM 子 + shadowRoot 顶层子(light 在前),其余委托原样。
+ * 参数用 fontoxpath 的极简 Node 类型(仅 nodeType),运行时即真实 DOM 节点,内部 cast 回 DOM Node。 */
+function flatKids(n: FontoNode): Node[] {
+  const el = n as Node;
+  const kids: Node[] = [];
+  for (const c of Array.from(el.childNodes)) kids.push(c);
+  if (n.nodeType === 1) {
+    const sr = (el as Element).shadowRoot;
+    if (sr) for (const c of Array.from(sr.childNodes)) kids.push(c);
+  }
+  return kids;
 }
 
-/** 把真实 document 镜像成合成 Document:light 子 + shadowRoot 顶层子拼进宿主,逐层递归。 */
-function buildComposed(): ComposedBuild {
-  const sd = document.implementation.createHTMLDocument('');
-  const mapEl = new WeakMap<Element, Element>();
-  const mapText = new WeakMap<Text, Text>();
-  const root = sd.documentElement!;
-  mapEl.set(root, document.documentElement!); // 复用的 html 容器也登记映射(否则 /html 命中会被丢弃)
-  while (root.firstChild) root.removeChild(root.firstChild); // 清掉默认 head/body
-  const mirror = (real: Node, synParent: Element): void => {
-    const kids: Node[] = [];
-    for (const c of Array.from(real.childNodes)) kids.push(c);
-    if (real.nodeType === 1 && (real as Element).shadowRoot)
-      for (const c of Array.from((real as Element).shadowRoot!.childNodes)) kids.push(c);
-    for (const c of kids) {
-      if (c.nodeType === 1) {
-        const el = sd.createElement((c as Element).tagName.toLowerCase());
-        for (const a of Array.from((c as Element).attributes)) el.setAttribute(a.name, a.value);
-        mapEl.set(el, c as Element);
-        synParent.appendChild(el);
-        mirror(c, el);
-      } else if (c.nodeType === 3) {
-        const t = sd.createTextNode(c.nodeValue ?? '');
-        mapText.set(t, c as Text);
-        synParent.appendChild(t);
-      }
-      // 其余节点类型(注释等)忽略
+/** 真实父节点:shadowRoot(节点,nodeType 11)内的子节点穿透回宿主,属性归其 ownerElement。 */
+function realParent(n: FontoNode): Node | null {
+  const el = n as Node;
+  return n.nodeType === 2 ? (el as Attr).ownerElement : el.parentNode;
+}
+
+/** bucket 匹配,语义与 fontoxpath 默认 facade 的 `type-X` / `name-X` / `type-1-or-type-2` 一致。 */
+function hit(bucket: Bucket | null | undefined, n: FontoNode): boolean {
+  if (!bucket) return true;
+  const t = n.nodeType === 4 ? 3 : n.nodeType;
+  const arr: string[] = [];
+  if (t === 1 || t === 2) arr.push('type-1-or-type-2', `type-${t}`, `name-${(n as Element).localName}`);
+  else arr.push(`type-${t}`);
+  return arr.includes(bucket);
+}
+
+/** 带 shadow 穿透的 domFacade:仅覆盖节点间遍历(getChildNodes/parent/sibling),
+ * 属性与数据获取委托给 fontoxpath 默认 facade。 */
+const shadowFacade: IDomFacade = {
+  getAllAttributes: (n, b) => rawFacade.getAllAttributes(n, b),
+  getAttribute: (n, name) => rawFacade.getAttribute(n, name),
+  getChildNodes: (n, b) => flatKids(n).filter(k => hit(b, k)),
+  getData: (n) => rawFacade.getData(n),
+  getFirstChild: (n, b) => { for (const k of flatKids(n)) if (hit(b, k)) return k; return null; },
+  getLastChild: (n, b) => { const k = flatKids(n); for (let i = k.length - 1; i >= 0; i--) if (hit(b, k[i])) return k[i]; return null; },
+  getNextSibling: (n, b) => {
+    const p = realParent(n); if (!p) return null;
+    const k = flatKids(p); for (let j = k.indexOf(n as Node) + 1; j < k.length; j++) if (hit(b, k[j])) return k[j];
+    return null;
+  },
+  getPreviousSibling: (n, b) => {
+    const p = realParent(n); if (!p) return null;
+    const k = flatKids(p); for (let j = k.indexOf(n as Node) - 1; j >= 0; j--) if (hit(b, k[j])) return k[j];
+    return null;
+  },
+  getParentNode: (n, b) => {
+    let p = realParent(n);
+    if (p && p.nodeType === 11) { const host = (p as ShadowRoot).host; if (host) p = host; }
+    return p && hit(b, p) ? p : null;
+  },
+};
+
+/* —— 求值 —— */
+
+/** 在真实 DOM 上求值整条路径,命中节点归一化为元素(文本节点归到其父元素)。
+ * 表达式返回非节点集(布尔/数字/字符串,如 `//text()="首页"`)时 evaluateXPathToNodes
+ * 会抛 TypeError——这里 try/catch 按无命中处理,不让工具崩掉。 */
+function evalFonto(normalized: string): Element[] {
+  try {
+    const nodes = evaluateXPathToNodes(normalized, document, shadowFacade) as Node[];
+    const out: Element[] = [];
+    for (const n of nodes) {
+      const real = n.nodeType === 1 ? (n as Element) : n.nodeType === 3 ? (n as Text).parentElement : null;
+      if (real && !out.includes(real)) out.push(real);
     }
-  };
-  mirror(document.documentElement!, root);
-  return { sd, mapEl, mapText };
+    return out;
+  } catch {
+    return [];
+  }
 }
 
 /** 路径规范化:无前置斜杠的当作 descendant 搜索(与旧引擎相对路径默认 desc 一致)。 */
@@ -101,38 +142,15 @@ export function splitAxis(xp: string): { axis: 'child' | 'desc'; step: string }[
   return out;
 }
 
-/** 在合成树上原生求值整条路径,命中节点映射回真实元素(文本节点归到其父元素)。
- * 表达式返回非节点集(布尔/数字/字符串,如 `//text()="首页"`)时 evaluate 请求快照类型会抛
- * TypeError——这里用 ANY_TYPE 自己看结果类型,非节点集一律按无命中处理,不让工具崩掉。 */
-function evalComposed(normalized: string, b: ComposedBuild): Element[] {
-  const res = b.sd.evaluate(normalized, b.sd, null, XPathResult.ANY_TYPE, null) as XPathResult;
-  const out: Element[] = [];
-  const push = (syn: Node) => {
-    let real: Element | null = null;
-    if (syn.nodeType === 1) real = b.mapEl.get(syn as Element) ?? null;
-    else if (syn.nodeType === 3) real = (b.mapText.get(syn as Text)?.parentNode as Element) ?? null;
-    if (real && !out.includes(real)) out.push(real);
-  };
-  if (res.resultType === XPathResult.ORDERED_NODE_SNAPSHOT_TYPE || res.resultType === XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE) {
-    for (let i = 0; i < res.snapshotLength; i++) { const n = res.snapshotItem(i); if (n) push(n); }
-  } else if (res.resultType === XPathResult.ORDERED_NODE_ITERATOR_TYPE || res.resultType === XPathResult.UNORDERED_NODE_ITERATOR_TYPE) {
-    let n: Node | null; while ((n = res.iterateNext())) push(n);
-  } else if (res.resultType === XPathResult.FIRST_ORDERED_NODE_TYPE) {
-    const n = res.singleNodeValue; if (n) push(n);
-  }
-  // BOOLEAN/NUMBER/STRING_TYPE:非节点集,无元素命中
-  return out;
-}
-
-/** 分步诊断:逐前缀原生求值,报告每步输入/命中,断链处给出上一步命中标签。 */
-function buildTrace(normalized: string, b: ComposedBuild): XpStepInfo[] {
+/** 分步诊断:逐前缀求值,报告每步输入/命中,断链处给出上一步命中标签。 */
+function buildTrace(normalized: string): XpStepInfo[] {
   const segs = splitAxis(normalized);
   const trace: XpStepInfo[] = [];
   let input = 1; // 首步输入=文档根
   let prevTag: string | undefined;
   for (let i = 0; i < segs.length; i++) {
     const prefix = segs.slice(0, i + 1).map(s => (s.axis === 'desc' ? '//' : '/') + s.step).join('');
-    const nodes = evalComposed(prefix, b);
+    const nodes = evalFonto(prefix);
     const matched = nodes.length;
     trace.push({ text: segs[i].step, axis: segs[i].axis, input, matched, sample: matched ? undefined : prevTag });
     if (matched === 0) break;
@@ -142,16 +160,15 @@ function buildTrace(normalized: string, b: ComposedBuild): XpStepInfo[] {
   return trace;
 }
 
-/** 用合成拼接树求全部命中 + 分步诊断。 */
+/** 用 fontoxpath 求全部命中 + 分步诊断。 */
 export function xpathEval(xp: string): XpathEvalResult {
   const normalized = normalizeXpath(xp);
-  const b = buildComposed();
-  const nodes = evalComposed(normalized, b);
-  const trace = buildTrace(normalized, b);
+  const nodes = evalFonto(normalized);
+  const trace = buildTrace(normalized);
   return { ok: nodes.length > 0, count: nodes.length, nodes, trace };
 }
 
-/** 用合成拼接树求第一个元素命中;无命中返回 null。 */
+/** 用 fontoxpath 求第一个元素命中;无命中返回 null。 */
 export function xpathRoot(xp: string): Element | null {
   return xpathEval(xp).nodes[0] ?? null;
 }
