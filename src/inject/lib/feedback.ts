@@ -11,12 +11,15 @@
 import { buildTree } from './tree-core';
 import { markText, formatTree } from './tree-format';
 
-export interface FeedbackResult { lines: string[]; summary: string }
+export interface FeedbackResult { blocks: FeedbackBlock[]; changes: FeedbackChange[] }
 
-/** 一次文本变化:before 为旧值(可缺,如原地改字符 characterData 拿不到旧值),after 为新值。 */
-interface TextChange { before?: string; after: string }
+/** 一个去重后的新增内容块:lines 为该块 tree 行,count 为它在本次出现的次数(重复块折叠)。 */
+export interface FeedbackBlock { lines: string[]; count: number }
 
-interface FeedbackState { added: Node[]; changes: TextChange[] }
+/** 一次文本变化:before 为旧值(可缺),after 为新值。 */
+export interface FeedbackChange { before?: string; after: string }
+
+interface FeedbackState { added: Node[]; changes: FeedbackChange[] }
 
 /** 取 mutation 里新增/移除的直接文本节点文本。 */
 const textNodes = (nodes: NodeList): string[] =>
@@ -48,10 +51,10 @@ export function startFeedback(): void {
   (globalThis as any).__cdpFeedback = { mo, state: st };
 }
 
-/** 收尾反馈:断开 observer,把本次新增内容 tree 拼接为 lines + 摘要。返回 FeedbackResult。 */
+/** 收尾反馈:断开 observer,把本次新增内容去重折叠 + 文本变化过滤,返回结构化结果。 */
 export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResult {
   const fb = (globalThis as any).__cdpFeedback;
-  if (!fb) return { lines: [], summary: '新增 0 个内容块' };
+  if (!fb) return { blocks: [], changes: [] };
   fb.mo.disconnect();
   (globalThis as any).__cdpFeedback = null;
   const { added, changes } = fb.state as FeedbackState;
@@ -64,23 +67,30 @@ export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResu
     return true;
   });
   // 不重置 __cdpRefs:反馈新增 ref 从现有长度递增,顶掉旧 ref 会丢整页句柄(曾踩坑)。
-  const lines: string[] = [];
+  // 逐块建树,按整块 lines 去重折叠(同内容多次出现,如广告,只留一条 + 计数)。
+  const seen = new Map<string, FeedbackBlock>();
+  const order: string[] = [];
   for (const el of roots) {
     const t = buildTree(el, { viewport: opts.viewport });
     markText(t);
-    lines.push(...formatTree(t));
+    const blines = formatTree(t);
+    if (!blines.length) continue;
+    // 折叠签名去掉 ref 号(内容相同但 ref 不同的重复块应视为同一条,如重复广告)。
+    const sig = blines.join('\n').replace(/\[ref=\d+(·屏)?\]/g, '');
+    if (seen.has(sig)) { seen.get(sig)!.count++; }
+    else { seen.set(sig, { lines: blines, count: 1 }); order.push(sig); }
   }
-  // 文本变化摘要:前后值都报(before → after);无 before 只报 after。去重(前=后/重复变化)取前 5。
-  const seen = new Set<string>();
-  const uniq: TextChange[] = [];
+  const blocks = order.map(s => seen.get(s)!);
+  // 文本变化:过滤"前后相同"(无实质变化,如广告原地刷新),只留真变化;去重取前 5。
+  const seenCh = new Set<string>();
+  const real: FeedbackChange[] = [];
   for (const c of changes) {
+    if (c.before && c.before === c.after) continue;
     const key = c.before ? `${c.before}→${c.after}` : `·${c.after}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    uniq.push(c);
-    if (uniq.length >= 5) break;
+    if (seenCh.has(key)) continue;
+    seenCh.add(key);
+    real.push(c);
+    if (real.length >= 5) break;
   }
-  let summary = `新增 ${roots.length} 个内容块`;
-  if (uniq.length) summary += '; 文本变化: ' + uniq.map(c => c.before ? `${c.before} → ${c.after}` : `"${c.after}"`).join(' ');
-  return { lines, summary };
+  return { blocks, changes: real };
 }

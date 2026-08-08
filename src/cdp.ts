@@ -49,10 +49,12 @@ program.command('ensure')
     console.log(lines.join('\n'));
   });
 
-program.command('list').description('列出所有 page tab(含手动开的)')
+program.command('list').description('确保浏览器就绪并列出所有 page tab(含手动开的)')
   .action(async () => {
+    await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销),agent 无需先 ensure 再 list。
     const list = await api.list();
-    if (list.length === 0) { console.log('(没有 page tab)'); return; }
+    console.log(`共 ${list.length} 个 tab:`);
+    if (list.length === 0) return;
     const line = (t: any) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}`;
     console.log(list.map((t: any, i: number) => `${i + 1}. ${line(t)}`).join('\n'));
   });
@@ -138,17 +140,36 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
-/** 打印操作反馈:页面变化(新增内容缩进)、摘要、tab 变化,每类独立一行带标签。fb 为 null(--no-feedback)时无输出。 */
+/** 操作结果行 + 附唯一 selector(如有)。后续对该元素操作优先用此 selector,避免 ref 失效。 */
+function printAction(line: string, r: any): void {
+  console.log(line + (r?.selector ? '\n  selector: ' + r.selector : ''));
+}
+
+/** 打印操作反馈:新增内容 / 文本变化 / tab 变化分块换行缩进,末尾给局部失效指引。fb 为 null(--no-feedback)时无输出。 */
 function printFeedback(fb: any): void {
   if (!fb) return;
   const out: string[] = [];
-  if (fb.lines?.length) {
-    out.push('→ 页面变化:');
-    for (const l of fb.lines) out.push('  ' + l);
+  if (fb.blocks?.length) {
+    out.push('→ 页面变化 · 新增内容:');
+    for (const b of fb.blocks) {
+      for (const l of b.lines) out.push('  ' + l);
+      if (b.count > 1) out.push(`  (重复 ${b.count} 次,已折叠)`);
+    }
   }
-  if (fb.summary) out.push('→ 摘要: ' + fb.summary);
-  if (fb.tabs?.opened?.length) out.push('→ 新开 tab: ' + fb.tabs.opened.map((t: any) => `${t.title || t.url} [${t.id}]`).join('\n            '));
-  if (fb.tabs?.closed?.length) out.push('→ 关闭 tab: ' + fb.tabs.closed.map((t: any) => t.title || t.url).join('\n            '));
+  if (fb.changes?.length) {
+    out.push('→ 页面变化 · 文本变化:');
+    for (const c of fb.changes) out.push('  · ' + (c.before ? `${c.before} → ${c.after}` : `"${c.after}"`));
+  }
+  if (fb.tabs?.opened?.length) {
+    out.push('→ 新开 tab:');
+    for (const t of fb.tabs.opened) out.push('  · ' + `${t.title || t.url} [${t.id}]`);
+  }
+  if (fb.tabs?.closed?.length) {
+    out.push('→ 关闭 tab:');
+    for (const t of fb.tabs.closed) out.push('  · ' + (t.title || t.url));
+  }
+  // 局部失效指引:一个 ref 失效不代表全失效,用更大容器 ref 筛局部,别整页重 tree。
+  if (fb.blocks?.length || fb.changes?.length) out.push('→ 提示: 上方 ref 若因重渲染失效,用评论区等容器 ref 筛局部(tree --ref <容器ref>)即可,不必整页重 tree。');
   if (out.length) console.log(out.join('\n'));
 }
 
@@ -157,13 +178,13 @@ const argLabel = (a: string | { ref: number; ancestor?: number }): string =>
   typeof a === 'string' ? a : 'ref=' + a.ref + (a.ancestor ? `↑${a.ancestor}` : '');
 
 feedbackOpt(refOpt(targetCmd('click', '点击元素'))).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg, feedbackCfg(opts)); console.log(`已点击: ${argLabel(arg)} (${r.tag})`); printFeedback(r.feedback); });
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已点击: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
 
 feedbackOpt(refOpt(targetCmd('fill', '填输入框并触发 input/change'))).argument('[selector]', 'selector 或 --ref').argument('<value>', '值')
-  .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.fill(await needTarget(opts.target), arg, val, feedbackCfg(opts)); console.log(`已填入: ${argLabel(arg)} ← ${val}`); printFeedback(r.feedback); });
+  .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.fill(await needTarget(opts.target), arg, val, feedbackCfg(opts)); printAction(`已填入: ${argLabel(arg)} ← ${val}`, r); printFeedback(r.feedback); });
 
 feedbackOpt(refOpt(targetCmd('focus', '聚焦元素'))).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg, feedbackCfg(opts)); console.log(`已聚焦: ${argLabel(arg)} (${r.tag})`); printFeedback(r.feedback); });
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已聚焦: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
 
 targetCmd('get-focus', '查看当前焦点元素在哪')
   .action(async (opts) => { const f = await api.getFocus(await needTarget(opts.target)); if (!f) { console.log('(当前无焦点元素)'); return; } console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`); });
@@ -172,7 +193,7 @@ feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、
   .action(async (key: string, opts: any) => { const r = await api.pressKey(await needTarget(opts.target), key, feedbackCfg(opts)); console.log(`已按键: ${key}`); printFeedback(r?.feedback); });
 
 feedbackOpt(refOpt(targetCmd('hover', '鼠标移到元素上'))).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.hover(await needTarget(opts.target), arg, feedbackCfg(opts)); console.log(`已悬停: ${argLabel(arg)}`); printFeedback(r?.feedback); });
+  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.hover(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已悬停: ${argLabel(arg)}`, r); printFeedback(r?.feedback); });
 
 targetCmd('shot', '截图').option('-f, --file <file>', '输出文件')
   .action(async (opts) => { const file = await api.shot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });

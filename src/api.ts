@@ -87,8 +87,8 @@ export interface FeedbackOpts { feedbackDelay?: number; noFeedback?: boolean }
 
 /** 反馈结构:内容变化(注入侧)+ tab 变化(Node 侧 /json/list diff)。 */
 export interface FeedbackResult {
-  lines: string[];      // 本次新增内容块的 tree 行(可空)
-  summary: string;      // 简摘要,如 "新增 3 个内容块; 文本变化: "42""
+  blocks?: { lines: string[]; count: number }[];   // 去重折叠后的新增内容块(可空)
+  changes?: { before?: string; after: string }[];  // 文本变化(过滤前后相同),如 [{before:'63',after:'64'}]
   tabs?: { opened: Target[]; closed: Target[] };
 }
 

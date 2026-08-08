@@ -3,6 +3,7 @@
  */
 import { setResult } from './lib/result';
 import { findTarget, targetLabel } from './lib/find';
+import { genSel } from './lib/genSel';
 import type { FindArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FindArgs;
@@ -11,5 +12,5 @@ declare const __CDP_ARG__: FindArgs;
   const el = findTarget(__CDP_ARG__) as HTMLElement | null;
   if (!el) return setResult({ ok: false, err: '未找到: ' + targetLabel(__CDP_ARG__) });
   el.focus();
-  return setResult({ ok: true, tag: el.tagName.toLowerCase() });
+  return setResult({ ok: true, tag: el.tagName.toLowerCase(), selector: genSel(el) });
 })();
