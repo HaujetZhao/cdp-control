@@ -118,6 +118,21 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定定位器(selector + xpa
     console.log(`  xpath:    ${r.xpath || '(无)'}`);
   });
 
+targetCmd('prune', '按 ref 登记排除区域,之后的整页 tree 不再输出这些元素子树(会话级);无参列出已排除,--clear 清空')
+  .argument('[refs...]', 'tree 输出的 ref 序号(可逗号/空格分隔多个)')
+  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再登记(默认 0;把内容叶子抬到要删的区域容器)')
+  .option('--clear', '清空排除集合')
+  .action(async (refs, opts) => {
+    const t = await needTarget(opts.target);
+    const numRefs = (refs || []).flatMap((s: string) => s.split(',')).filter((s: string) => s !== '').map(Number);
+    const r = await api.prune(t, { refs: numRefs, ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined, clear: !!opts.clear });
+    if (r.clear) { console.log('已清空排除集合'); return; }
+    if (!r.pruned?.length && !r.skipped) { console.log('当前未排除任何区域(用 prune <ref> 登记,之后整页 tree 不再输出)'); return; }
+    if (r.pruned?.length) console.log(`已排除 ${r.pruned.length} 个区域:`);
+    (r.pruned || []).forEach((s: string) => console.log(`  · ${s}`));
+    if (r.skipped) console.log(`跳过 ${r.skipped} 个无效 ref`);
+  });
+
 // ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。
 function refOrSel(sel: string | undefined, opts: any): string | { ref: number; ancestor?: number } {
   if (opts.ref != null) return { ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined };

@@ -21,3 +21,6 @@ export interface LocateArgs { ref: number; ancestor?: number }
 
 /** read:控制台日志过滤(level 数组;since 毫秒时间戳)。 */
 export interface ReadArgs { level?: string[]; since?: number }
+
+/** prune:按 ref 登记排除区域(会话级),或清空(--clear)/列出(--list);ancestor 可选按 ref 定位后爬父到容器。 */
+export interface PruneArgs { refs?: number[]; ancestor?: number; clear?: boolean; list?: boolean }

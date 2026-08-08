@@ -7,6 +7,7 @@
  * (tree 入口在整页建树前重置;反馈收集在拼接多个新增块前重置一次,保证跨块 ref 连续)。
  */
 import type { TreeNode } from './tree-format';
+import { pruneSet } from './prune.ts';
 
 export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean }
 
@@ -73,10 +74,12 @@ function prune(n: TreeNode): boolean {
 export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}): TreeNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;
+  const exclude = pruneSet(); // 会话级排除集合,命中的元素整棵子树跳过
 
-  function simplify(el: Element | ShadowRoot, depth: number): TreeNode {
+  function simplify(el: Element | ShadowRoot, depth: number): TreeNode | null {
     const isEl = el instanceof Element;
-    const tag = (el as Element).tagName?.toLowerCase() || 'frag';
+    if (isEl && exclude && exclude.has(el as Element)) return null; // 整棵子树消失(不输出、不登记 ref)
+    const tag = isEl ? el.tagName?.toLowerCase() || 'frag' : 'frag';
     const inter = isEl ? interactive(el as Element) : false;
     const title = isEl ? (el.getAttribute('title') || '') : '';
     let text = isEl ? ownText(el as Element) : '';
@@ -102,7 +105,8 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     for (const k of childrenOf(el as Element)) {
       const kt = k instanceof Element ? k.tagName.toUpperCase() : '';
       if (DROP.has(kt)) continue;
-      node.kids.push(simplify(k, depth + 1));
+      const kn = simplify(k, depth + 1);
+      if (kn) node.kids.push(kn); // 跳过被排除的 null
     }
     if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
     // 交互/图片元素自身无直接文本时,用 grabText 聚合后代文本(空格分隔,穿透 shadow;替代 innerText——后者会把 inline 数字连排成 "822.2万904906:02")。
@@ -117,7 +121,8 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     return node;
   }
 
-  const tree = simplify(root, 0);
+  let tree = simplify(root, 0);
+  if (!tree) tree = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
   if (visibleOnly) { tree.kids = tree.kids.filter(k => prune(k)); }
   return tree;
 }
