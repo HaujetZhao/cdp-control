@@ -1,31 +1,29 @@
-'use strict';
 /**
- * monitor.js — 控制台监听:常驻注入守护 daemon(cmdListen)+ 读取(logs)。
- * 依赖 transport(连接原语)+ scripts(MONITOR_JS/buildReadExpr),不依赖 api → 无环。
+ * monitor.ts — 控制台监听:常驻注入守护 daemon(cmdListen)+ 读取(logs)。
+ * 依赖 transport(连接原语)+ inject-loader(monitor/read 注入装配),不依赖 api → 无环。
  */
+import { pageWs, send, listTargets, resolve, evaluate, sleep, Target } from './transport';
+import { inject, readExpr } from './inject-loader';
 
-const { pageWs, send, listTargets, resolve, evaluate, sleep } = require('./transport');
-const { MONITOR_JS, buildReadExpr } = require('./scripts');
+export const LOGS_PORT = Number(process.env.CDP_LOGS_PORT) || 9333;
 
-const LOGS_PORT = Number(process.env.CDP_LOGS_PORT) || 9333;
-
-async function spawnDaemon() {
+async function spawnDaemon(): Promise<void> {
   const { spawn } = await import('node:child_process');
   const script = process.argv[1] || __filename;
   const child = spawn(process.execPath, [script, 'listen'], { detached: true, stdio: 'ignore' });
   child.unref();
 }
 
-async function daemonHealthy(port = LOGS_PORT) {
+export async function daemonHealthy(port = LOGS_PORT): Promise<boolean> {
   try { const r = await fetch(`http://127.0.0.1:${port}/health`); return r.ok; } catch { return false; }
 }
 
 // 异步确保 daemon 在跑(打开页面时自动注入守护;失败不阻塞主流程)。
-async function maybeSpawnDaemon() {
+export async function maybeSpawnDaemon(): Promise<void> {
   try { await ensureDaemon(); } catch {}
 }
 
-async function ensureDaemon(port = LOGS_PORT) {
+export async function ensureDaemon(port = LOGS_PORT): Promise<number> {
   if (await daemonHealthy(port)) return port;
   await spawnDaemon();
   const t0 = Date.now();
@@ -36,7 +34,7 @@ async function ensureDaemon(port = LOGS_PORT) {
   throw new Error('监听 daemon 启动失败');
 }
 
-async function pidFilePath() {
+export async function pidFilePath(): Promise<string> {
   const os = await import('node:os');
   const path = await import('node:path');
   return path.join(os.tmpdir(), 'cdp-listen.pid');
@@ -48,22 +46,21 @@ async function pidFilePath() {
  * document 创建(含刷新)自动重跑监控脚本 → 刷新自动补,无需探测。轮询 /json/list 自动
  * 覆盖新开的 tab(含手动开的)。读取交给 logs 命令去 eval 页面 window.__cdpLogs。
  */
-async function cmdListen() {
+export async function cmdListen(): Promise<never> {
   const http = await import('node:http');
   const fs = await import('node:fs');
-  const attached = new Map(); // targetId -> ws
+  const attached = new Map<string, WebSocket>();
+  const mon = inject('monitor');
 
-  async function inject(target) {
-    let ws;
+  async function injectMon(target: Target): Promise<void> {
+    let ws: WebSocket;
     try { ws = await pageWs(target); } catch { return; }
     attached.set(target.id, ws);
-    ws.onclose = () => attached.delete(target.id); // 断了下轮重连,重注册
+    ws.onclose = () => attached.delete(target.id);
     try {
       await send(ws, 'Page.enable', {}, 5000);
-      // 关键:注册到 target 会话,刷新后新 document 自动先跑监控脚本
-      await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: MONITOR_JS }, 5000);
-      // 对当前已加载页面立即注入一次(幂等)
-      await send(ws, 'Runtime.evaluate', { expression: MONITOR_JS, returnByValue: true }, 5000);
+      await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: mon }, 5000);
+      await send(ws, 'Runtime.evaluate', { expression: mon, returnByValue: true }, 5000);
     } catch {}
   }
 
@@ -71,18 +68,18 @@ async function cmdListen() {
   // 失败 → 自动退出,不留孤儿 daemon(下次 open/ensure/logs 会自动重新拉起)。
   let deadPolls = 0;
   const WATCHDOG_POLLS = 10;
-  async function sync() {
-    let list;
+  async function sync(): Promise<void> {
+    let list: Target[];
     try { list = await listTargets(); } catch {
       deadPolls++;
       if (deadPolls >= WATCHDOG_POLLS) { try { fs.unlinkSync(await pidFilePath()); } catch {} process.exit(0); }
       return;
     }
     deadPolls = 0;
-    for (const t of list) if (!attached.has(t.id)) await inject(t);
+    for (const t of list) if (!attached.has(t.id)) await injectMon(t);
   }
 
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer(async (req: any, res: any) => {
     const url = new URL(req.url, `http://127.0.0.1:${LOGS_PORT}`);
     res.setHeader('content-type', 'application/json; charset=utf-8');
     if (url.pathname === '/health') { res.end(JSON.stringify({ ok: true, targets: attached.size })); return; }
@@ -90,46 +87,43 @@ async function cmdListen() {
     res.statusCode = 404; res.end('{}');
   });
 
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(LOGS_PORT, '127.0.0.1', resolve); });
+  await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(LOGS_PORT, '127.0.0.1', resolve); });
   await sync();
   setInterval(() => { sync().catch(() => {}); }, 500);
   fs.writeFileSync(await pidFilePath(), String(process.pid));
   process.on('SIGINT', () => process.exit(0));
   process.on('SIGTERM', () => process.exit(0));
   console.error(`注入守护 daemon 就绪 :${LOGS_PORT},tabs=${attached.size}`);
+  return new Promise<never>(() => {});
 }
+
+export interface LogsOpts { level?: string; since?: number }
 
 /**
  * 读 target 的控制台日志:幂等注入监控脚本 + 读取 window.__cdpLogs(结构化嵌套对象)。
- * @param {object|string} target target 对象或 id/url/title 子串
- * @param {{level?:string, since?:number}} [opts] level 逗号分隔;since 毫秒时间戳
- * @returns {Promise<Array>} 日志条目(结构化,含 args 嵌套 + stack 调用链)
  */
-async function logs(target, opts = {}) {
-  maybeSpawnDaemon().catch(() => {}); // 确保 daemon 在跑(持续守护注入)
+export async function logs(target: Target | string, opts: LogsOpts = {}): Promise<any[]> {
+  maybeSpawnDaemon().catch(() => {});
   if (typeof target === 'string') target = await resolve(target);
   const levelSet = opts.level ? opts.level.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : null;
   const since = opts.since || 0;
-  const value = await evaluate(target, buildReadExpr(levelSet, since), 30000);
+  const value = await evaluate(target, readExpr(levelSet, since), 30000);
   return Array.isArray(value) ? value : [];
 }
 
 /**
  * 一次性给 target 装上监控(注册 addScript + 立即注入),然后关 WS。
- * 用于 open() 直接注入,不等 daemon 轮询(0.5-2s)。注意:注册随本 WS 会话,关闭后
- * 刷新不会自动重跑(那是 daemon 持有 WS 的职责);open 里会同时拉起 daemon 补上持久会话。
- * @returns {Promise<boolean>} 是否成功注入
+ * 用于 open() 直接注入,不等 daemon 轮询(0.5-2s)。
  */
-async function injectMonitor(target) {
-  let ws;
+export async function injectMonitor(target: Target): Promise<boolean> {
+  let ws: WebSocket;
   try { ws = await pageWs(target); } catch { return false; }
+  const mon = inject('monitor');
   try {
     await send(ws, 'Page.enable', {}, 5000);
-    await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: MONITOR_JS }, 5000);
-    await send(ws, 'Runtime.evaluate', { expression: MONITOR_JS, returnByValue: true }, 5000);
+    await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: mon }, 5000);
+    await send(ws, 'Runtime.evaluate', { expression: mon, returnByValue: true }, 5000);
   } catch {}
   ws.close();
   return true;
 }
-
-module.exports = { LOGS_PORT, spawnDaemon, daemonHealthy, ensureDaemon, maybeSpawnDaemon, pidFilePath, cmdListen, logs, injectMonitor };
