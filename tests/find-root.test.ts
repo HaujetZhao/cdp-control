@@ -21,10 +21,10 @@ class FakeEl {
   shadowRoot: FakeFrag | null = null;
   constructor(tag: string, o: { children?: FakeEl[]; attrs?: Record<string, string>; text?: string; shadow?: FakeFrag } = {}) {
     this.tagName = tag.toUpperCase();
-    if (o.children) this.children = o.children;
+    if (o.children) { this.children = o.children; for (const c of o.children) c.parentNode = this; }
     if (o.attrs) this.attrs = o.attrs;
     if (o.text != null) this.textContent = o.text;
-    if (o.shadow) this.shadowRoot = o.shadow;
+    if (o.shadow) { this.shadowRoot = o.shadow; o.shadow.host = this; for (const c of o.shadow.children) c.parentNode = o.shadow; }
   }
   getAttribute(n: string) { return this.attrs[n] ?? null; }
 }
@@ -32,7 +32,8 @@ class FakeEl {
 class FakeFrag {
   nodeType = 11; // DocumentFragment(shadowRoot)
   children: FakeEl[] = [];
-  constructor(ch: FakeEl[]) { this.children = ch; }
+  host: FakeEl | null = null; // shadowRoot.host(拼接模型取宿主作逻辑父)
+  constructor(ch: FakeEl[]) { this.children = ch; for (const c of ch) c.parentNode = this; }
 }
 
 /** 拼接子:light 子 + shadowRoot 顶层子(与引擎 splicedChildren 同构)。 */
@@ -211,11 +212,14 @@ test('穿透: 绝对 child 链直达宿主', () => {
   assert.deepEqual(idsOf('/html/body/div[2]'), ['a2']);
 });
 
-test('穿透: //desc 按扁平文档序取索引(light 在前、shadow 依宿主序)', () => {
-  // bili-comments 拼接子:[light1, s1, s2, s3];desc divs 文档序:light1,s1,s2,ts1,s3
-  assert.deepEqual(idsOf('/html/body/div[2]/bili-comments//div[1]'), ['light1']);
+test('穿透: //desc 索引走标准位置语义(父下第 n 个匹配子,可多命中)', () => {
+  // bili-comments 拼接子:[light1, s1, s2, s3];t1 拼接子:[ts1,r1]
+  // div[1]=父下第 1 个 div 子:light1(第1),ts1(第1) —— 各父独立判定,可多命中
+  assert.deepEqual(idsOf('/html/body/div[2]/bili-comments//div[1]'), ['light1', 'ts1']);
+  // div[2]=父下第 2 个 div 子:仅 s1(第2)
   assert.deepEqual(idsOf('/html/body/div[2]/bili-comments//div[2]'), ['s1']);
-  assert.deepEqual(idsOf('/html/body/div[2]/bili-comments//div[5]'), ['s3']);
+  // 无父有第 5 个 div 子
+  assert.deepEqual(idsOf('/html/body/div[2]/bili-comments//div[5]'), []);
   assert.deepEqual(idsOf('/html/body/div[2]/bili-comments//div[6]'), []);
 });
 
@@ -250,8 +254,9 @@ test('谓词: @attr=val 精确匹配', () => {
   assert.deepEqual(idsOf("//*[@id='replyspan']"), ['replyspan']);
 });
 
-test('谓词: 索引与谓词组合', () => {
-  assert.deepEqual(idsOf("/html/body/div[2]/bili-comments//div[contains(@id,'s')][2]"), ['s2']);
+test('谓词: 索引与谓词组合(谓词互相独立过滤;索引=父下第 n 个 div 子)', () => {
+  // 含 's' 的 div:s1,s2,ts1,s3;其中是父下第 2 个 div 子的仅 s1
+  assert.deepEqual(idsOf("/html/body/div[2]/bili-comments//div[contains(@id,'s')][2]"), ['s1']);
 });
 
 /* ================= 诊断 ================= */

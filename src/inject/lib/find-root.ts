@@ -6,8 +6,9 @@
  * 把 shadowRoot 的顶层子元素当作宿主元素的子元素拼接进遍历(见 splicedChildren),
  * 于是 `/`(child)与 `//`(descendant-or-self)都天然跨越任意层嵌套 shadow 边界。
  * 谓词/索引一律以候选元素为 context 交给原生 document.evaluate 求布尔(能力完整:
- * contains()/@attr/text()…);仅索引 `[n]` 按"本步全部候选的扁平文档序"取第 n 个(1 基),
- * 这是跨 shadow 扁平语义下唯一自洽的索引定义。
+ * contains()/@attr/text()…);索引 `[n]` 走标准 XPath 语义——候选须是其**父的拼接子中
+ * 匹配本步 node test 的第 n 个**(1 基,见 siblingPos),与标准 XPath 的 `div[2]`("父下第 2
+ * 个 div 子")一致,故从浏览器 F12 复制出的路径可直接用。
  *
  * —— 两条路径 ——
  *  - 含 `//`:分步引擎 + 分步诊断(trace 定位"哪步断、当时候选是谁")。
@@ -87,14 +88,39 @@ function evalPred(el: Element, expr: string): boolean {
   catch { return false; }
 }
 
-/** 应用谓词/索引:`[n]`(纯数字)按候选扁平文档序取第 n 个(1 基);其余为布尔谓词逐个筛。 */
-function applyPreds(list: Element[], preds: string[]): Element[] {
+/** 拼接树里的"逻辑父":shadow 子元素的真实 parentNode 是 shadowRoot 片段,但拼接模型里它
+ *  被当作宿主元素的子元素;故取宿主作逻辑父,位置按 splicedChildren(宿主)计,与遍历一致。 */
+function splicedParent(el: Element): ParentNode | null {
+  const p = el.parentNode;
+  if (p && p.nodeType === 11) {
+    const host = (p as ShadowRoot).host;
+    if (host) return host;
+  }
+  return p;
+}
+
+/** 标准 XPath 位置语义:返回 el 在其逻辑父的拼接子中、匹配 node test 的第几个(1 基)。
+ *  即 `div[2]` = "父下第 2 个 div 子"。el 不在拼接子中(孤立节点)返回 0(不匹配)。 */
+function siblingPos(el: Element, tag: string): number {
+  const parent = splicedParent(el);
+  if (!parent) return 0;
+  let pos = 0;
+  for (const s of splicedChildren(parent)) {
+    if (tag !== '*' && (s.tagName || '').toLowerCase() !== tag) continue;
+    pos++;
+    if (s === el) return pos;
+  }
+  return 0;
+}
+
+/** 应用谓词/索引:`[n]`(纯数字)按标准位置语义筛(el 须是父下匹配 node test 的第 n 个子);
+ *  其余为布尔谓词逐个筛。各谓词互相独立地过滤同一候选集(与 XPath 一致)。 */
+function applyPreds(list: Element[], preds: string[], tag: string): Element[] {
   let out = list;
   for (const p of preds) {
     if (/^\d+$/.test(p)) {
       const idx = parseInt(p, 10);
-      if (idx < 1 || idx > out.length) return [];
-      out = [out[idx - 1]];
+      out = out.filter(el => siblingPos(el, tag) === idx);
     } else {
       out = out.filter(el => evalPred(el, p));
     }
@@ -114,7 +140,7 @@ function stepMatches(nodes: ParentNode[], step: XpStep): Element[] {
       collectSplicedDesc(n, step.tag, all, seen);
     }
   }
-  return applyPreds(all, step.preds);
+  return applyPreds(all, step.preds, step.tag);
 }
 
 /** 把 xpath 按词法拆成位置步序列。`/`=child,`//`=desc;跳过 `[]` 与引号内的 `/`,支持嵌套括号与引号。 */
