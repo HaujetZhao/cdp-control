@@ -85,7 +85,7 @@ sites/
 
 ## 感知页面(核心:`tree`,唯一感知命令)
 
-`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**:含 `//` 时按 **Provar 式连续路径**解析——每个 `//` 都允许穿越 shadowRoot 边界,可照 tree 输出的结构(含 `[shadow]` 宿主)直接写一条连续路径,如 B站 `//bili-comments//bili-comment-renderer//bili-rich-text//p` 直达评论正文;`[n]` 为**文档序相对索引**(light 在前、shadow 依宿主序),如 `//bili-comments//bili-comment-thread-renderer[2]` 取第 2 条评论;谓词(如 `[contains(.,'…')]`)按标准 xpath 语义在跨 shadow 命中的元素上求值。首段若以单个 `/` 开头(如 `/html/body/x-box[1]`),先按**标准绝对 xpath**求锚点集合,再从锚点 `//` 穿 shadow——适合先锚定某 light 路径再深入其 shadow。单段 `//bili-comment-renderer`(无内部 `//`)仍取文档序首个命中。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。**xpath/selector 含 `"`、`//`、`[contains(...)]` 等 shell 难转义的字符时,改存进文件用 `--xpath-file <file>` / `--selector-file <file>` 传**(内联与文件同给时内联优先)。
+`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**,按**拼接树模型**解析:把 shadowRoot 的顶层子元素拼进宿主遍历,于是 `/`(直接子)与 `//`(子孙-or-self)都**天然穿透任意层嵌套 shadow 边界**,可照 tree 输出的结构(含 `[shadow]` 宿主)直接写一条连续路径,如 B站 `/html/body/div[2]/div[2]/div[1]/div[6]/bili-comments//bili-comment-thread-renderer[1]//bili-comment-reply-renderer//bili-rich-text//p/span` 直达评论文本;`[n]` 为**本步全部候选的扁平文档序索引**(light 在前、shadow 依宿主序),如 `//bili-comments//bili-comment-thread-renderer[2]` 取第 2 条评论;谓词(如 `[contains(@class,'x')]`、`[@id='y']`)以命中元素为 context 交原生 evaluate 求布尔。**DevTools 右键 Copy full XPath 复制的完整路径可直接用**(含 `//` 的 shadow 穿透段);若复制的路径未命中,可用 `cdp xpath` 分步诊断定位断在哪一步。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。**xpath/selector 含 `"`、`//`、`[contains(...)]` 等 shell 难转义的字符时,改存进文件用 `--xpath-file <file>` / `--selector-file <file>` 传**(内联与文件同给时内联优先)。
 
 - **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。
 - **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。**带 shadowRoot 的宿主节点 tag 会追加 `[shadow]`**(如 `bili-comments[shadow]`、`bili-rich-text[shadow]`):表示其下的子树来自 shadow DOM,**CSS 选择器(如 `querySelector`、`snapshot` 的 selector)不能穿透**,要定位这些子树下的元素须用 `--xpath`(shadow 穿透版)或 `content` 读文本,别直接拿 tree 里的标签反推 CSS 选择器。
@@ -106,7 +106,8 @@ sites/
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
-| `tree [--target] [--selector <sel>] [--xpath <xp>] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector`/`--xpath`(或从文件 `--selector-file`/`--xpath-file` 读,省 shell 转义)可选,只建指定区域(取第一个匹配,selector 优先);`--xpath` 为 shadow 穿透版(递归任意深度,深层元素按文档序取首个命中);内联与文件同给时内联优先 |
+| `tree [--target] [--selector <sel>] [--xpath <xp>] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector`/`--xpath`(或从文件 `--selector-file`/`--xpath-file` 读,省 shell 转义)可选,只建指定区域(取第一个匹配,selector 优先);`--xpath` 为 shadow 穿透版(拼接树模型,递归任意深度);内联与文件同给时内联优先 |
+| `xpath [path] [--xpath-file <file>] [--target]` | **按 xpath 查元素(shadow 穿透,含分步诊断)**:打印全部命中(标签/文本/稳定 selector);未命中时打印**分步诊断**,精确指出断在哪一步、当时候选是谁——用于排查 DevTools 复制的路径为何不命中。位置参数与 `--xpath-file` 二选一(路径含 `"`/`//`/`[contains(...)]` 等 shell 难转义字符时用文件传) |
 | `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
 | `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
 | `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
@@ -189,7 +190,8 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
-| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版:含 `//` 为 Provar 式连续路径(每段 `//` 穿 shadowRoot,支持 `[n]` 文档序索引与 `[contains(...)]` 谓词);不含 `//` 时按文档序取首个命中(递归任意深度) |
+| `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版(拼接树模型,`/`与`//`都跨任意层 shadow,支持 `[n]` 扁平文档序索引与 `[contains(...)]` 谓词,递归任意深度) |
+| `cdp.xpath(target, path)` | 对象,字符串 | 按 xpath 查元素(shadow 穿透):`{count, matches:[{tag,text,selector}], trace:[{text,axis,input,matched,sample?}]}`;`count===0` 为未命中,`trace` 含分步诊断 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
 | `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |

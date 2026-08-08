@@ -109,11 +109,15 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 
     console.log(r.lines.join('\n'));
   });
 
-targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)').argument('<path>', 'xpath(可用引号包住含空格的路径)')
+targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)')
+  .argument('[path]', 'xpath(可选,与 --xpath-file 二选一;含空格/特殊字符用文件传更稳)')
+  .option('--xpath-file <file>', '从文件读 xpath')
   .action(async (path, opts) => {
-    const r = await api.xpath(await needTarget(opts.target), path);
+    const xp = (path as string) ?? readOptFile(opts.xpathFile);
+    if (!xp) throw new Error('需传 xpath 位置参数或 --xpath-file');
+    const r = await api.xpath(await needTarget(opts.target), xp);
     if (!r.count) {
-      console.log(`未命中: ${path}`);
+      console.log(`未命中: ${xp}`);
       console.log('— 分步诊断 —');
       for (const s of r.trace || []) {
         const axis = s.axis === 'desc' ? '//' : '/';
