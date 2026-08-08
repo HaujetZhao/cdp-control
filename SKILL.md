@@ -99,6 +99,17 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
   **首选 selector**(CSS,最可读、最稳);xpath 是**就近 id 锚定**版(就近祖先有 id 就 `//*[@id=…]`,否则回退 `html/body/div[1]…` 位置链),也可靠,但长路径在动态页有位置漂移风险。若页面刷新/改版后定位器失效,重新 `tree` 拿 ref 再 `locate` 一次即可。
 - **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别去找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,或各自 `locate`,再并列看。别因此绕回 JS 探查。
 
+## 操作后自动反馈(click/fill/focus/hover/press-key 默认开启)
+
+每次操作命令后自动等约 1s(给异步/懒加载内容出现留时间),然后回报 **页面新增内容 tree + tab 变化**,agent 一轮拿到结果,不必再手动 `tree`/`list` 补查:
+
+- **内容反馈**:记录本次操作期间新增的顶层内容块,逐块 tree 拼出带 `[ref]` 的行 + 摘要(如 `新增 3 个内容块; 文本变化: "42"`)。点赞后数字变、点"显示评论"后评论进来,反馈里直接看得到。
+- **tab 变化**:操作前后 diff `/json/list`。点 `target=_blank` 链接新开 tab 后,反馈直接告诉你 `新开 tab: <title> <url>`,直接 `tree --target <新tab>` 继续,不必先 `list`。
+- **`--no-feedback`**:关闭(不等待、不观察、不 diff tab),高频率操作想快时用。
+- **`--feedback-delay <ms>`**:自定义等待时长,默认 1000。
+- **反馈树 ref 独立重排**:反馈里的 `[ref]` 从 0 重排,**会顶掉打开页时的全局 ref**;反馈之后 agent 可用反馈树里的 ref 直接操作新增内容(如点刚加载的"显示更多")。想再按原页面 ref 操作需重新整页 `tree`。
+- 脚本 API:`cdp.click(target, arg, { noFeedback?, feedbackDelay? })` → 返回 `{ok, tag, feedback:{lines, summary, tabs:{opened, closed}}}`(见下方脚本表)。
+
 ## Quick Reference
 
 所有命令可选 `--target <匹配>`(target id 或 url/title 子串;不传则自动选第一个普通网页)。每个命令支持 `--help`/`-h` 查看自身用法(顶层 `cdp --help` 或 `cdp help` 看全部)。命令名统一 **kebab-case**。
@@ -111,14 +122,14 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only] [--scroll-to-load]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树;--scroll-to-load 先上下滚动触发懒加载再建树(评论区等首屏外内容) |
+| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--xpath-file <file>] [--visible-only] [--scroll-to-load]` | 将整页以 **缩进+折叠** 输出紧凑树，以节省Token的方式包含了结构+文本+Ref。锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一向上爬 k 层父级再建树;--scroll-to-load 先上下滚动触发懒加载再建树(评论区等首屏外内容)。带 ref 的节点若在当前视区会标 `[ref=i·屏]`,否则 `[ref=i]`——看到未标 `·屏` 就知道它不在屏上,要先滚动/`--scroll-to-load` 再操作 |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定定位器(selector + xpath)**。ref 是会话句柄,页面刷新后失效;locate 把它翻译成刷新后仍可用的定位器,供 `tree --selector-file/--xpath-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
-| `click <selector> [--ref <n>] [--ancestor <k>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow;--ancestor 定位后爬父) |
-| `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--target]` | 填输入框并派发 input/change(selector 或 ref,--ancestor 爬父) |
-| `focus <selector> [--ref <n>] [--ancestor <k>] [--target]` | 聚焦元素(selector 或 ref,--ancestor 爬父,配合按键用) |
+| `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i` 用 tree 的 ref 序号,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈(见上) |
+| `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 填输入框并派发 input/change(selector 或 ref,--ancestor 爬父)。默认带操作后反馈 |
+| `focus <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 聚焦元素(selector 或 ref,--ancestor 爬父,配合按键用)。默认带操作后反馈 |
 | `get-focus [--target]` | 查看当前焦点元素在哪 |
-| `press-key <键> [--target]` | 真实按键/组合键,如 `Enter`、`Tab`、`Ctrl+Shift+A` |
-| `hover <selector> [--ref <n>] [--ancestor <k>] [--target]` | 鼠标移到元素上(selector 或 ref,--ancestor 爬父,触发 mouseover/mouseenter) |
+| `press-key <键> [--no-feedback] [--feedback-delay <ms>] [--target]` | 真实按键/组合键,如 `Enter`、`Tab`、`Ctrl+Shift+A`(含滚动如 PageDown,反馈懒加载内容)。默认带操作后反馈 |
+| `hover <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 鼠标移到元素上(selector 或 ref,--ancestor 爬父,触发 mouseover/mouseenter)。默认带操作后反馈 |
 | `shot [--file out.png] [--target]` | 截图 |
 | `logs [--target] [--level error,warn] [--since <ms>] [--json]` | 读 target 控制台日志(见下方「读控制台日志」) |
 | `run <脚本文件>` | 执行自动化脚本(脚本里用全局 `cdp` API,可顶层 `await`) |
@@ -138,18 +149,16 @@ cdp locate 53 --ancestor 4 --target zhihu       # 要刷新后仍可用的定位
 cdp tree --selector-file ./f --target zhihu     # 用定位器局部复看
 ```
 
-### 点击可能开新 tab → 用 `list` 核对落点
+### 点击可能开新 tab → 反馈自动报落点
 ```bash
-cdp click --ref 44 --target zhihu    # 点卡片/链接
-cdp list                             # ⚠️ 很多站卡片是 target=_blank,点完别假设还在原页
-cdp tree --target "BV1..."           # 到新开的 tab 继续;原 tab 的 location 可能没变
+cdp click --ref 44 --target zhihu    # 点卡片/链接;反馈直接报"新开 tab: <title> <url>"(target=_blank 落点)
+cdp tree --target "BV1..."           # 按反馈给的 tab 直接继续;原 tab 的 location 可能没变,不必再手动 list
 ```
 
-### 改状态的操作(点赞/关注/提交)→ 复看结果
+### 改状态的操作(点赞/关注/提交)→ 反馈自动复看
 ```bash
-cdp tree --target "BV1..."                      # 先看点赞按钮当前的赞数 ref
-cdp click --ref 36 --target "BV1..."            # 点赞
-cdp tree --ref 35 --ancestor 2 --target "BV1..." # ⚠️ 点完复看赞数是否 +1;别只靠"无报错"当成功
+cdp tree --target "BV1..."                      # 先看整页拿 ref
+cdp click --ref 36 --target "BV1..."            # 点赞;反馈直接回新增内容/文本变化(如 文本变化 "42"),别只靠"无报错"当成功
 ```
 
 ## 读控制台日志(console 监听)
@@ -219,18 +228,18 @@ await cdp.close(t);
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?,ref?,ancestor?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;锚点互斥:ref 优先,其次 selector,最后 xpath,缺省 body;`opts.ancestor` 统一向上爬 k 层父级;`opts.xpath` 为 shadow 穿透版(拼接树模型,`/`与`//`都跨任意层 shadow,支持 `[n]` 标准位置索引(逻辑父下第 n 个匹配兄弟)与 `[contains(...)]` 谓词,递归任意深度) |
 | `cdp.locate(target, ref, ancestor?)` | 对象,数字,数字可选 | 从 tree 的 ref 序号反查稳定定位器:`{ok, tag, text, selector, xpath}`;可选 ancestor 向上爬 k 层。返回的 selector/xpath 刷新后仍可用,喂给 `tree` 复用 |
-| `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
-| `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 tree 输出的 ref 序号点真实元素(穿透 shadow,零 XPath) |
-| `cdp.fill(target, selector, value)` | 对象,字符串,字符串 | 填充结果 |
-| `cdp.fill(target, {ref: 12}, value)` | 对象,`{ref:n}`,字符串 | 按 ref 填值(穿透 shadow) |
+| `cdp.click(target, selector, opts?)` | 对象,字符串,`{noFeedback?, feedbackDelay?}` | 点击结果 `{ok, tag, feedback?}`;默认带操作后反馈(`feedback:{lines, summary, tabs:{opened, closed}}`),`{noFeedback:true}` 关闭、`{feedbackDelay:500}` 改等待时长 |
+| `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 tree 输出的 ref 序号点真实元素(穿透 shadow,零 XPath);同上带反馈 |
+| `cdp.fill(target, selector, value, opts?)` | 对象,字符串,字符串,`{noFeedback?, feedbackDelay?}` | 填充结果 `{ok, tag, feedback?}`;同上带反馈 |
+| `cdp.fill(target, {ref: 12}, value)` | 对象,`{ref:n}`,字符串 | 按 ref 填值(穿透 shadow);同上带反馈 |
 | `cdp.waitFor(target, selector, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(超时抛错) |
 | `cdp.waitForFn(target, jsExpr, opts?)` | 对象,字符串,`{timeout,interval}` | 布尔(等 JS 布尔表达式为真,超时抛错)。**只吃同步布尔表达式**,如 `document.querySelector('#x') !== null`;别传 async/Promise/`return` 函数(会 `Unexpected token`) |
-| `cdp.focus(target, selector)` | 对象,字符串 | 聚焦结果 |
-| `cdp.focus(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 聚焦(穿透 shadow) |
+| `cdp.focus(target, selector, opts?)` | 对象,字符串,`{noFeedback?, feedbackDelay?}` | 聚焦结果 `{ok, tag, feedback?}`;同上带反馈 |
+| `cdp.focus(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 聚焦(穿透 shadow);同上带反馈 |
 | `cdp.getFocus(target)` | 对象 | 焦点元素信息或 null |
-| `cdp.pressKey(target, "Ctrl+Shift+A")` | 对象,字符串 | — |
-| `cdp.hover(target, selector)` | 对象,字符串 | — |
-| `cdp.hover(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 悬停(穿透 shadow) |
+| `cdp.pressKey(target, "Ctrl+Shift+A", opts?)` | 对象,字符串,`{noFeedback?, feedbackDelay?}` | `{ok, feedback?}`;同上带反馈(滚动触发懒加载也回反馈) |
+| `cdp.hover(target, selector, opts?)` | 对象,字符串,`{noFeedback?, feedbackDelay?}` | `{ok, feedback?}`;同上带反馈 |
+| `cdp.hover(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 悬停(穿透 shadow);同上带反馈 |
 | `cdp.shot(target, file?)` | 对象,字符串可选 | 截图文件路径 |
 | `cdp.logs(target, opts?)` | 对象,`{level,since}` | 控制台日志条目数组(自动拉起 daemon) |
 

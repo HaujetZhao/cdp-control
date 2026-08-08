@@ -15,13 +15,14 @@ export interface TreeNode {
   ref?: number;    // tree 登记的全局引用序号(见 __cdpRefs),输出标注 [ref=i],agent 用它直接操作真实元素
   hasInter?: boolean; // 自身或任一后代可交互——含交互子代的包装节点不可内联折叠,否则交互叶的 ref 被整颗吞掉
   inView?: boolean; // visible-only:自身是否落在当前视口内且可见(仅 Element 计算;包装节点不查)
+  view?: boolean;   // viewport 标记:带 ref 的节点是否在当前视区内(便宜判定,rect+宽高,不查 computed style)。true → 输出 [ref=i·屏]
 }
 
 /** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */
 const tagLabel = (n: TreeNode) => n.tag + (n.shadow ? '[shadow]' : '');
 
-/** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素。 */
-const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + ']' : '');
+/** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素;n.view 为 true 时追加 ·屏(在当前视区)。 */
+const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + (n.view ? '·屏' : '') + ']' : '');
 
 /** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代),并顺带计算 hasInter(自身或任一后代可交互)。
  * 返回根节点"是否有文本"结果。hasInter 用于内联折叠判断:含交互子代的包装节点不能折叠,否则交互叶的 ref 丢失。 */

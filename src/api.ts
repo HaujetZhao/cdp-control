@@ -80,19 +80,62 @@ export async function locate(target: Target, ref: number, ancestor?: number): Pr
 /** 操作目标:selector 字符串,或 {ref:n, ancestor?} 用 tree 登记的引用序号(穿透 shadow,可选爬父)。 */
 export type TargetArg = string | { ref: number; ancestor?: number };
 
+// —— 操作后自动反馈(opts + tab diff)——
+
+/** 操作反馈配置。feedbackDelay:操作后等待毫秒(默认 1000,给异步/懒加载内容出现留时间);noFeedback:关闭反馈。 */
+export interface FeedbackOpts { feedbackDelay?: number; noFeedback?: boolean }
+
+/** 反馈结构:内容变化(注入侧)+ tab 变化(Node 侧 /json/list diff)。 */
+export interface FeedbackResult {
+  lines: string[];      // 本次新增内容块的 tree 行(可空)
+  summary: string;      // 简摘要,如 "新增 3 个内容块; 文本变化: "42""
+  tabs?: { opened: Target[]; closed: Target[] };
+}
+
+/** 两次 /json/list 快照的 tab 差异:opened=本次新增、closed=本次消失。 */
+function diffTabs(before: Target[], after: Target[]): { opened: Target[]; closed: Target[] } {
+  const beforeIds = new Set(before.map(t => t.id));
+  const afterIds = new Set(after.map(t => t.id));
+  return {
+    opened: after.filter(t => !beforeIds.has(t.id)),
+    closed: before.filter(t => !afterIds.has(t.id)),
+  };
+}
+
+/**
+ * 用反馈包裹一次动作:装 observer(注入) → 快照 tab → 执行动作 → 等 feedbackDelay → 收反馈(注入) → 再快照 tab。
+ * 动作本身返回 {ok:true,...};这里把结果展开并附上 feedback(内容 + tab diff)。noFeedback 时不做任何等待/观察/diff,返回 feedback:null。
+ */
+async function runWithFeedback<T>(target: Target, doAction: () => Promise<T>, opts: FeedbackOpts = {}): Promise<T & { feedback: FeedbackResult | null }> {
+  if (opts.noFeedback) return { ...(await doAction()), feedback: null };
+  await invoke(target, inject('feedback-start'));
+  const before = await list();
+  try {
+    const result = await doAction();
+    await sleep(opts.feedbackDelay ?? 1000);
+    const fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
+    const after = await list();
+    return { ...result, feedback: { ...fb, tabs: diffTabs(before, after) } };
+  } catch (err) {
+    // 动作抛错(如 ref 失效):也断开 observer,避免 __cdpFeedback 残留影响下次;再重抛原错误。
+    try { await invoke(target, inject('feedback-collect')); } catch {}
+    throw err;
+  }
+}
+
 /** 归一化操作目标为注入侧参数:字符串→{sel},对象→{ref}。 */
 function normArg(a: TargetArg): { sel?: string; ref?: number } {
   return typeof a === 'string' ? { sel: a } : a;
 }
 
-/** 点击 target 页面上匹配 selector 或 ref 的元素。 */
-export async function click(target: Target, arg: TargetArg): Promise<any> {
-  return invoke(target, inject('click', normArg(arg)));
+/** 点击 target 页面上匹配 selector 或 ref 的元素(默认带操作后反馈)。 */
+export async function click(target: Target, arg: TargetArg, opts: FeedbackOpts = {}): Promise<any> {
+  return runWithFeedback(target, () => invoke(target, inject('click', normArg(arg))), opts);
 }
 
-/** 向 target 页面输入框填值(按 selector 或 ref,派发 input/change)。 */
-export async function fill(target: Target, arg: TargetArg, value: string): Promise<any> {
-  return invoke(target, inject('fill', { ...normArg(arg), value }));
+/** 向 target 页面输入框填值(按 selector 或 ref,派发 input/change;默认带操作后反馈)。 */
+export async function fill(target: Target, arg: TargetArg, value: string, opts: FeedbackOpts = {}): Promise<any> {
+  return runWithFeedback(target, () => invoke(target, inject('fill', { ...normArg(arg), value })), opts);
 }
 
 // 共享轮询原语:反复 eval 一段 JS 布尔表达式直到真值或超时。desc 用于超时报错文案。
@@ -135,9 +178,9 @@ export async function shot(target: Target, file?: string): Promise<string> {
   return out;
 }
 
-/** 聚焦 target 页面上匹配 selector 或 ref 的元素。 */
-export async function focus(target: Target, arg: TargetArg): Promise<any> {
-  return invoke(target, inject('focus', normArg(arg)));
+/** 聚焦 target 页面上匹配 selector 或 ref 的元素(默认带操作后反馈)。 */
+export async function focus(target: Target, arg: TargetArg, opts: FeedbackOpts = {}): Promise<any> {
+  return runWithFeedback(target, () => invoke(target, inject('focus', normArg(arg))), opts);
 }
 
 /** 返回 target 页面当前焦点元素(document.activeElement)信息,无焦点返回 null。 */
@@ -145,22 +188,28 @@ export async function getFocus(target: Target): Promise<any> {
   return invoke(target, inject('get-focus'));
 }
 
-/** 在 target 页面按真实键盘事件(组合键用 Ctrl+Shift+A 写法)。 */
-export async function pressKey(target: Target, keySpec: string): Promise<void> {
+/** 在 target 页面按真实键盘事件(组合键用 Ctrl+Shift+A 写法;默认带操作后反馈,如 PageDown 滚动触发懒加载)。 */
+export async function pressKey(target: Target, keySpec: string, opts: FeedbackOpts = {}): Promise<any> {
   const { key, code, kc, modifiers } = parseKeySpec(keySpec);
-  await withPage(target, async (ws) => {
-    await send(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
-    await send(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
-  });
+  return runWithFeedback(target, async () => {
+    await withPage(target, async (ws) => {
+      await send(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
+      await send(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc, modifiers });
+    });
+    return { ok: true as const };
+  }, opts);
 }
 
-/** 将鼠标移到 target 页面指定元素中心(按 selector 或 ref,触发 mouseover/mouseenter)。 */
-export async function hover(target: Target, arg: TargetArg): Promise<void> {
-  const pos = await invoke<{ ok: boolean; x: number; y: number }>(target, inject('hover', normArg(arg)));
-  if (!pos?.ok) throw new Error('未找到: ' + (typeof arg === 'string' ? arg : 'ref=' + arg.ref));
-  await withPage(target, async (ws) => {
-    await send(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: pos.x, y: pos.y });
-  });
+/** 将鼠标移到 target 页面指定元素中心(按 selector 或 ref,触发 mouseover/mouseenter;默认带操作后反馈)。 */
+export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts = {}): Promise<any> {
+  return runWithFeedback(target, async () => {
+    const pos = await invoke<{ ok: boolean; x: number; y: number }>(target, inject('hover', normArg(arg)));
+    if (!pos?.ok) throw new Error('未找到: ' + (typeof arg === 'string' ? arg : 'ref=' + arg.ref));
+    await withPage(target, async (ws) => {
+      await send(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: pos.x, y: pos.y });
+    });
+    return { ok: true as const };
+  }, opts);
 }
 
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
