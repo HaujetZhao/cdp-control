@@ -10,15 +10,21 @@ import type { XpathArgs } from './lib/arg';
 declare const __CDP_ARG__: XpathArgs;
 
 /** 命中节点的可视文本:textContent 不含 shadow DOM 子树,命中 shadow 宿主时文本会空。
- * 有 shadowRoot 的宿主递归采集 light+shadow 全量文本(供 agent 分辨命中是谁);
- * 无 shadow 用原生 textContent(快)。 */
+ * 有 shadowRoot 的宿主递归采集 light+shadow 全量文本(供 agent 分辨命中是谁),跳过
+ * style/script/template 等非渲染节点(否则 shadow 里的 CSS 会混进 text);无 shadow 用原生 textContent(快)。 */
 function visibleText(el: Element): string {
   if (!el.shadowRoot) return el.textContent || '';
+  const SKIP = new Set(['style', 'script', 'template', 'noscript']);
   let s = '';
   const walk = (n: Node) => {
     for (const c of Array.from(n.childNodes)) {
-      if (c.nodeType === 3) s += c.nodeValue ?? '';
-      else if (c.nodeType === 1) { walk(c); if ((c as Element).shadowRoot) walk((c as Element).shadowRoot!); }
+      if (c.nodeType === 3) { s += c.nodeValue ?? ''; continue; }
+      if (c.nodeType === 1) {
+        const ce = c as Element;
+        if (SKIP.has(ce.tagName.toLowerCase())) continue;
+        walk(c);
+        if (ce.shadowRoot) walk(ce.shadowRoot);
+      }
     }
   };
   walk(el);
