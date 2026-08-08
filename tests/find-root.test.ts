@@ -1,11 +1,11 @@
 /**
- * find-root.test.ts — 合成拼接树 xpath 引擎的纯字符串单测(Node 内置 node:test,零依赖)。
+ * find-root.test.ts — fontoxpath xpath 引擎的纯字符串单测(Node 内置 node:test,零依赖)。
  *
- * 新引擎把整页镜像成"无 shadow 的合成树"后整条路径交原生 document.evaluate 求值,
- * 轴/谓词/`[n]` 语义由浏览器标准 XPath 引擎保证,故只单测可脱离 DOM 的纯逻辑:
+ * 新引擎把页面原样交给 fontoxpath 求值,只靠一个 shadow 穿透的 IDomFacade 让 shadow DOM
+ * 对 XPath 透明;轴/谓词/`[n]` 语义由 XPath 3.1 引擎保证。故只单测可脱离 DOM 的纯逻辑:
  *   - normalizeXpath:相对路径 → descendant 前缀
  *   - splitAxis:按顶层 `/`/`//` 切轴,引号/嵌套括号内的 `/` 不切
- * 合成树物化 + 原生求值 + 映射依赖真实 DOM 全局 `document`,按项目约定靠浏览器实测验收。
+ * shadow 穿透 facade + fontoxpath 求值依赖真实 DOM 全局 `document`,按项目约定靠浏览器实测验收。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,6 +21,16 @@ test('normalize: 以 / 开头不改(绝对或 //)', () => {
 test('normalize: 无前置斜杠的相对路径补 //(desc 搜索)', () => {
   assert.equal(normalizeXpath('div'), '//div');
   assert.equal(normalizeXpath('html/body'), '//html/body');
+  assert.equal(normalizeXpath('bili-comments//div[2]/span'), '//bili-comments//div[2]/span');
+});
+
+test('normalize: 完整表达式(括号/函数/字面量/数字)原样不加前缀', () => {
+  assert.equal(normalizeXpath('(//div)[1]'), '(//div)[1]');           // 括号分组取第 1 个
+  assert.equal(normalizeXpath('count(//div)'), 'count(//div)');        // 函数调用
+  assert.equal(normalizeXpath('1 + 2'), '1 + 2');                      // 算术(数字开头)
+  assert.equal(normalizeXpath('"首页"'), '"首页"');                    // 字符串字面量
+  assert.equal(normalizeXpath("'x'"), "'x'");                          // 单引号字面量
+  assert.equal(normalizeXpath('$var'), '$var');                        // 变量
 });
 
 /* ================= splitAxis ================= */

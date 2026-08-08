@@ -17,6 +17,7 @@
     "typescript": "^5.6.0"
   },
   "dependencies": {
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "fontoxpath": "^3.34.0"
   }
 }
