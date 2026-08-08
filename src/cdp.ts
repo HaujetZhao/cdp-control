@@ -11,6 +11,9 @@
  *   src/monitor.ts       控制台监听:注入守护 daemon + logs 读取
  *   src/browser.ts       确保浏览器就绪(冷启动自动探测 Edge/Chrome)
  *   本入口               组装最终 api + CLI 子命令分发
+ *
+ * CLI 分发用命令表(commands: Record<子命令, handler>),main() 只管「解析参数 → 查表 → 调用」。
+ * 每个 handler 自行决定是否需要 target:需要则调用 ctx.resolveTarget()。
  */
 import { readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
@@ -32,11 +35,27 @@ function readOptFile(file: string | undefined): string | undefined {
   catch (e: any) { throw new Error(`读取参数文件失败: ${file} — ${e.message}`); }
 }
 
-async function main(): Promise<void> {
-  const { args, opts } = parseArgs(process.argv.slice(2));
-  const cmd = args.shift();
+// 命令表上下文:每个 handler 从这里拿位置参数/opts/api,以及按需解析 target。
+type Ctx = {
+  args: string[];
+  opts: Record<string, any>;
+  api: typeof api;
+  /** 按 opts.target 解析目标 tab;带 target 的命令在 handler 开头调它。 */
+  resolveTarget: () => Promise<any>;
+};
 
-  if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
+type Handler = (ctx: Ctx) => Promise<void>;
+
+// 需要 target 的命令统一从这里拿目标并打印提示(消除各命令重复的 resolve+console.error 样板)。
+async function needTarget(ctx: Ctx): Promise<any> {
+  const t = await ctx.api.resolve(ctx.opts.target);
+  console.error(`→ target: ${t.title || ''} ${t.url}`);
+  return t;
+}
+
+const commands: Record<string, Handler> = {
+  // help:不传参或 `help`/`--help`/`-h` 都打印用法。
+  help: async () => {
     console.log(`用法: node dist/cdp.js <子命令> [参数]
   ensure [--url <url>]     确保浏览器已打开(自动探测 Edge/Chrome 启动 CDP),可选 --url 直接导航
   list                     列出所有 page tab(含手动开的)
@@ -58,18 +77,18 @@ async function main(): Promise<void> {
   content [--target]     提取主内容文本(去导航/页脚,截断)
   shot [--file out.png] [--target] 截图
   logs [--target] [--level error,warn] [--since <ms>] [--json]
-                         读 target 控制台日志(常驻 daemon,支持过滤;自动补种)
+                         读 target 控制台日志(常驻 daemon,支持过滤;自动补种);
+                         --since 单位为毫秒
   listen                 启动/前台运行控制台监听 daemon(常驻后台,一般不手动调)
   listen-stop            停止控制台监听 daemon
   run <脚本文件>         执行自动化脚本(脚本里用全局 cdp API,可循环/等待)
 环境变量: CDP_HOST / CDP_PORT(默认 127.0.0.1:9222)
          CDP_LOGS_PORT(监听 daemon 端口,默认 9333)
 <匹配>: target id,或 url/title 子串;不传则自动选第一个普通网页`);
-    return;
-  }
+  },
 
-  // run:执行脚本文件(把 cdp API 注入全局,包装成 async,支持顶层 await)
-  if (cmd === 'run') {
+  // run:执行脚本文件(把 cdp API 注入全局,包装成 async,支持顶层 await)。
+  run: async ({ args }) => {
     const file = args[0];
     if (!file) throw new Error('run 需要脚本文件路径');
     const abs = pathResolve(file);
@@ -82,11 +101,10 @@ async function main(): Promise<void> {
     };
     const fn = new Function('cdp', 'require', `return (async () => {\n${code}\n})();`);
     await fn(api, safeRequire);
-    return;
-  }
+  },
 
-  if (cmd === 'ensure') {
-    const r = await api.ensure(opts.url);
+  ensure: async ({ api: a, opts }) => {
+    const r = await a.ensure(opts.url);
     const lines: string[] = [];
     lines.push(r.started ? '模式: 冷启动(本次由 ensure 启动浏览器)' : '模式: 热启动(浏览器本就已通过 CDP 就绪)');
     lines.push(`浏览器: ${r.browser || '未知'}`);
@@ -96,33 +114,30 @@ async function main(): Promise<void> {
     if (r.url) { lines.push(`已打开: ${r.url}`); lines.push(`targetId: ${r.targetId}`); }
     else lines.push('已连接: 未导航');
     console.log(lines.join('\n'));
-    return;
-  }
+  },
 
-  if (cmd === 'list') {
-    const list = await api.list();
+  list: async ({ api: a }) => {
+    const list = await a.list();
     if (list.length === 0) { console.log('(没有 page tab)'); return; }
     const line = (t: any) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}`;
     console.log(list.map((t: any, i: number) => `${i + 1}. ${line(t)}`).join('\n'));
-    return;
-  }
+  },
 
-  if (cmd === 'open') {
+  open: async ({ api: a, args }) => {
     const url = args[0] || 'about:blank';
-    const tid = await api.open(url);
+    const tid = await a.open(url);
     console.log(`已打开: ${url}\ntargetId: ${tid}`);
-    return;
-  }
-  if (cmd === 'close') {
-    const t = await api.resolve(args[0]);
-    await api.close(t);
+  },
+
+  close: async (ctx) => {
+    const t = await ctx.api.resolve(ctx.args[0]);
+    await ctx.api.close(t);
     console.log(`已关闭: ${t.title || t.url}`);
-    return;
-  }
+  },
 
-  if (cmd === 'listen') { await cmdListen(); return; }
+  listen: async () => { await cmdListen(); },
 
-  if (cmd === 'listen-stop') {
+  'listen-stop': async () => {
     try { await fetch(`http://127.0.0.1:${LOGS_PORT}/shutdown`, { method: 'POST' }); } catch {}
     let stopped = false;
     const t0 = Date.now();
@@ -139,13 +154,12 @@ async function main(): Promise<void> {
       }
     }
     console.log(stopped ? '已停止监听 daemon' : '未发现运行中的监听 daemon');
-    return;
-  }
+  },
 
-  if (cmd === 'logs') {
-    const t = await api.resolve(opts.target);
-    const entries = await api.logs(t, { level: opts.level, since: opts.since });
-    if (opts.json) { console.log(JSON.stringify(entries, null, 2)); return; }
+  logs: async (ctx) => {
+    const t = await needTarget(ctx);
+    const entries = await ctx.api.logs(t, { level: ctx.opts.level, since: ctx.opts.since });
+    if (ctx.opts.json) { console.log(JSON.stringify(entries, null, 2)); return; }
     if (entries.length === 0) { console.log(`(无控制台日志 · ${t.title || t.url})`); return; }
     console.log(`→ ${t.title} ${t.url}`);
     for (const e of entries) {
@@ -154,106 +168,118 @@ async function main(): Promise<void> {
       const argsText = (e.args || []).map((a: any) => a == null ? 'undefined' : (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
       console.log(`[${ts}][${e.level}] ${argsText}${loc}`);
     }
-    return;
-  }
+  },
 
-  const target = await api.resolve(opts.target);
-  console.error(`→ target: ${target.title || ''} ${target.url}`);
+  // ———— 以下命令需要 resolve target ————
+  navigate: async (ctx) => {
+    const url = ctx.args[0];
+    if (!url) throw new Error('navigate 需要 url');
+    await ctx.api.navigate(await needTarget(ctx), url);
+    console.log(`已导航到: ${url}`);
+  },
 
-  switch (cmd) {
-    case 'navigate': {
-      const url = args[0];
-      if (!url) throw new Error('navigate 需要 url');
-      await api.navigate(target, url);
-      console.log(`已导航到: ${url}`);
-      break;
-    }
-    case 'eval': {
-      const js = args.join(' ');
-      if (!js) throw new Error('eval 需要要执行的 JS');
-      console.log(JSON.stringify(await api.eval(target, js), null, 2));
-      break;
-    }
-    case 'snapshot': {
-      const value = await api.snapshot(target);
-      if (!Array.isArray(value) || value.length === 0) { console.log('(没有可交互元素)'); break; }
-      console.log(value.map((e: any, i: number) =>
-        `${i + 1}. [${e.tag}] "${e.text || e.placeholder || ''}"  ${e.href ? e.href : ''}  sel=${e.selector}`
-      ).join('\n'));
-      break;
-    }
-    case 'tree': {
-      const sel = opts.selector ?? readOptFile(opts['selector-file']);
-      const xp = opts.xpath ?? readOptFile(opts['xpath-file']);
-      const r = await api.tree(target, { selector: sel, xpath: xp });
-      if (!r.lines?.length) { console.log('(空树)'); break; }
-      console.log(r.lines.join('\n'));
-      break;
-    }
-    case 'click': {
-      const sel = args[0];
-      if (!sel) throw new Error('click 需要 selector');
-      const r = await api.click(target, sel);
-      console.log(`已点击: ${sel} (${r.tag})`);
-      break;
-    }
-    case 'fill': {
-      const sel = args[0], val = args[1];
-      if (!sel || val === undefined) throw new Error('fill 需要 selector 和 值');
-      await api.fill(target, sel, val);
-      console.log(`已填入: ${sel} ← ${val}`);
-      break;
-    }
-    case 'focus': {
-      const sel = args[0];
-      if (!sel) throw new Error('focus 需要 selector');
-      const r = await api.focus(target, sel);
-      console.log(`已聚焦: ${sel} (${r.tag})`);
-      break;
-    }
-    case 'get_focus': {
-      const f = await api.getFocus(target);
-      if (!f) { console.log('(当前无焦点元素)'); break; }
-      console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`);
-      break;
-    }
-    case 'press_key': {
-      const key = args[0];
-      if (!key) throw new Error('press_key 需要按键,如 Enter、Ctrl+Shift+A');
-      await api.pressKey(target, key);
-      console.log(`已按键: ${key}`);
-      break;
-    }
-    case 'hover': {
-      const sel = args[0];
-      if (!sel) throw new Error('hover 需要 selector');
-      await api.hover(target, sel);
-      console.log(`已悬停: ${sel}`);
-      break;
-    }
-    case 'outline': {
-      const o = await api.outline(target);
-      console.log(`标题: ${o.title}\nURL: ${o.url}\n`);
-      console.log('— 标题层级 —');
-      console.log(o.headings.map((h: any) => '  '.repeat(Math.max(0, h.level - 1)) + `H${h.level}: ${h.text}  sel=${h.selector}`).join('\n') || '(无标题)');
-      console.log('\n— 关键链接 —');
-      console.log(o.links.map((l: any, i: number) => `${i + 1}. ${l.text}  ${l.href}`).join('\n') || '(无)');
-      break;
-    }
-    case 'content': {
-      const c = await api.content(target);
-      console.log(`标题: ${c.title}\nURL: ${c.url}\n`);
-      console.log(c.text || '(无正文)');
-      break;
-    }
-    case 'shot': {
-      const file = await api.shot(target, opts.file);
-      console.log(`已截图: ${file}`);
-      break;
-    }
-    default:
-      throw new Error(`未知命令: ${cmd}(用 node dist/cdp.js help 看用法)`);
-  }
+  eval: async (ctx) => {
+    const js = ctx.args.join(' ');
+    if (!js) throw new Error('eval 需要要执行的 JS');
+    console.log(JSON.stringify(await ctx.api.eval(await needTarget(ctx), js), null, 2));
+  },
+
+  snapshot: async (ctx) => {
+    const value = await ctx.api.snapshot(await needTarget(ctx));
+    if (!Array.isArray(value) || value.length === 0) { console.log('(没有可交互元素)'); return; }
+    console.log(value.map((e: any, i: number) =>
+      `${i + 1}. [${e.tag}] "${e.text || e.placeholder || ''}"  ${e.href ? e.href : ''}  sel=${e.selector}`
+    ).join('\n'));
+  },
+
+  tree: async (ctx) => {
+    const sel = ctx.opts.selector ?? readOptFile(ctx.opts['selector-file']);
+    const xp = ctx.opts.xpath ?? readOptFile(ctx.opts['xpath-file']);
+    const r = await ctx.api.tree(await needTarget(ctx), { selector: sel, xpath: xp });
+    if (!r.lines?.length) { console.log('(空树)'); return; }
+    console.log(r.lines.join('\n'));
+  },
+
+  click: async (ctx) => {
+    const sel = ctx.args[0];
+    if (!sel) throw new Error('click 需要 selector');
+    const r = await ctx.api.click(await needTarget(ctx), sel);
+    console.log(`已点击: ${sel} (${r.tag})`);
+  },
+
+  fill: async (ctx) => {
+    const sel = ctx.args[0], val = ctx.args[1];
+    if (!sel || val === undefined) throw new Error('fill 需要 selector 和 值');
+    await ctx.api.fill(await needTarget(ctx), sel, val);
+    console.log(`已填入: ${sel} ← ${val}`);
+  },
+
+  focus: async (ctx) => {
+    const sel = ctx.args[0];
+    if (!sel) throw new Error('focus 需要 selector');
+    const r = await ctx.api.focus(await needTarget(ctx), sel);
+    console.log(`已聚焦: ${sel} (${r.tag})`);
+  },
+
+  get_focus: async (ctx) => {
+    const f = await ctx.api.getFocus(await needTarget(ctx));
+    if (!f) { console.log('(当前无焦点元素)'); return; }
+    console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`);
+  },
+
+  press_key: async (ctx) => {
+    const key = ctx.args[0];
+    if (!key) throw new Error('press_key 需要按键,如 Enter、Ctrl+Shift+A');
+    await ctx.api.pressKey(await needTarget(ctx), key);
+    console.log(`已按键: ${key}`);
+  },
+
+  hover: async (ctx) => {
+    const sel = ctx.args[0];
+    if (!sel) throw new Error('hover 需要 selector');
+    await ctx.api.hover(await needTarget(ctx), sel);
+    console.log(`已悬停: ${sel}`);
+  },
+
+  outline: async (ctx) => {
+    const o = await ctx.api.outline(await needTarget(ctx));
+    console.log(`标题: ${o.title}\nURL: ${o.url}\n`);
+    console.log('— 标题层级 —');
+    console.log(o.headings.map((h: any) => '  '.repeat(Math.max(0, h.level - 1)) + `H${h.level}: ${h.text}  sel=${h.selector}`).join('\n') || '(无标题)');
+    console.log('\n— 关键链接 —');
+    console.log(o.links.map((l: any, i: number) => `${i + 1}. ${l.text}  ${l.href}`).join('\n') || '(无)');
+  },
+
+  content: async (ctx) => {
+    const c = await ctx.api.content(await needTarget(ctx));
+    console.log(`标题: ${c.title}\nURL: ${c.url}\n`);
+    console.log(c.text || '(无正文)');
+  },
+
+  shot: async (ctx) => {
+    const file = await ctx.api.shot(await needTarget(ctx), ctx.opts.file);
+    console.log(`已截图: ${file}`);
+  },
+};
+
+async function main(): Promise<void> {
+  const { args, opts } = parseArgs(process.argv.slice(2));
+  const cmd = args.shift();
+
+  // 不传参,或 help/--help/-h 都归到 help handler。
+  const name = !cmd || cmd === '--help' || cmd === '-h' ? 'help' : cmd;
+
+  const handler = commands[name];
+  if (!handler) throw new Error(`未知命令: ${cmd}(用 node dist/cdp.js help 看用法)`);
+
+  // 构造并发给 handler 的上下文;按需解析 target。
+  const ctx: Ctx = {
+    args,
+    opts,
+    api,
+    resolveTarget: () => api.resolve(opts.target),
+  };
+  await handler(ctx);
 }
 
 // 作为模块被 require 时导出 API;作为脚本运行时走 CLI
