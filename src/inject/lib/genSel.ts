@@ -33,7 +33,12 @@ export function genXpath(el: Element | null): string {
   if (!el) return '';
   const parts: string[] = [];
   let cur: Element = el;
+  let idAnchored = false;
   for (;;) {
+    // 就近 id 锚定:遇到带 id 的祖先(含 el 自身)就用 `//*[@id=…]`,不再向上拼位置链。
+    // id 唯一、不随重排漂移,比全位置路径(html/body/div[1]/…)稳得多,也短。
+    const id = cur.getAttribute('id');
+    if (id) { parts.unshift(`*[@id="${id}"]`); idAnchored = true; break; }
     const parent: Element | null = cur.parentElement;
     if (!parent) { parts.unshift(cur.tagName.toLowerCase()); break; } // 顶层(html)不带序号
     // xpath `tag[n]` 语义是"同名兄弟序号"(跳过中间其它标签),不是"第 n 个元素子"。
@@ -42,5 +47,5 @@ export function genXpath(el: Element | null): string {
     parts.unshift(`${cur.tagName.toLowerCase()}[${idx}]`);
     cur = parent;
   }
-  return '/' + parts.join('/');
+  return (idAnchored ? '//' : '/') + parts.join('/');
 }
