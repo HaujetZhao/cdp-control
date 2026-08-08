@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, treeExpr, xpathExpr } from './inject-loader';
+import { inject, treeExpr, xpathExpr, locateExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 
@@ -64,16 +64,22 @@ export async function navigate(target: Target, url: string): Promise<void> {
   });
 }
 
-export interface TreeOpts { selector?: string; xpath?: string; visibleOnly?: boolean }
+export interface TreeOpts { selector?: string; xpath?: string; visibleOnly?: boolean; ref?: number; ancestor?: number }
 
-/** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。visibleOnly 只输出视口内可见元素。 */
+/** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,最后 xpath,缺省 body;
+ * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
-  return invoke(target, treeExpr(opts.selector, opts.xpath, opts.visibleOnly), 30000);
+  return invoke(target, treeExpr(opts.selector, opts.xpath, opts.visibleOnly, opts.ref, opts.ancestor), 30000);
 }
 
 /** 按 xpath 查元素(注入侧 xpathEval 解析,shadow 穿透,返回命中列表 + 分步诊断)。 */
 export async function xpath(target: Target, path: string): Promise<any> {
   return invoke(target, xpathExpr(path));
+}
+
+/** 按 tree 的 ref 序号反查稳定定位器(selector + xpath),可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的定位器复用。 */
+export async function locate(target: Target, ref: number, ancestor?: number): Promise<any> {
+  return invoke(target, locateExpr(ref, ancestor));
 }
 
 /** 操作目标:selector 字符串,或 {ref:n} 用 tree 登记的引用序号(穿透 shadow)。 */
@@ -165,7 +171,7 @@ export async function hover(target: Target, arg: TargetArg): Promise<void> {
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  tree, xpath, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  tree, xpath, locate, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

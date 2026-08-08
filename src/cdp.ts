@@ -93,14 +93,21 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector-file/--xpath-file 只建指定区域,--visible-only 只输出视口内可见)')
+targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
+  .option('--ref <n>', '按 tree 输出的 ref 序号建树根(与 --selector-file/--xpath-file 二选一)')
+  .option('--ancestor <n>', '从建树根向上爬 N 层父级再建树(默认 0;与 --ref/selector/xpath 任一锚点配合)')
   .option('--selector-file <file>', '从文件读 selector')
   .option('--xpath-file <file>', '从文件读 xpath')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
   .action(async (opts) => {
     const sel = readOptFile(opts.selectorFile);
     const xp = readOptFile(opts.xpathFile);
-    const r = await api.tree(await needTarget(opts.target), { selector: sel, xpath: xp, visibleOnly: !!opts.visibleOnly });
+    if (opts.ref != null && (sel || xp)) throw new Error('--ref 与 --selector-file/--xpath-file 只能选其一');
+    const r = await api.tree(await needTarget(opts.target), {
+      selector: sel, xpath: xp, visibleOnly: !!opts.visibleOnly,
+      ref: opts.ref != null ? Number(opts.ref) : undefined,
+      ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
+    });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));
   });
@@ -123,6 +130,16 @@ targetCmd('xpath', '按 xpath 查元素(shadow 穿透,含分步诊断)')
     console.log(`命中 ${r.count} 个:`);
     for (const m of r.matches || []) console.log(`  [${m.tag}] "${m.text || ''}"  sel=${m.selector || ''}`);
     if (r.count > (r.matches || []).length) console.log(`  …(还有 ${r.count - (r.matches || []).length} 个未列出)`);
+  });
+
+targetCmd('locate', '从 tree 的 ref 序号反查稳定定位器(selector + xpath)。ref 是会话句柄,页面刷新后失效;此命令把 ref 翻译成刷新后仍可用的定位器,供 tree --selector-file/--xpath-file 复用')
+  .argument('<n>', 'tree 输出的 ref 序号')
+  .option('--ancestor <n>', '向上爬 N 层父级再定位(默认 0;把内容叶子抬升到语义区域容器)')
+  .action(async (n, opts) => {
+    const r = await api.locate(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+    console.log(`[${r.tag}] "${r.text || ''}"`);
+    console.log(`  selector: ${r.selector || '(无)'}`);
+    console.log(`  xpath:    ${r.xpath || '(无)'}`);
   });
 
 // ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。

@@ -8,14 +8,22 @@
  */
 import { setResult } from './lib/result';
 import { markText, formatTree, type TreeNode } from './lib/tree-format';
-import { findRoot } from './lib/find-root';
+import { findRoot, refElement, climbAncestors } from './lib/find-root';
 import type { TreeArgs } from './lib/arg';
 
 declare const __CDP_ARG__: TreeArgs;
 
 (() => {
-  const root = findRoot(__CDP_ARG__.selector, __CDP_ARG__.xpath);
-  if (!root || root.nodeType !== 1) return setResult({ ok: false, err: '未找到匹配的根节点(selector/xpath 未命中)' });
+  // 锚点互斥:--ref 优先(读上一次 tree 登记的 __cdpRefs,须在下方清空表之前解析),
+  // 其次 selector/xpath,缺省 body。--ancestor 为统一爬父修饰符,对任一锚点生效。
+  let root: Element | null;
+  if (__CDP_ARG__.ref != null) {
+    root = climbAncestors(refElement(__CDP_ARG__.ref), __CDP_ARG__.ancestor);
+    if (!root || root.nodeType !== 1) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 无效或已失效(ref 是会话句柄,页面刷新后失效;需先重新 tree 拿到新 ref)` });
+  } else {
+    root = climbAncestors(findRoot(__CDP_ARG__.selector, __CDP_ARG__.xpath), __CDP_ARG__.ancestor);
+    if (!root || root.nodeType !== 1) return setResult({ ok: false, err: '未找到匹配的根节点(selector/xpath 未命中)' });
+  }
   // 全局 ref 登记表:本次 tree 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
   (globalThis as any).__cdpRefs = [];
   // visible-only:只输出当前视口内几何可见、且非隐藏(display:none/opacity:0/visibility:hidden)的元素,

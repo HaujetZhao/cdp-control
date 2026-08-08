@@ -33,14 +33,20 @@ export function inject(name: string, args?: unknown): string {
   return `var __CDP_ARG__ = ${JSON.stringify(args)};\n${code}`;
 }
 
-/** 结构树入口(唯一感知命令)。selector/xpath 可选,缺省整页 body;visibleOnly 只输出视口内可见。 */
-export function treeExpr(selector?: string, xpath?: string, visibleOnly?: boolean): string {
-  return inject('tree', { selector, xpath, visibleOnly: visibleOnly || undefined });
+/** 结构树入口(唯一感知命令)。锚点互斥:ref 优先,其次 selector,最后 xpath,缺省整页 body;
+ * visibleOnly 只输出视口内可见;ancestor 为统一爬父修饰符(对任一锚点生效)。 */
+export function treeExpr(selector?: string, xpath?: string, visibleOnly?: boolean, ref?: number, ancestor?: number): string {
+  return inject('tree', { selector, xpath, visibleOnly: visibleOnly || undefined, ref, ancestor });
 }
 
 /** xpath 查元素入口(shadow 穿透,返回命中列表 + 分步诊断)。 */
 export function xpathExpr(path: string): string {
   return inject('xpath', { path });
+}
+
+/** locate:按 tree 的 ref 反查稳定定位器(selector + xpath),可选 --ancestor 爬父。 */
+export function locateExpr(ref: number, ancestor?: number): string {
+  return inject('ref', { ref, ancestor });
 }
 
 /** 读控制台日志入口。 */
