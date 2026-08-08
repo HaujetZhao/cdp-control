@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,不做可见性判定,可选 `--selector`/`--xpath`(或 `--selector-file`/`--xpath-file` 从文件读,免 shell 转义)只建指定区域;勿盲用 snapshot/class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,不做可见性判定,可选 `--selector`/`--xpath`(或 `--selector-file`/`--xpath-file` 从文件读,免 shell 转义)只建指定区域;勿盲用 class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -87,11 +87,10 @@ sites/
 
 `tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector <sel>` / `--xpath <xp>` 只建指定区域(取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--xpath` 是 **shadow 穿透版**,实现为「合成拼接树 + 原生 evaluate」:把整页镜像成**无 shadow 的合成树**(shadowRoot 顶层子直接拼进宿主),整条路径交浏览器原生 XPath 引擎在合成树上求值——`/`、`//` 与**全部标准轴(`parent::`/`ancestor::`/`self::`/`following-sibling::`…)天然穿透任意层嵌套 shadow**,谓词与 `[n]` 语义原生正确。可照 tree 输出的结构(含 `[shadow]` 宿主)直接写一条连续路径,如 B站 `/html/body/div[2]/div[2]/div[1]/div[6]/bili-comments//bili-comment-thread-renderer[1]//bili-comment-reply-renderer//bili-rich-text//p/span` 直达评论文本;`[n]` 为标准 XPath 位置语义——候选须是其**逻辑父的拼接子**中匹配本步 node test 的第 n 个(1 基;shadow 子取宿主作逻辑父),如 `//bili-comments//bili-comment-thread-renderer[2]` 取第 2 条评论。**⚠️ 别照 tree 缩进反推 `[n]`**:tree 会折叠无文本的纯包装节点(一行 `div > div > div` 不代表真实 DOM 的三层),而 `div[n]` 是真实 DOM 里**含无文本兄弟在内**的第 n 个 div 子,tree 把无文本的都省了,所以从缩进反推位置路径基本必错。要精确定位用:①F12 右键 Copy full XPath(可直接用)②文本+谓词(如 `//*[contains(.,'…')]`)③**从文本叶向上推父链**(反推最稳):先取**最内层**含该文本的叶 `//*[contains(.,'…') and not(.//*[contains(.,'…')])]`,再 `parent::`/`ancestor::div[N]`/`ancestor-or-self::` 向上取容器。**⚠️ 别用 `[1]`**:`//*[contains(.,'…')][1]` 的 `[1]` 是 XPath 谓词、按文档序取**最外层**(html/body)——因为祖先的聚合文本(innerText 整段)也含 '…',`[1]` 选到的是 html 而非文本叶,再爬祖先只会得到整页级 junk。加 `and not(.//*[contains(.,'…')])`(自身含该文本、且任一子级都不含)才真正锁到最深处那格。④用 `cdp xpath` 分步诊断的"当时候选"逐段确认。**DevTools 右键 Copy full XPath 复制的完整路径可直接用**(含 `//` 的 shadow 穿透段);若复制的路径未命中,可用 `cdp xpath` 分步诊断定位断在哪一步。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。另注意 `//text()="X"` 这种"路径后直接等号"是**布尔 XPath**(返回 true/false,不返回节点集,现已按无命中处理不报错)——要做等值匹配应写 `//text()[.="X"]` 或 `//*[.="X"]`。**xpath/selector 优先用文件传**:凡含 `//`(尤其行首 `//`)、`[`、`]`、`"`、`'`、空格等 shell 难转义字符的,一律走 `--xpath-file <file>` / `--selector-file <file>`——Git Bash 会把行首 `//` 静默转成 `/`(如 `//h1`→`/h1`)导致查错,只有文件能绕开;文件与内联同给时**文件优先**。
 
-- **读长正文(文章/回答全文)→ 用 `content`**(专门提取正文文本、去链接/实体锚点噪音,整段可读);`tree` 看的是结构,正文里的 `br`/实体链接/图标会把句子打碎。
-- **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。**带 shadowRoot 的宿主节点 tag 会追加 `[shadow]`**(如 `bili-comments[shadow]`、`bili-rich-text[shadow]`):表示其下的子树来自 shadow DOM,**CSS 选择器(如 `querySelector`、`snapshot` 的 selector)不能穿透**,要定位这些子树下的元素须用 `--xpath`(shadow 穿透版)或 `content` 读文本,别直接拿 tree 里的标签反推 CSS 选择器。
-- 想**操作**(点/填)→ `snapshot` 拿干净 selector。
+- **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。**带 shadowRoot 的宿主节点 tag 会追加 `[shadow]`**(如 `bili-comments[shadow]`、`bili-rich-text[shadow]`):表示其下的子树来自 shadow DOM,**CSS 选择器不能穿透**,要定位这些子树下的元素须用 `--xpath`(shadow 穿透版),别直接拿 tree 里的标签反推 CSS 选择器。
+- 想**操作**(点/填)→ 用 `tree --xpath` 圈到目标块、按 tree 结构构建 xpath 定位,或用 `cdp xpath` 拿该元素的稳定 selector。
 - `tree` 不带状态前缀(无 `[看]`/`[架]`/`[X]`),只看文本与结构。
-- 结论:**感知一律走 `tree`**。snapshot 只做操作,不做感知。
+- 结论:**感知一律走 `tree`**(唯一感知命令)。
 
 ## Quick Reference
 
@@ -105,12 +104,9 @@ sites/
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `snapshot [--target]` | **取页面可交互元素**:标签、文本、href、稳定 selector、坐标(取集规则见下)——只做操作定位,不做感知 |
 | `tree [--target] [--selector <sel>] [--xpath <xp>] [--selector-file <file>] [--xpath-file <file>]` | **结构树(唯一感知命令)**:整页 body 的文本+结构紧凑层级树,不做可见性判定,只输出文本与结构(过滤垃圾标签/纯包装节点,穿透 shadow DOM);`--selector`/`--xpath`(或从文件 `--selector-file`/`--xpath-file` 读,省 shell 转义)可选,只建指定区域(取第一个匹配,selector 优先);`--xpath` 为 shadow 穿透版(拼接树模型,递归任意深度);selector/xpath **优先从文件读**(`--selector-file`/`--xpath-file` 免 shell 转义,行首 `//` 内联会被 shell 静默改),文件与内联同给时文件优先 |
 | `xpath [path] [--xpath-file <file>] [--target]` | **按 xpath 查元素(shadow 穿透,含分步诊断)**:打印全部命中(标签/文本/稳定 selector);未命中时打印**分步诊断**,精确指出断在哪一步、当时候选是谁——用于排查 DevTools 复制的路径为何不命中。位置参数与 `--xpath-file` 二选一;路径含 `//`(行首 `//` 会被 shell 静默改成 `/`)、`"`、`[contains(...)]`、空格等难转义字符时**一律优先用 `--xpath-file` 传**,文件与位置参数同给时文件优先 |
-| `outline [--target]` | 页面大纲:标题层级(h1-h6)+ 关键链接,快速看懂页面结构 |
-| `content [--target]` | 提取主内容区文本(去导航/页脚,截断),快速读页面内容 |
-| `click <selector> [--target]` | 点击元素(selector 用 snapshot 输出的) |
+| `click <selector> [--target]` | 点击元素(selector 用 `cdp xpath` 输出的稳定 selector) |
 | `fill <selector> <值> [--target]` | 填输入框并派发 input/change |
 | `focus <selector> [--target]` | 聚焦元素(配合按键用) |
 | `get-focus [--target]` | 查看当前焦点元素在哪 |
@@ -150,7 +146,7 @@ sites/
 
 **先探后写、写成文件、一次执行**——避免多次模型往返:
 
-1. **探明页面**:不知道元素时,先 `node dist/cdp.js list`(看有哪些 tab)+ `node dist/cdp.js snapshot --target <匹配>`(拿到可交互元素的 selector)。
+1. **探明页面**:不知道元素时,先 `node dist/cdp.js list`(看有哪些 tab)+ `node dist/cdp.js tree --target <匹配>`(感知整页结构);要操作再 `cdp xpath` 拿目标元素的稳定 selector。
 2. **写脚本文件**:把整段操作写成一个 `.js` 放到**项目根**(见上方"脚本放置规范"),用全局 `cdp` API。直接复制下面「脚本示例」即可(无内置模板)。
 3. **执行**:在项目根用绝对路径运行 `node "<本 SKILL 所在目录>/dist/cdp.js" run ./你的脚本.js`。出错改文件再跑,不重新生成;截图等输出直接落项目根。
 
@@ -189,7 +185,6 @@ await cdp.close(t);
 | `cdp.close(target)` | 对象 | — |
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
-| `cdp.snapshot(target)` | 对象 | 可交互元素数组 |
 | `cdp.tree(target, opts?)` | 对象,`{selector?,xpath?}` | 整页 body 的**文本+结构**紧凑层级树:`{ok, lines}`;不做可见性判定,输出纯文本与结构;`opts.selector`/`opts.xpath` 可选,只建指定区域(取第一个匹配,selector 优先);`opts.xpath` 为 shadow 穿透版(拼接树模型,`/`与`//`都跨任意层 shadow,支持 `[n]` 标准位置索引(逻辑父下第 n 个匹配兄弟)与 `[contains(...)]` 谓词,递归任意深度) |
 | `cdp.xpath(target, path)` | 对象,字符串 | 按 xpath 查元素(shadow 穿透):`{count, matches:[{tag,text,selector}], trace:[{text,axis,input,matched,sample?}]}`;`count===0` 为未命中,`trace` 含分步诊断 |
 | `cdp.click(target, selector)` | 对象,字符串 | 点击结果 |
@@ -200,15 +195,12 @@ await cdp.close(t);
 | `cdp.getFocus(target)` | 对象 | 焦点元素信息或 null |
 | `cdp.pressKey(target, "Ctrl+Shift+A")` | 对象,字符串 | — |
 | `cdp.hover(target, selector)` | 对象,字符串 | — |
-| `cdp.outline(target)` | 对象 | `{title,url,headings,links}` |
-| `cdp.content(target)` | 对象 | `{title,url,text}` |
 | `cdp.shot(target, file?)` | 对象,字符串可选 | 截图文件路径 |
 | `cdp.logs(target, opts?)` | 对象,`{level,since}` | 控制台日志条目数组(自动拉起 daemon) |
 
 ## 常见错误
 
 - **eval 拿不到结果** → 已用 `returnByValue + awaitPromise`;跨域 iframe 内的元素需用 `contentDocument` 单独取。
-- **snapshot 只取"可交互且可见且有文本"的元素,上限 300 个**——隐藏/禁用/无文本(如纯图卡)会被跳过,返回的是操作导向清单,**不是完整无障碍树**。想要全量元素用 `eval` 自写 `querySelectorAll`。
 - **click 没生效** → `el.click()` 是合成事件;若组件不吃,用 `eval` 调组件方法,或截图定位后真坐标点击。
 - **多 tab 匹配错** → title 相似时用完整 id。
 - **`navigate` 后 target 对象的 `url`/`title` 是快照,不刷新** → 判断跳转是否成功用 `cdp.eval(t, 'location.href')`,别信 target 对象的缓存字段。

@@ -44,7 +44,7 @@ esbuild 会把入口包进 module wrapper、吞掉返回值,故:
 
 ## 返回契约(api.ts 的 `invoke`)
 
-Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注入脚本成功返回任意值(可含 `{ok:true}`);失败返回 `{ok:false, err}`。`invoke` 统一把 `{ok:false}` 抛成异常,调用方无需各自判 ok。数据类入口(snapshot 等返回裸数组/对象)自然通过。改 api 方法时统一走 `invoke`,别再散落 `r?.ok` 检查。
+Node 侧统一用 `invoke(target, expr)` 执行注入脚本并解包结果:注入脚本成功返回任意值(可含 `{ok:true}`);失败返回 `{ok:false, err}`。`invoke` 统一把 `{ok:false}` 抛成异常,调用方无需各自判 ok。数据类入口(tree/xpath 等返回裸对象)自然通过。改 api 方法时统一走 `invoke`,别再散落 `r?.ok` 检查。
 
 ## 测试
 
