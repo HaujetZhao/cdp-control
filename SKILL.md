@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,可选 `--selector-file`/`--xpath-file` 从文件读(免 shell 转义)只建指定区域、或 `--visible-only` 只看当前视口内可见元素;勿盲用 class selector 读内容(会漏文本块、命中滚出屏的旧元素)。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用导致的多次模型往返。**感知页面用 `tree`**(唯一感知命令):`tree` 输出整页 body 的文本+结构紧凑树,可选 `--selector-file`/`--xpath-file` 从文件读(免 shell 转义)只建指定区域、或 `--visible-only` 只看当前视口内可见元素;勿盲用 class selector 读内容(会漏文本块、命中滚出屏的旧元素)。**定位一律从 tree 已有的 ref 出发**:要局部 tree 用 `tree --ref <n> --ancestor <k>`、要刷新后仍可用的稳定定位器用 `locate <n> [--ancestor <k>]`;**不要用 eval JS 去分析原始 HTML 摸结构**。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -99,21 +99,24 @@ sites/
 
 **铁律**:初次查看页面要看完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
 
-**定位**:层数=数折叠链(`div>div>div`=3层);但同类序号 `n` **不能**从 tree 反推(含无文本兄弟)。已带 `[ref]` 直接 ref 操作。拿准序号:①F12 Copy full XPath ②文本谓词 `//*[contains(.,'…')]` ③文本叶推父链(最稳)④`cdp locate <ref>` 反查稳定定位器(见下方「区域定位」)。
+**定位 = 从已有的 tree 出发,别 JS 探查(最重要)**:
+- 你已经看过整页 tree,**层级、内容、ref 全在眼前**,不需要再猜结构。要定位区域/元素,一律从 tree 里已有的 ref 出发,不要 `eval` 一段 JS 去分析原始 HTML 摸 DOM 结构——那是浪费轮次的弯路。
+- 层数=数折叠链(`div>div>div`=3层);但同类序号 `n` **不能**从 tree 反推(含无文本兄弟)。已带 `[ref]` 直接 ref 操作。拿准序号:①F12 Copy full XPath ②文本谓词 `//*[contains(.,'…')]` ③文本叶推父链(最稳)④`cdp locate <ref>` 反查稳定定位器。
 
 **易错**:
 - `//*[contains(.,'…')][1]` 的 `[1]` 取最外层,须加 `and not(.//*[contains(.,'…')])` 锁最深
 - `~` 前缀=聚合文本(用 `contains`,别用 `text()`)
 - `//text()="X"` 是布尔非节点集,等值写 `//*[.="X"]`
 - xpath/selector 一律从文件读(Git Bash 会把行首 `//` 改 `/`)
+- `eval` 里 `(() => ({...}))()` 会返回空对象——箭头+对象字面量需显式 `return` 或写 `(function(){ return {...}; })()`。
 
 **操作(ref)**:
 - tree 里标 `[shadow]` 的块(如 `bili-comments[shadow]`)CSS 定位不到 → 操作改用 ref 或 `--xpath-file`
 - 操作优先 `[ref=i]`(`click {ref:i}`,零 XPath,shadow 内也能定位);XPath 兜底批量/精确查询
 - ref 是会话句柄:存 `window.__cdpRefs`,页面刷新失效,每次 tree 重建。**每回合先 tree 拿 ref 再操作**,刷新/动态加载后序号漂移是预期
 
-**区域定位两种姿势(想 tree 一块"语义区域"而不是单个叶子时)**:
-- **同会话立即看**:`tree --ref <n> --ancestor <k>`——拿区域内任一内容叶子的 ref,向上爬 k 层到容器直接建树。如 `tree --ref 53 --ancestor 4` 从"964,599"爬到统计块容器。
+**区域定位(想 tree 一块"语义区域"而不是单个叶子时)**:
+- **同会话立即看**:`tree --ref <n> --ancestor <k>`——拿区域内任一内容叶子的 ref,向上爬 k 层到容器直接建树。k 不确定就逐个试(`--ancestor 1/2/3...`),每个 tree 调用成本低、结果直观。
 - **刷新后仍可用(更常用)**:`locate <n> [--ancestor <k>]` 把 ref 翻译成**稳定 selector + xpath**,写进文件后 `tree --selector-file/--xpath-file` 复用。ref 是会话句柄刷新即失效,locate 得到的定位器不依赖 ref、刷新后照样局部 tree。流程:
   ```
   tree --target ...            # 1. 看整页,记下区域里某个内容叶子的 ref(如 [ref=53])
@@ -121,6 +124,7 @@ sites/
   cdp tree --xpath-file f      # 3. 刷新后,把上一步的 xpath 写入 f,照样定位这块区域
   ```
   (locate 的 xpath 是"同名兄弟序号"语义,与 DevTools Copy full XPath 一致;`--selector-file` 同理)
+- **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别去找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,或各自 `locate`,再并列看。别因此绕回 JS 探查。
 
 ## Quick Reference
 
