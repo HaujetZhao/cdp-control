@@ -83,17 +83,29 @@ sites/
 - **生命周期**:实测验证通过 → 更新"最后验证/状态";站点改版失效 → **更新或删除原语**并在该站 README 标记。README 维护"可用/失效"清单。
 - **新任务流程**:用到某站 → 先看该站 README + 目录里有没有现成原语 → 能复用直接 `run`,缺什么就写新的并升格进目录(验证通过后)。
 
-## 感知页面(核心:`tree`,唯一感知命令)
+## 感知页面(核心:`tree`)
 
-`tree` 是**唯一感知命令**,默认无参数,输出整页 body 的**文本 + 结构**紧凑树——丢垃圾标签、折叠纯包装节点、穿透 shadow DOM,按缩进层级给出"有哪些内容项 + 标签结构"。**默认不做可见性判定**:不筛视口、不查 computed style,整页结构一次给全(由 `hasText`/`productive` 过滤无文本壳子树控输出量)。可选 `--selector-file <file>` / `--xpath-file <file>` 只建指定区域(从文件读,免 shell 转义;取第一个匹配,两者都传时 selector 优先),适合大页面只想看某块(如评论区/侧栏)时省上下文。`--visible-only` 则切换为**只看当前视口**:只输出当前滚动位置屏幕内**几何可见且非隐藏**(display:none/opacity:0/visibility:hidden)的元素——模拟 agent"看到的当前屏幕",视口外的内容(滚走的上面、未滚到的下面)被裁掉,视口外的祖先退化为纯容器骨架。**用法**:整页感知(默认)、缩小到某区域(`--xpath-file`)、或只看当前屏(`--visible-only`)三种粒度。注意 `--visible-only` 只看当前滚动位置——想感知别的区域要先 `scroll`/按键滚过去再 tree,或仍用整页/区域模式。
+`tree`:将整页以 **缩进+折叠** 输出紧凑树,省 token 地含 **结构+文本+`[ref]`**,穿透 shadow。默认整页一次给全(不做可见性判定)。
 
-**⚠️ 初次感知必须全量输出,别 `| head` 截断**:`tree` 已经足够精简,`head` 几十行会丢掉中后段大量信息(尤其 B站/知乎这类长列表页,头部只是导航栏,内容在中间)。首次看页面就跑完整 `tree` 拿全量;只有**已锁定目标小块**的二次查看才用 `--selector-file`/`--xpath-file` 限定区域。截断只用于"结构已知、确认某块",不用在首次感知。`--xpath-file` 是 **shadow 穿透版**,实现为 **fontoxpath(XPath 3.1 引擎)直接跑真实 DOM**:只用一个 shadow 穿透的 domFacade(getChildNodes 把 shadowRoot 顶层子拼进宿主、parent 穿透回宿主),让 shadow DOM 对 XPath 完全透明——`/`、`//` 与**全部标准轴(`parent::`/`ancestor::`/`self::`/`following-sibling::`…)天然穿透任意层嵌套 shadow**,谓词、`[n]`、函数(XPath 3.1)全部原生支持,直接返回真实元素。可照 tree 输出的结构(含 `[shadow]` 宿主)直接写一条连续路径,如 B站 `/html/body/div[2]/div[2]/div[1]/div[6]/bili-comments//bili-comment-thread-renderer[1]//bili-comment-reply-renderer//bili-rich-text//p/span` 直达评论文本;`[n]` 为标准 XPath 位置语义——候选须是其**逻辑父的拼接子**中匹配本步 node test 的第 n 个(1 基;shadow 子取宿主作逻辑父),如 `//bili-comments//bili-comment-thread-renderer[2]` 取第 2 条评论。**⚠️ 别照 tree 缩进反推 `[n]`**:tree 会折叠无文本的纯包装节点(一行 `div > div > div` 不代表真实 DOM 的三层),而 `div[n]` 是真实 DOM 里**含无文本兄弟在内**的第 n 个 div 子,tree 把无文本的都省了,所以从缩进反推位置路径基本必错。要精确定位用:①F12 右键 Copy full XPath(可直接用)②文本+谓词(如 `//*[contains(.,'…')]`)③**从文本叶向上推父链**(反推最稳):先取**最内层**含该文本的叶 `//*[contains(.,'…') and not(.//*[contains(.,'…')])]`,再 `parent::`/`ancestor::div[N]`/`ancestor-or-self::` 向上取容器。**⚠️ 别用 `[1]`**:`//*[contains(.,'…')][1]` 的 `[1]` 是 XPath 谓词、按文档序取**最外层**(html/body)——因为祖先的聚合文本(innerText 整段)也含 '…',`[1]` 选到的是 html 而非文本叶,再爬祖先只会得到整页级 junk。加 `and not(.//*[contains(.,'…')])`(自身含该文本、且任一子级都不含)才真正锁到最深处那格。④用 `cdp xpath` 分步诊断的"当时候选"逐段确认。**DevTools 右键 Copy full XPath 复制的完整路径可直接用**(含 `//` 的 shadow 穿透段);若复制的路径未命中,可用 `cdp xpath` 分步诊断定位断在哪一步。**引用文本前缀 `~`** 表示该文本是**聚合文本**(来自 innerText/grabText 兜底,真实直接文本在子元素里,如 `a ~"首页"`),反查时须用 `contains(.,'…')` 而非 `text()`(后者只匹配直接文本节点)。另注意 `//text()="X"` 这种"路径后直接等号"是**布尔 XPath**(返回 true/false,不返回节点集,现已按无命中处理不报错)——要做等值匹配应写 `//text()[.="X"]` 或 `//*[.="X"]`。**一律从文件读**:`cdp xpath` 直接以位置参数传 xpath 文件(`xpath <file>`),`tree` 用 `--selector-file`/`--xpath-file`(已删内联参数——Git Bash 会把行首 `//` 静默转成 `/`,如 `//h1`→`/h1`,内联必错);文件内容含 `//`、`[`、`]`、`"`、`'`、空格等都不受影响。
+**粒度**:
+- `tree`(默认):整页
+- `tree --xpath-file <f>` / `--selector-file <f>`:只建指定区域(shadow 穿透,取首个匹配,selector 优先)
+- `tree --visible-only`:只看当前视口内可见(非 display:none/opacity:0/visibility:hidden)。**只看当前滚动位置**,要别处先滚动再 tree
 
-- **shadow DOM 已穿透**:`tree` 会递归进入 Web Component 的 `shadowRoot`(如 B站 `<bili-comments>` 评论区、各 web-app 的自定义组件),所以这类站点的内容也能读。**带 shadowRoot 的宿主节点 tag 会追加 `[shadow]`**(如 `bili-comments[shadow]`、`bili-rich-text[shadow]`):表示其下的子树来自 shadow DOM,**CSS 选择器不能穿透**,要定位这些子树下的元素须用 `--xpath-file`(shadow 穿透版),别直接拿 tree 里的标签反推 CSS 选择器。
-- 想**操作**(点/填)→ **优先用 ref**:tree 输出里带 `[ref=i]` 的项,直接用 `click {ref:i}` / `click --ref i` 操作,**零 XPath、穿透 shadow**(ref 是登记的真实元素引用,不生成选择器字符串)。CSS selector 穿不透 shadow,而 ref 能——这是操作 shadow 内元素(如 B站评论按钮、web-app 自定义组件里的输入框)的**主路径**。XPath 兜底"批量/精确查询"(取所有作者、第 N 条、正则匹配)。
-- `tree` 不带状态前缀(无 `[看]`/`[架]`/`[X]`),只看文本与结构。
-- **ref 只标注在可操作叶**(interactive 或有直接文本的节点),纯包装节点/`[shadow]` 宿主不标——看到 `[ref=i]` 就能直接点。ref 是**会话内句柄**:存页面 `window.__cdpRefs`,页面刷新即失效;每次 `tree` 都会重建 ref 序号。所以**每回合先 tree 拿 ref 再操作**,跨回合/刷新/动态加载后序号漂移是预期,别记死。
-- 结论:**感知一律走 `tree`**(唯一感知命令)。
+**铁律**:初次跑完整 `tree`,别 `| head` 截断(长列表页内容在中间)。
+
+**定位**:层数=数折叠链(`div>div>div`=3层);但同类序号 `n` **不能**从 tree 反推(含无文本兄弟)。已带 `[ref]` 直接 ref 操作。拿准序号:①F12 Copy full XPath ②文本谓词 `//*[contains(.,'…')]` ③文本叶推父链(最稳)④`cdp xpath` 分步诊断。
+
+**易错**:
+- `//*[contains(.,'…')][1]` 的 `[1]` 取最外层,须加 `and not(.//*[contains(.,'…')])` 锁最深
+- `~` 前缀=聚合文本(用 `contains`,别用 `text()`)
+- `//text()="X"` 是布尔非节点集,等值写 `//*[.="X"]`
+- xpath/selector 一律从文件读(Git Bash 会把行首 `//` 改 `/`)
+
+**shadow + ref**:
+- 宿主标 `[shadow]`(如 `bili-comments[shadow]`)其子树 CSS 穿透不了,定位用 `--xpath-file`
+- 操作优先 `[ref=i]`(`click {ref:i}`,零 XPath、穿透 shadow);XPath 兜底批量/精确查询
+- ref 是会话句柄:存 `window.__cdpRefs`,页面刷新失效,每次 tree 重建。**每回合先 tree 拿 ref 再操作**,刷新/动态加载后序号漂移是预期
 
 ## Quick Reference
 
