@@ -12,35 +12,23 @@
  *   src/browser.ts       确保浏览器就绪(冷启动自动探测 Edge/Chrome)
  *   本入口               组装最终 api + CLI 子命令分发
  */
+import { readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { resolve as pathResolve } from 'node:path';
 import { sleep } from './transport';
 import { coreApi } from './api';
-import { logs, cmdListen, daemonHealthy, LOGS_PORT } from './monitor';
+import { logs, cmdListen, daemonHealthy, LOGS_PORT, pidFilePath as joinPidPath } from './monitor';
 import { ensureBrowser } from './browser';
+import { parseArgs } from './cli-args';
 
 // 最终 api 对象:核心页面操作 + 控制台监听读取 + 浏览器 ensure。require 本文件时导出它。
 const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 // ==================== CLI ====================
 
-const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'xpath', 'selector', 'xpath-file', 'selector-file']);
-
-function parseArgs(argv: string[]): { args: string[]; opts: Record<string, any> } {
-  const args: string[] = [];
-  const opts: Record<string, any> = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    const name = a.slice(2);
-    if (VALUE_OPTS.has(name)) opts[name] = argv[++i];
-    else if (a.startsWith('--')) opts[name] = true;
-    else args.push(a);
-  }
-  return { args, opts };
-}
-
 /** 从 --xpath-file/--selector-file 读内容(去首尾空白),没给 flag 返回 undefined。 */
-function readOptFile(fs: any, file: string | undefined): string | undefined {
+function readOptFile(file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
-  try { return fs.readFileSync(file, 'utf8').trim(); }
+  try { return readFileSync(file, 'utf8').trim(); }
   catch (e: any) { throw new Error(`读取参数文件失败: ${file} — ${e.message}`); }
 }
 
@@ -84,10 +72,8 @@ async function main(): Promise<void> {
   if (cmd === 'run') {
     const file = args[0];
     if (!file) throw new Error('run 需要脚本文件路径');
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const abs = path.resolve(file);
-    const code = fs.readFileSync(abs, 'utf8');
+    const abs = pathResolve(file);
+    const code = readFileSync(abs, 'utf8');
     (globalThis as any).cdp = api;
     const BUILTIN_ALLOW = new Set(['os', 'path', 'fs', 'child_process', 'crypto', 'util', 'stream', 'url']);
     const safeRequire = (id: string): any => {
@@ -137,9 +123,6 @@ async function main(): Promise<void> {
   if (cmd === 'listen') { await cmdListen(); return; }
 
   if (cmd === 'listen-stop') {
-    const fs = await import('node:fs');
-    const os = await import('node:os');
-    const path = await import('node:path');
     try { await fetch(`http://127.0.0.1:${LOGS_PORT}/shutdown`, { method: 'POST' }); } catch {}
     let stopped = false;
     const t0 = Date.now();
@@ -148,11 +131,11 @@ async function main(): Promise<void> {
       await sleep(200);
     }
     if (!stopped) {
-      const pf = path.join(os.tmpdir(), 'cdp-listen.pid');
-      if (fs.existsSync(pf)) {
-        const pid = Number(fs.readFileSync(pf, 'utf8'));
+      const pf = joinPidPath();
+      if (existsSync(pf)) {
+        const pid = Number(readFileSync(pf, 'utf8'));
         try { process.kill(pid); stopped = true; } catch {}
-        try { fs.unlinkSync(pf); } catch {}
+        try { unlinkSync(pf); } catch {}
       }
     }
     console.log(stopped ? '已停止监听 daemon' : '未发现运行中的监听 daemon');
@@ -200,9 +183,8 @@ async function main(): Promise<void> {
       break;
     }
     case 'tree': {
-      const fs = await import('node:fs');
-      const sel = opts.selector ?? readOptFile(fs, opts['selector-file']);
-      const xp = opts.xpath ?? readOptFile(fs, opts['xpath-file']);
+      const sel = opts.selector ?? readOptFile(opts['selector-file']);
+      const xp = opts.xpath ?? readOptFile(opts['xpath-file']);
       const r = await api.tree(target, { selector: sel, xpath: xp });
       if (!r.lines?.length) { console.log('(空树)'); break; }
       console.log(r.lines.join('\n'));

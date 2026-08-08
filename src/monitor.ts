@@ -2,13 +2,21 @@
  * monitor.ts — 控制台监听:常驻注入守护 daemon(cmdListen)+ 读取(logs)。
  * 依赖 transport(连接原语)+ inject-loader(monitor/read 注入装配),不依赖 api → 无环。
  */
+import { spawn } from 'node:child_process';
+import { unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:http';
 import { pageWs, send, listTargets, resolve, evaluate, sleep, Target } from './transport';
 import { inject, readExpr } from './inject-loader';
 
 export const LOGS_PORT = Number(process.env.CDP_LOGS_PORT) || 9333;
 
+export function pidFilePath(): string {
+  return join(tmpdir(), 'cdp-listen.pid');
+}
+
 async function spawnDaemon(): Promise<void> {
-  const { spawn } = await import('node:child_process');
   const script = process.argv[1] || __filename;
   const child = spawn(process.execPath, [script, 'listen'], { detached: true, stdio: 'ignore' });
   child.unref();
@@ -34,10 +42,15 @@ export async function ensureDaemon(port = LOGS_PORT): Promise<number> {
   throw new Error('监听 daemon 启动失败');
 }
 
-export async function pidFilePath(): Promise<string> {
-  const os = await import('node:os');
-  const path = await import('node:path');
-  return path.join(os.tmpdir(), 'cdp-listen.pid');
+/**
+ * 给已连的页面 WS 装上监控:Page.enable + 注册 addScriptToEvaluateOnNewDocument(未来
+ * 每个 document 自动跑)+ 立即对当前已加载页 Runtime.evaluate 注入一次。幂等(哨兵)。
+ */
+async function attachInject(ws: WebSocket): Promise<void> {
+  const mon = inject('monitor');
+  await send(ws, 'Page.enable', {}, 5000);
+  await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: mon }, 5000);
+  await send(ws, 'Runtime.evaluate', { expression: mon, returnByValue: true }, 5000);
 }
 
 /**
@@ -47,21 +60,14 @@ export async function pidFilePath(): Promise<string> {
  * 覆盖新开的 tab(含手动开的)。读取交给 logs 命令去 eval 页面 window.__cdpLogs。
  */
 export async function cmdListen(): Promise<never> {
-  const http = await import('node:http');
-  const fs = await import('node:fs');
   const attached = new Map<string, WebSocket>();
-  const mon = inject('monitor');
 
   async function injectMon(target: Target): Promise<void> {
     let ws: WebSocket;
     try { ws = await pageWs(target); } catch { return; }
     attached.set(target.id, ws);
     ws.onclose = () => attached.delete(target.id);
-    try {
-      await send(ws, 'Page.enable', {}, 5000);
-      await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: mon }, 5000);
-      await send(ws, 'Runtime.evaluate', { expression: mon, returnByValue: true }, 5000);
-    } catch {}
+    try { await attachInject(ws); } catch {}
   }
 
   // 看门狗:浏览器被关掉后 /json/list 会持续探测失败。连续 WATCHDOG_POLLS 次(约 5s)
@@ -72,25 +78,25 @@ export async function cmdListen(): Promise<never> {
     let list: Target[];
     try { list = await listTargets(); } catch {
       deadPolls++;
-      if (deadPolls >= WATCHDOG_POLLS) { try { fs.unlinkSync(await pidFilePath()); } catch {} process.exit(0); }
+      if (deadPolls >= WATCHDOG_POLLS) { try { unlinkSync(pidFilePath()); } catch {} process.exit(0); }
       return;
     }
     deadPolls = 0;
     for (const t of list) if (!attached.has(t.id)) await injectMon(t);
   }
 
-  const server = http.createServer(async (req: any, res: any) => {
+  const server = createServer(async (req: any, res: any) => {
     const url = new URL(req.url, `http://127.0.0.1:${LOGS_PORT}`);
     res.setHeader('content-type', 'application/json; charset=utf-8');
     if (url.pathname === '/health') { res.end(JSON.stringify({ ok: true, targets: attached.size })); return; }
-    if (url.pathname === '/shutdown') { try { fs.unlinkSync(await pidFilePath()); } catch {} server.close(); process.exit(0); }
+    if (url.pathname === '/shutdown') { try { unlinkSync(pidFilePath()); } catch {} server.close(); process.exit(0); }
     res.statusCode = 404; res.end('{}');
   });
 
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(LOGS_PORT, '127.0.0.1', resolve); });
   await sync();
   setInterval(() => { sync().catch(() => {}); }, 500);
-  fs.writeFileSync(await pidFilePath(), String(process.pid));
+  writeFileSync(pidFilePath(), String(process.pid));
   process.on('SIGINT', () => process.exit(0));
   process.on('SIGTERM', () => process.exit(0));
   console.error(`注入守护 daemon 就绪 :${LOGS_PORT},tabs=${attached.size}`);
@@ -118,12 +124,7 @@ export async function logs(target: Target | string, opts: LogsOpts = {}): Promis
 export async function injectMonitor(target: Target): Promise<boolean> {
   let ws: WebSocket;
   try { ws = await pageWs(target); } catch { return false; }
-  const mon = inject('monitor');
-  try {
-    await send(ws, 'Page.enable', {}, 5000);
-    await send(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: mon }, 5000);
-    await send(ws, 'Runtime.evaluate', { expression: mon, returnByValue: true }, 5000);
-  } catch {}
+  try { await attachInject(ws); } catch {}
   ws.close();
   return true;
 }

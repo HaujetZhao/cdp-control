@@ -12,8 +12,8 @@ export interface FindArgs { sel: string }
 /** fill:按 selector 填值。 */
 export interface FillArgs { sel: string; value: string }
 
-/** tree:rootExpr 是解析建树根元素的 JS 表达式串(如 `document.querySelector(...)` / xpath 求值 IIFE)。 */
-export interface TreeArgs { rootExpr: string }
+/** tree:按 selector / xpath 求建树根元素(注入侧 findRoot 解析,含 shadow 穿透)。 */
+export interface TreeArgs { selector?: string; xpath?: string }
 
 /** read:控制台日志过滤(level 数组;since 毫秒时间戳)。 */
 export interface ReadArgs { level?: string[]; since?: number }

@@ -2,6 +2,10 @@
  * browser.ts — 确保 CDP 浏览器就绪(冷启动自动探测 Edge/Chrome)。
  * 依赖 transport(连接)+ api(open/navigate)+ monitor(maybeSpawnDaemon)。
  */
+import { existsSync, mkdirSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { getJson, listTargets, resolveTarget, PORT, sleep } from './transport';
 import { open, navigate } from './api';
 import { maybeSpawnDaemon } from './monitor';
@@ -14,7 +18,6 @@ async function isBrowserReady(): Promise<boolean> {
 }
 
 async function findBrowserExe(): Promise<string | null> {
-  const { existsSync } = await import('node:fs');
   const cands = [
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
     'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
@@ -62,12 +65,8 @@ export async function ensureBrowser(url?: string): Promise<EnsureResult> {
   if (!(await isBrowserReady())) {
     exe = await findBrowserExe();
     if (!exe) throw new Error('未找到可用的 Edge/Chrome,请手动用 --remote-debugging-port 启动浏览器');
-    const os = await import('node:os');
-    const path = await import('node:path');
-    const fs = await import('node:fs');
-    userData = process.env.CDP_USER_DATA || path.join(os.homedir(), '.cdp-browser');
-    fs.mkdirSync(userData, { recursive: true });
-    const { spawn } = await import('node:child_process');
+    userData = process.env.CDP_USER_DATA || join(homedir(), '.cdp-browser');
+    mkdirSync(userData, { recursive: true });
     const child = spawn(exe, [
       `--remote-debugging-port=${PORT}`,
       '--remote-allow-origins=*',
