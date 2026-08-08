@@ -48,3 +48,8 @@ export function locateExpr(ref: number, ancestor?: number): string {
 export function readExpr(levelSet: string[] | null, since: number): string {
   return inject('read', levelSet ? { level: levelSet, since } : { since });
 }
+
+/** prune:按 ref 登记排除区域(会话级);clear 清空;list 列出。 */
+export function pruneExpr(refs: number[] | undefined, clear: boolean, list: boolean): string {
+  return inject('prune', { refs, clear: clear || undefined, list: list || undefined });
+}

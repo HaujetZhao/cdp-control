@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, treeExpr, locateExpr } from './inject-loader';
+import { inject, treeExpr, locateExpr, pruneExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 
@@ -75,6 +75,14 @@ export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
 /** 按 tree 的 ref 序号反查稳定定位器(selector + xpath),可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的定位器复用。 */
 export async function locate(target: Target, ref: number, ancestor?: number): Promise<any> {
   return invoke(target, locateExpr(ref, ancestor));
+}
+
+export interface PruneOpts { refs?: number[]; clear?: boolean }
+/** 会话级排除区域:把 ref 解析成元素登记,之后的整页 tree 不再输出这些元素子树。
+ * 无 refs 且非 clear 时列出已排除区域。 */
+export async function prune(target: Target, opts: PruneOpts = {}): Promise<any> {
+  const list = !opts.refs?.length && !opts.clear;
+  return invoke(target, pruneExpr(opts.refs, !!opts.clear, list));
 }
 
 /** 操作目标:selector 字符串,或 {ref:n, ancestor?} 用 tree 登记的引用序号(穿透 shadow,可选爬父)。 */
@@ -215,7 +223,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  tree, locate, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  tree, locate, prune, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };
