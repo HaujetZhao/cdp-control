@@ -49,7 +49,7 @@ export function readExpr(levelSet: string[] | null, since: number): string {
   return inject('read', levelSet ? { level: levelSet, since } : { since });
 }
 
-/** prune:按 ref 登记排除区域(会话级);ancestor 爬父到容器;clear 清空;list 列出。 */
-export function pruneExpr(refs: number[] | undefined, ancestor: number | undefined, clear: boolean, list: boolean): string {
-  return inject('prune', { refs, ancestor: ancestor || undefined, clear: clear || undefined, list: list || undefined });
+/** stash:按 ref 暂存排除区域(会话级,类比 git stash);ancestor 爬父到容器;list 列出;pop 恢复第 i 个;clear 清空。 */
+export function stashExpr(refs: number[] | undefined, ancestor: number | undefined, list: boolean, pop: number | undefined, clear: boolean): string {
+  return inject('stash', { refs, ancestor: ancestor || undefined, list: list || undefined, pop: pop ?? undefined, clear: clear || undefined });
 }

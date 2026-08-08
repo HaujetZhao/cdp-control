@@ -7,7 +7,7 @@
  * (tree 入口在整页建树前重置;反馈收集在拼接多个新增块前重置一次,保证跨块 ref 连续)。
  */
 import type { TreeNode } from './tree-format';
-import { pruneSet } from './prune.ts';
+import { stashSet } from './stash.ts';
 
 export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean }
 
@@ -74,11 +74,11 @@ function prune(n: TreeNode): boolean {
 export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}): TreeNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;
-  const exclude = pruneSet(); // 会话级排除集合,命中的元素整棵子树跳过
+  const exclude = stashSet(); // 会话级暂存集合,命中的元素整棵子树跳过
 
   function simplify(el: Element | ShadowRoot, depth: number): TreeNode | null {
     const isEl = el instanceof Element;
-    if (isEl && exclude && exclude.has(el as Element)) return null; // 整棵子树消失(不输出、不登记 ref)
+    if (isEl && exclude && exclude.includes(el as Element)) return null; // 整棵子树消失(不输出、不登记 ref)
     const tag = isEl ? el.tagName?.toLowerCase() || 'frag' : 'frag';
     const inter = isEl ? interactive(el as Element) : false;
     const title = isEl ? (el.getAttribute('title') || '') : '';
