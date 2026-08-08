@@ -48,7 +48,12 @@ export function formatTree(tree: TreeNode): string[] {
   };
   const inlineLabel = (n: TreeNode) => {
     if (n.tag === 'img' && n.imgAlt) return 'img "' + n.imgAlt.slice(0, 20) + '"';
-    if (n.leafValue) { const v = firstTxt(n.kids); return '"' + n.leafValue + (v ? ' ' + v : '') + '"'; }
+    if (n.leafValue) {
+      const v = firstTxt(n.kids);
+      // leafValue 与后代首文本相同时去重(title 兜底值==子 <a> 直接文本,如 B站视频卡片),否则拼成 "X X" 重复。
+      const tail = v && v !== n.leafValue ? ' ' + v : '';
+      return '"' + n.leafValue + tail + '"';
+    }
     return (n.agg ? '~' : '') + '"' + leafText(n).slice(0, 24) + '"';
   };
 
@@ -57,7 +62,9 @@ export function formatTree(tree: TreeNode): string[] {
       if (n.leafValue) {
         const val = firstTxt(n.kids);
         const head = path.length ? path.join(' > ') + ' > ' : '';
-        out.push('  '.repeat(depth) + head + '"' + n.leafValue + (val ? ' ' + val.slice(0, 60) : '') + '"' + refTag(n));
+        // leafValue 与后代首文本相同去重,避免 "X X"(B站视频卡片 H3[title]>a)。
+        const tail = val && val !== n.leafValue ? ' ' + val.slice(0, 60) : '';
+        out.push('  '.repeat(depth) + head + '"' + n.leafValue + tail + '"' + refTag(n));
         return;
       }
       const hasChildText = n.kids.some(k => k.hasText);
