@@ -112,6 +112,14 @@ test('formatTree: 登记过 ref 的叶子输出 [ref=i] 标注', () => {
   assert.deepEqual(formatTree(root), ['div', '  button "登录" [ref=3]', '  p "评论文本" [ref=7]']);
 });
 
+test('formatTree: view=true 的带 ref 节点标 [ref=i·屏],无 view 只标 [ref=i]', () => {
+  const onScreen = mk({ tag: 'button', isContent: true, text: '在屏', inter: true, size: 1, ref: 3, view: true });
+  const offScreen = mk({ tag: 'button', isContent: true, text: '离屏', inter: true, size: 1, ref: 4, view: false });
+  const root = mk({ tag: 'div', isContent: false, size: 3, kids: [onScreen, offScreen] });
+  markText(root);
+  assert.deepEqual(formatTree(root), ['div', '  button "在屏" [ref=3·屏]', '  button "离屏" [ref=4]']);
+});
+
 test('formatTree: 无 ref 节点不标 [ref=i](不回归)', () => {
   const a = mk({ tag: 'a', isContent: true, text: '首页', inter: true, size: 1 });
   const root = mk({ tag: 'nav', isContent: false, size: 2, kids: [a] });
