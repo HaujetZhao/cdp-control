@@ -3,6 +3,7 @@
  */
 import { setResult } from './lib/result';
 import { findTarget, targetLabel } from './lib/find';
+import { genSel } from './lib/genSel';
 import type { FindArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FindArgs;
@@ -12,5 +13,6 @@ declare const __CDP_ARG__: FindArgs;
   if (!el) return setResult({ ok: false, err: '未找到: ' + targetLabel(__CDP_ARG__) });
   el.scrollIntoView({ block: 'center', behavior: 'instant' });
   el.click();
-  return setResult({ ok: true, tag: el.tagName.toLowerCase() });
+  // 附唯一 selector:后续对该元素操作优先用 selector 而非 ref,避免 ref 重渲染失效。
+  return setResult({ ok: true, tag: el.tagName.toLowerCase(), selector: genSel(el) });
 })();
