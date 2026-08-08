@@ -1,41 +1,29 @@
 /**
  * find-root.ts — 从 selector / xpath 求建树根元素(注入侧,无 Node 依赖)。
- * 被 tree 入口复用。xpath 为 shadow 穿透版,激进重做,不保留旧实现。
+ * 被 tree 入口复用。xpath 用「合成拼接树 + 原生 evaluate」激进重做。
  *
- * —— 穿透模型:「拼接树」——
- * 把 shadowRoot 的顶层子元素当作宿主元素的子元素拼接进遍历(见 splicedChildren),
- * 于是 `/`(child)与 `//`(descendant-or-self)都天然跨越任意层嵌套 shadow 边界。
- * 谓词/索引一律以候选元素为 context 交给原生 document.evaluate 求布尔(能力完整:
- * contains()/@attr/text()…);索引 `[n]` 走标准 XPath 语义——候选须是其**父的拼接子中
- * 匹配本步 node test 的第 n 个**(1 基,见 siblingPos),与标准 XPath 的 `div[2]`("父下第 2
- * 个 div 子")一致,故从浏览器 F12 复制出的路径可直接用。
+ * —— 为什么重做 ——
+ * 原生 document.evaluate 有两个无法绕开的限制:①shadowRoot(DocumentFragment)
+ * 不能作 context 节点;②`//` 轴不跨 shadow 边界。旧实现因此手写分词 + 逐层遍历 +
+ * 手算 `[n]`/`siblingPos`,脆弱且缺轴支持(还出过 XPATH_BOOL 常量错)。
+ * 新实现把页面「合成」成一棵**没有 shadow 的拼接树**:shadowRoot 顶层子元素直接
+ * 拼进宿主,整棵镜像进一个独立 detached Document,然后用户路径**整条**交给原生
+ * document.evaluate 在这棵树上跑——轴/谓词/`[n]`/函数全部由浏览器标准 XPath 引擎
+ * 实现,命中的合成节点再经 WeakMap 映射回真实元素。于是 parent::/ancestor:: 等
+ * 一切标准轴免费可用,谓词/索引语义原生正确,手写引擎整层删除。
  *
- * —— 两条路径 ——
- *  - 含 `//`:分步引擎 + 分步诊断(trace 定位"哪步断、当时候选是谁")。
- *  - 不含 `//`:document.evaluate 不接受 DocumentFragment(shadowRoot)作 context,
- *    故对 document + 各 shadowRoot 的顶层子元素各求值一次,按文档序取首个命中(快速路径)。
- *
- * —— 可测性 / 健壮性 ——
- * 用 nodeType 标准常量(1=Element,9=Document,11=DocumentFragment)替代 instanceof(跨 realm 更稳),
- * 用数字常量替代 XPathResult(9=FIRST_ORDERED_NODE_TYPE,1=BOOLEAN_TYPE)。
- * 依赖真实 DOM 全局 `document`,单测里用假 DOM 替换 globalThis.document 驱动。
+ * —— 可测性 ——
+ * 纯字符串逻辑(normalize / splitAxis)可单测;合成树物化 + 原生求值 + 映射依赖
+ * 真实 DOM 全局 `document`,按项目约定靠浏览器实测验收。
  */
 
-const XPATH_FIRST = 9;   // XPathResult.FIRST_ORDERED_NODE_TYPE
-const XPATH_BOOL = 3;    // XPathResult.BOOLEAN_TYPE
+// XPathResult.ORDERED_NODE_SNAPSHOT_TYPE
+const XPATH_SNAPSHOT = 7;
 
-/** 一个位置步。axis:child=`/`(直接拼接子),desc=`//`(拼接子孙-or-self)。 */
-export interface XpStep {
-  text: string;                 // 原始 test 字面,如 `div[2]`
-  axis: 'child' | 'desc';
-  tag: string;                  // 标签名小写,或 '*' 通配
-  preds: string[];              // 谓词数组(索引为数字串,其余为布尔表达式)
-}
-
-/** 分步诊断信息。input=上一步产出的节点数;matched=本步命中数;sample=断在该步时输入节点的标签摘要。 */
+/** 分步诊断信息。input=上一步命中的数量;matched=本步命中数;sample=断在该步时上一步命中的标签摘要。 */
 export interface XpStepInfo { text: string; axis: 'child' | 'desc'; input: number; matched: number; sample?: string }
 
-/** xpath 求值结果:全部命中 + 分步诊断。 */
+/** xpath 求值结果:全部命中(真实元素)+ 分步诊断。 */
 export interface XpathEvalResult {
   ok: boolean;
   count: number;
@@ -43,200 +31,121 @@ export interface XpathEvalResult {
   trace: XpStepInfo[];
 }
 
-/** 收集 shadow 穿透所需的求值上下文:document + 各 shadowRoot 的顶层子元素,按 DFS 预序(宿主文档序在前)。
- *  document.evaluate 不接受 DocumentFragment(shadowRoot)作 context node,故须取其顶层子元素(Element);
- *  DFS 递归穿透任意层嵌套 shadow。预序保证深层元素也能按文档序取到首个命中。 */
-export function shadowContexts(): Element[] {
-  const ctxs: Element[] = [document as unknown as Element];
-  const seen = new Set<Node>([document]);
-  const stack: Node[] = [document];
-  while (stack.length) {
-    const n = stack.pop()!;
-    // shadowRoot(DocumentFragment, nodeType 11)的顶层子元素是求值 context(穿透一层 shadow;嵌套 shadow 各自递归)
-    if (n.nodeType === 11) for (const c of Array.from((n as ParentNode).children)) ctxs.push(c as Element);
-    // DFS 预序收集待遍历子(light children + 嵌套 shadowRoot),反转入栈保证文档序
+/** 合成拼接树:独立 detached Document 里,shadowRoot 顶层子拼进宿主,无 shadow 隔离。 */
+interface ComposedBuild {
+  sd: Document;
+  mapEl: WeakMap<Element, Element>;    // 合成元素 → 真实元素
+  mapText: WeakMap<Text, Text>;        // 合成文本节点 → 真实文本节点
+}
+
+/** 把真实 document 镜像成合成 Document:light 子 + shadowRoot 顶层子拼进宿主,逐层递归。 */
+function buildComposed(): ComposedBuild {
+  const sd = document.implementation.createHTMLDocument('');
+  const mapEl = new WeakMap<Element, Element>();
+  const mapText = new WeakMap<Text, Text>();
+  const root = sd.documentElement!;
+  mapEl.set(root, document.documentElement!); // 复用的 html 容器也登记映射(否则 /html 命中会被丢弃)
+  while (root.firstChild) root.removeChild(root.firstChild); // 清掉默认 head/body
+  const mirror = (real: Node, synParent: Element): void => {
     const kids: Node[] = [];
-    if (n.nodeType === 1 && (n as Element).shadowRoot) kids.push((n as Element).shadowRoot!);
-    if (n.nodeType === 1 || n.nodeType === 9 || n.nodeType === 11)
-      for (const c of Array.from((n as ParentNode).children)) kids.push(c as Node);
-    for (let i = kids.length - 1; i >= 0; i--) { const c = kids[i]; if (!seen.has(c)) { seen.add(c); stack.push(c); } }
-  }
-  return ctxs;
+    for (const c of Array.from(real.childNodes)) kids.push(c);
+    if (real.nodeType === 1 && (real as Element).shadowRoot)
+      for (const c of Array.from((real as Element).shadowRoot!.childNodes)) kids.push(c);
+    for (const c of kids) {
+      if (c.nodeType === 1) {
+        const el = sd.createElement((c as Element).tagName.toLowerCase());
+        for (const a of Array.from((c as Element).attributes)) el.setAttribute(a.name, a.value);
+        mapEl.set(el, c as Element);
+        synParent.appendChild(el);
+        mirror(c, el);
+      } else if (c.nodeType === 3) {
+        const t = sd.createTextNode(c.nodeValue ?? '');
+        mapText.set(t, c as Text);
+        synParent.appendChild(t);
+      }
+      // 其余节点类型(注释等)忽略
+    }
+  };
+  mirror(document.documentElement!, root);
+  return { sd, mapEl, mapText };
 }
 
-/** 拼接子元素:light 子在前,host 的 shadowRoot 顶层子拼接在后(穿透一层 shadow)。 */
-function splicedChildren(node: ParentNode): Element[] {
-  const kids: Element[] = [];
-  for (const c of Array.from(node.children)) kids.push(c as Element);
-  const sr = (node as Element).shadowRoot;
-  if (node.nodeType === 1 && sr)
-    for (const c of Array.from(sr.children)) kids.push(c as Element);
-  return kids;
+/** 路径规范化:无前置斜杠的当作 descendant 搜索(与旧引擎相对路径默认 desc 一致)。 */
+export function normalizeXpath(xp: string): string {
+  return xp.startsWith('/') ? xp : '//' + xp;
 }
 
-/** desc 轴收集:root 的拼接子孙里 tag 匹配的元素(不含 root 自身),扁平文档序,去重。 */
-function collectSplicedDesc(root: ParentNode, tag: string, out: Element[], seen: Set<Element>): void {
-  for (const c of splicedChildren(root)) {
-    if (tag === '*' || (c.tagName || '').toLowerCase() === tag) { if (!seen.has(c)) { seen.add(c); out.push(c); } }
-    collectSplicedDesc(c, tag, out, seen);
-  }
-}
-
-/** 对候选求布尔谓词(以候选为 context 交给原生 evaluate)。失败视为不匹配。 */
-function evalPred(el: Element, expr: string): boolean {
-  try { return document.evaluate(expr, el, null, XPATH_BOOL, null).booleanValue; }
-  catch { return false; }
-}
-
-/** 拼接树里的"逻辑父":shadow 子元素的真实 parentNode 是 shadowRoot 片段,但拼接模型里它
- *  被当作宿主元素的子元素;故取宿主作逻辑父,位置按 splicedChildren(宿主)计,与遍历一致。 */
-function splicedParent(el: Element): ParentNode | null {
-  const p = el.parentNode;
-  if (p && p.nodeType === 11) {
-    const host = (p as ShadowRoot).host;
-    if (host) return host;
-  }
-  return p;
-}
-
-/** 标准 XPath 位置语义:返回 el 在其逻辑父的拼接子中、匹配 node test 的第几个(1 基)。
- *  即 `div[2]` = "父下第 2 个 div 子"。el 不在拼接子中(孤立节点)返回 0(不匹配)。 */
-function siblingPos(el: Element, tag: string): number {
-  const parent = splicedParent(el);
-  if (!parent) return 0;
-  let pos = 0;
-  for (const s of splicedChildren(parent)) {
-    if (tag !== '*' && (s.tagName || '').toLowerCase() !== tag) continue;
-    pos++;
-    if (s === el) return pos;
-  }
-  return 0;
-}
-
-/** 应用谓词/索引:`[n]`(纯数字)按标准位置语义筛(el 须是父下匹配 node test 的第 n 个子);
- *  其余为布尔谓词逐个筛。各谓词互相独立地过滤同一候选集(与 XPath 一致)。 */
-function applyPreds(list: Element[], preds: string[], tag: string): Element[] {
-  let out = list;
-  for (const p of preds) {
-    if (/^\d+$/.test(p)) {
-      const idx = parseInt(p, 10);
-      out = out.filter(el => siblingPos(el, tag) === idx);
+/** 把路径按顶层 `/`/`//` 切成 (axis, step) 序列;跳过 [] 与引号内的 `/`,支持嵌套括号。纯字符串,可单测。 */
+export function splitAxis(xp: string): { axis: 'child' | 'desc'; step: string }[] {
+  const out: { axis: 'child' | 'desc'; step: string }[] = [];
+  let i = 0;
+  const n = xp.length;
+  while (i < n) {
+    if (xp[i] === '/') {
+      const axis: 'child' | 'desc' = xp[i + 1] === '/' ? 'desc' : 'child';
+      i += axis === 'desc' ? 2 : 1;
+      let j = i, depth = 0, quote: string | null = null;
+      while (j < n) {
+        const c = xp[j];
+        if (quote) { if (c === quote) quote = null; j++; continue; }
+        if (c === '"' || c === "'") { quote = c; j++; continue; }
+        if (c === '[') depth++;
+        else if (c === ']') depth--;
+        else if (c === '/' && depth === 0) break;
+        j++;
+      }
+      out.push({ axis, step: xp.slice(i, j) });
+      i = j;
     } else {
-      out = out.filter(el => evalPred(el, p));
+      out.push({ axis: 'desc', step: xp.slice(i) });
+      break;
     }
   }
   return out;
 }
 
-/** 对一个位置步求全部命中:child=拼接子,desc=拼接子孙;跨输入去重后应用谓词。 */
-function stepMatches(nodes: ParentNode[], step: XpStep): Element[] {
-  const all: Element[] = [];
-  const seen = new Set<Element>();
-  for (const n of nodes) {
-    if (step.axis === 'child') {
-      for (const c of splicedChildren(n))
-        if ((step.tag === '*' || (c.tagName || '').toLowerCase() === step.tag) && !seen.has(c)) { seen.add(c); all.push(c); }
-    } else {
-      collectSplicedDesc(n, step.tag, all, seen);
-    }
+/** 在合成树上原生求值整条路径,命中节点映射回真实元素(文本节点归到其父元素)。 */
+function evalComposed(normalized: string, b: ComposedBuild): Element[] {
+  const res = b.sd.evaluate(normalized, b.sd, null, XPATH_SNAPSHOT, null) as XPathResult;
+  const out: Element[] = [];
+  for (let i = 0; i < res.snapshotLength; i++) {
+    const syn = res.snapshotItem(i) as Node;
+    let real: Element | null = null;
+    if (syn.nodeType === 1) real = b.mapEl.get(syn as Element) ?? null;
+    else if (syn.nodeType === 3) real = (b.mapText.get(syn as Text)?.parentNode as Element) ?? null;
+    if (real && !out.includes(real)) out.push(real);
   }
-  return applyPreds(all, step.preds, step.tag);
+  return out;
 }
 
-/** 把 xpath 按词法拆成位置步序列。`/`=child,`//`=desc;跳过 `[]` 与引号内的 `/`,支持嵌套括号与引号。 */
-export function tokenizeSteps(xp: string): XpStep[] {
-  const steps: XpStep[] = [];
-  let axis: 'child' | 'desc' | null = null;
-  let i = 0;
-  const n = xp.length;
-  while (i < n) {
-    if (xp[i] === '/') {
-      axis = xp[i + 1] === '/' ? 'desc' : 'child';
-      i += axis === 'desc' ? 2 : 1;
-      continue;
-    }
-    // 读一个完整 test:到顶层 '/' 或结尾;跳过 [] 与引号内内容
-    let j = i, depth = 0, quote: string | null = null;
-    while (j < n) {
-      const c = xp[j];
-      if (quote) { if (c === quote) quote = null; j++; continue; }
-      if (c === '"' || c === "'") { quote = c; j++; continue; }
-      if (c === '[') depth++;
-      else if (c === ']') depth--;
-      else if (c === '/' && depth === 0) break;
-      j++;
-    }
-    const testStr = xp.slice(i, j);
-    const { tag, preds } = parseTest(testStr);
-    if (tag) steps.push({ text: testStr, axis: axis ?? 'desc', tag, preds });
-    axis = null;
-    i = j;
-  }
-  return steps;
-}
-
-/** 把 test 拆成 tag(小写或 '*' 通配)+ 有序谓词列表,括号/引号感知,支持嵌套。 */
-export function parseTest(test: string): { tag: string; preds: string[] } {
-  const ib = test.indexOf('[');
-  const name = ib < 0 ? test : test.slice(0, ib);
-  const tag = name === '*' ? '*' : name.toLowerCase();
-  const preds: string[] = [];
-  if (ib >= 0) {
-    let depth = 0, start = ib + 1, quote: string | null = null;
-    for (let k = ib; k <= test.length; k++) {
-      const c = test[k];
-      if (quote) { if (c === quote) quote = null; continue; }
-      if (c === '"' || c === "'") { quote = c; continue; }
-      if (c === '[') { if (depth === 0) start = k + 1; depth++; }
-      else if (c === ']') { depth--; if (depth === 0) preds.push(test.slice(start, k)); }
-    }
-  }
-  return { tag, preds };
-}
-
-/** 不含 `//` 的快速路径:对 document + 各 shadowRoot 顶层子元素各求值一次,按文档序取首个命中。 */
-function fastPathEval(xp: string): XpathEvalResult {
-  const ctxs = shadowContexts();
-  const seen = new Set<Element>();
-  const matched: Element[] = [];
-  for (const root of ctxs) {
-    let r: XPathResult;
-    try { r = document.evaluate(xp, root, null, XPATH_FIRST, null); }
-    catch { continue; }
-    const node = r.singleNodeValue as Element | null;
-    if (node && node.nodeType === 1 && !seen.has(node)) { seen.add(node); matched.push(node); }
-  }
-  const trace: XpStepInfo[] = [{ text: xp, axis: 'child', input: ctxs.length, matched: matched.length }];
-  return { ok: matched.length > 0, count: matched.length, nodes: matched, trace };
-}
-
-/** 跨 shadow 连续路径求值:逐位置步求值,`/`=拼接子、`//`=拼接子孙,支持任意混合与 `[n]`/谓词,产出分步诊断。 */
-function crossShadowEval(xp: string): XpathEvalResult {
-  const steps = tokenizeSteps(xp);
-  if (!steps.length) return { ok: false, count: 0, nodes: [], trace: [] };
-  let nodes: ParentNode[] = [document];
+/** 分步诊断:逐前缀原生求值,报告每步输入/命中,断链处给出上一步命中标签。 */
+function buildTrace(normalized: string, b: ComposedBuild): XpStepInfo[] {
+  const segs = splitAxis(normalized);
   const trace: XpStepInfo[] = [];
-  for (const s of steps) {
-    const input = nodes.length;
-    const matched = stepMatches(nodes, s);
-    let sample: string | undefined;
-    if (!matched.length && nodes.length) {
-      const first = nodes[0] as Element;
-      sample = first.tagName ? first.tagName.toLowerCase() : '';
-    }
-    trace.push({ text: s.text, axis: s.axis, input, matched: matched.length, sample });
-    nodes = matched;
-    if (!matched.length) break;
+  let input = 1; // 首步输入=文档根
+  let prevTag: string | undefined;
+  for (let i = 0; i < segs.length; i++) {
+    const prefix = segs.slice(0, i + 1).map(s => (s.axis === 'desc' ? '//' : '/') + s.step).join('');
+    const nodes = evalComposed(prefix, b);
+    const matched = nodes.length;
+    trace.push({ text: segs[i].step, axis: segs[i].axis, input, matched, sample: matched ? undefined : prevTag });
+    if (matched === 0) break;
+    input = matched;
+    prevTag = nodes[0]?.tagName.toLowerCase();
   }
-  return { ok: nodes.length > 0, count: nodes.length, nodes: nodes as Element[], trace };
+  return trace;
 }
 
-/** 用 shadow 穿透 xpath 求全部命中 + 分步诊断。含 `//` 走分步引擎,否则快速路径。 */
+/** 用合成拼接树求全部命中 + 分步诊断。 */
 export function xpathEval(xp: string): XpathEvalResult {
-  return xp.includes('//') ? crossShadowEval(xp) : fastPathEval(xp);
+  const normalized = normalizeXpath(xp);
+  const b = buildComposed();
+  const nodes = evalComposed(normalized, b);
+  const trace = buildTrace(normalized, b);
+  return { ok: nodes.length > 0, count: nodes.length, nodes, trace };
 }
 
-/** 用 shadow 穿透 xpath 求第一个元素命中;无命中返回 null。 */
+/** 用合成拼接树求第一个元素命中;无命中返回 null。 */
 export function xpathRoot(xp: string): Element | null {
   return xpathEval(xp).nodes[0] ?? null;
 }
