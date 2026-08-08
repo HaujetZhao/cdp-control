@@ -113,7 +113,7 @@ export function formatTree(tree: TreeNode): string[] {
     }
   }
 
-  out.push(tagLabel(tree) + (tree.text ? ' "' + tree.text.slice(0, 60) + '"' : ''));
+  out.push(tagLabel(tree) + (tree.text ? ' "' + tree.text.slice(0, 60) + '"' : '') + refTag(tree));
   for (const k of tree.kids) walk(k, 1, []);
   return out;
 }
