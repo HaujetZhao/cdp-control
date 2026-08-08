@@ -17,9 +17,6 @@
  * 真实 DOM 全局 `document`,按项目约定靠浏览器实测验收。
  */
 
-// XPathResult.ORDERED_NODE_SNAPSHOT_TYPE
-const XPATH_SNAPSHOT = 7;
-
 /** 分步诊断信息。input=上一步命中的数量;matched=本步命中数;sample=断在该步时上一步命中的标签摘要。 */
 export interface XpStepInfo { text: string; axis: 'child' | 'desc'; input: number; matched: number; sample?: string }
 
@@ -104,17 +101,26 @@ export function splitAxis(xp: string): { axis: 'child' | 'desc'; step: string }[
   return out;
 }
 
-/** 在合成树上原生求值整条路径,命中节点映射回真实元素(文本节点归到其父元素)。 */
+/** 在合成树上原生求值整条路径,命中节点映射回真实元素(文本节点归到其父元素)。
+ * 表达式返回非节点集(布尔/数字/字符串,如 `//text()="首页"`)时 evaluate 请求快照类型会抛
+ * TypeError——这里用 ANY_TYPE 自己看结果类型,非节点集一律按无命中处理,不让工具崩掉。 */
 function evalComposed(normalized: string, b: ComposedBuild): Element[] {
-  const res = b.sd.evaluate(normalized, b.sd, null, XPATH_SNAPSHOT, null) as XPathResult;
+  const res = b.sd.evaluate(normalized, b.sd, null, XPathResult.ANY_TYPE, null) as XPathResult;
   const out: Element[] = [];
-  for (let i = 0; i < res.snapshotLength; i++) {
-    const syn = res.snapshotItem(i) as Node;
+  const push = (syn: Node) => {
     let real: Element | null = null;
     if (syn.nodeType === 1) real = b.mapEl.get(syn as Element) ?? null;
     else if (syn.nodeType === 3) real = (b.mapText.get(syn as Text)?.parentNode as Element) ?? null;
     if (real && !out.includes(real)) out.push(real);
+  };
+  if (res.resultType === XPathResult.ORDERED_NODE_SNAPSHOT_TYPE || res.resultType === XPathResult.UNORDERED_NODE_SNAPSHOT_TYPE) {
+    for (let i = 0; i < res.snapshotLength; i++) { const n = res.snapshotItem(i); if (n) push(n); }
+  } else if (res.resultType === XPathResult.ORDERED_NODE_ITERATOR_TYPE || res.resultType === XPathResult.UNORDERED_NODE_ITERATOR_TYPE) {
+    let n: Node | null; while ((n = res.iterateNext())) push(n);
+  } else if (res.resultType === XPathResult.FIRST_ORDERED_NODE_TYPE) {
+    const n = res.singleNodeValue; if (n) push(n);
   }
+  // BOOLEAN/NUMBER/STRING_TYPE:非节点集,无元素命中
   return out;
 }
 

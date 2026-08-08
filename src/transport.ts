@@ -117,12 +117,15 @@ export async function evalJs(ws: WebSocket, expression: string, timeout = 20000)
 
 // ---- target 级高层原语(api 与 monitor 共用) ----
 
-/** 在 target 执行 JS,返回 returnByValue 的值。 */
+/** 在 target 执行 JS,返回 returnByValue 的值。用 try/finally 保证即使 evalJs 抛错也关闭 ws,
+ * 否则异常路径漏掉 ws.close() 会让连接一直开着,Node 事件循环不空 → run 脚本结束后进程挂住不退出。 */
 export async function evaluate(target: Target, expression: string, timeout?: number): Promise<any> {
   const ws = await pageWs(target);
-  const v = await evalJs(ws, expression, timeout);
-  ws.close();
-  return v;
+  try {
+    return await evalJs(ws, expression, timeout);
+  } finally {
+    try { ws.close(); } catch {}
+  }
 }
 
 /** 用 id 或 url/title 子串定位 target;不传则取第一个普通网页。 */
