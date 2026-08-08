@@ -18,6 +18,9 @@ declare const __CDP_ARG__: TreeArgs;
   if (!root || root.nodeType !== 1) return setResult({ ok: false, err: '未找到匹配的根节点(selector/xpath 未命中)' });
   // 全局 ref 登记表:本次 tree 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
   (globalThis as any).__cdpRefs = [];
+  // visible-only:只输出当前视口内几何可见、且非隐藏(display:none/opacity:0/visibility:hidden)的元素,
+  // 模拟 agent"看到当前屏幕"。非视口但有视口内后代的节点退化为纯容器骨架,不输出自身文本/ref。
+  const visibleOnly = !!__CDP_ARG__.visibleOnly;
 
   const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
   const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
@@ -50,6 +53,26 @@ declare const __CDP_ARG__: TreeArgs;
     if (t === 'BUTTON' || t === 'A' || t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return true;
     return el.hasAttribute ? (el.hasAttribute('onclick') || el.hasAttribute('tabindex') || el.getAttribute('role') === 'button') : false;
   };
+  // visible-only:元素是否落在当前视口内且可见(非 display:none/opacity:0/visibility:hidden)。
+  // rect 宽高为 0 即 display:none(不占位);再查 opacity/visibility。getComputedStyle 较贵,只在 rect 相交后查。
+  const isInView = (el: Element): boolean => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (r.top >= innerHeight || r.bottom <= 0 || r.left >= innerWidth || r.right <= 0) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.opacity !== '0';
+  };
+  // visible-only 裁剪:返回"子树是否含视口内可见节点"。非视口但有视口内后代的节点退化为纯容器骨架
+  // (清空自身文本/ref,让 formatTree 不输出视口外的内容),但保留 kids 供进入视口内的后代显示。
+  function prune(n: TreeNode): boolean {
+    n.kids = n.kids.filter(k => prune(k));
+    const hasView = !!n.inView || n.kids.length > 0;
+    if (!n.inView) {
+      n.text = ''; n.leafValue = undefined; n.imgAlt = ''; n.ref = undefined; n.agg = false;
+      n.isContent = false;
+    }
+    return hasView;
+  }
 
   function simplify(el: Element | ShadowRoot, depth: number): TreeNode {
     const isEl = el instanceof Element;
@@ -57,16 +80,17 @@ declare const __CDP_ARG__: TreeArgs;
     const inter = isEl ? interactive(el as Element) : false;
     const title = isEl ? (el.getAttribute('title') || '') : '';
     let text = isEl ? ownText(el as Element) : '';
-    // 登记可操作 ref:interactive 或有直接文本的 Element(纯包装节点/ShadowRoot 不登,防噪防膨胀)。
+    // visible-only 下只登记视口内可见内容节点的 ref,序号连续、输出的 [ref=i] 都指向真实可操作元素。
+    const inView = visibleOnly && isEl ? isInView(el as Element) : true;
     let ref: number | undefined;
-    if (isEl && (inter || !!text)) {
+    if (isEl && inView && (inter || !!text)) {
       ref = (globalThis as any).__cdpRefs.length;
       (globalThis as any).__cdpRefs.push(el as Element);
     }
     const node: TreeNode = {
       tag,
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
-      text, inter, ref,
+      text, inter, ref, inView,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
       // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 xpath 定位
       shadow: isEl && !!(el as Element).shadowRoot,
@@ -90,6 +114,7 @@ declare const __CDP_ARG__: TreeArgs;
     return node;
   }
   const tree = simplify(root, 0);
+  if (visibleOnly) { tree.kids = tree.kids.filter(k => prune(k)); }
   markText(tree);
   return setResult({ ok: true, lines: formatTree(tree) });
 })();

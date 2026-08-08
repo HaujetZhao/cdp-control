@@ -13,7 +13,7 @@ export interface FindArgs { sel?: string; ref?: number }
 export interface FillArgs { sel?: string; ref?: number; value: string }
 
 /** tree:按 selector / xpath 求建树根元素(注入侧 findRoot 解析,含 shadow 穿透)。 */
-export interface TreeArgs { selector?: string; xpath?: string }
+export interface TreeArgs { selector?: string; xpath?: string; visibleOnly?: boolean }
 
 /** xpath:按 xpath 查元素(注入侧 xpathEval 解析,含 shadow 穿透)。 */
 export interface XpathArgs { path: string }
