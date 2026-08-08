@@ -1,55 +1,32 @@
-#!/usr/bin/env node
 /**
- * cdp.js — 通过 Chrome DevTools Protocol (CDP) 控制本地浏览器的零依赖脚本(入口)。
+ * cdp.ts — 通过 Chrome DevTools Protocol (CDP) 控制本地浏览器的脚本入口。
  *
- * 取代 chrome-devtools-mcp:直接连 CDP 9222,能操作"手动开的 tab"(
- * MCP 会漏看的那种)。依赖 Node >= 21 自带全局 WebSocket,无需任何 npm 包。
+ * 取代 chrome-devtools-mcp:直接连 CDP 9222,能操作"手动开的 tab"(MCP 会漏看的那种)。
+ * 编译产物为 dist/cdp.js(esbuild CJS),运行 `node dist/cdp.js <子命令>`。
  *
- * 代码拆在 lib/ 下按职责分模块:
- *   lib/transport.js  低级连接与 target 级原语(getJson/ws/send/evaluate/resolve)
- *   lib/scripts.js    注入/读取到页面里的 JS 字符串(页面操作 + 控制台监控)
- *   lib/api.js        高层页面操作 API(snapshot/click/fill/wait/...)
- *   lib/monitor.js    控制台监听:注入守护 daemon + logs 读取
- *   lib/browser.js    确保浏览器就绪(冷启动自动探测 Edge/Chrome)
- *   本入口            组装最终 api + CLI 子命令分发
- *
- * 两种用法:
- * 1) 单命令(适合快速探页面 / 单步操作):
- *    node cdp.js list
- *    node cdp.js open <url>
- *    node cdp.js close <target>
- *    node cdp.js navigate <url> [--target <匹配>]
- *    node cdp.js eval "<js>" [--target <匹配>]
- *    node cdp.js snapshot [--target <匹配>]
- *    node cdp.js click <selector> [--target <匹配>]
- *    node cdp.js fill <selector> <值> [--target <匹配>]
- *    node cdp.js shot [--file out.png] [--target <匹配>]
- *
- * 2) 脚本批处理(推荐做自动化——一次连接、按序执行,避免多次模型往返):
- *    node cdp.js run ./auto.js
- *    脚本里直接用全局 `cdp` API,可写循环/条件/等待:
- *       await cdp.navigate(t, url); await cdp.waitFor(t, sel); await cdp.click(t, sel);
- *
- * <匹配> 可以是 /json/list 里的 target id,也可以是 url 或 title 的子串。
- * 不指定 --target 时,自动选第一个普通网页(跳过 about:/edge:///chrome:// 等)。
+ * 代码拆在 src/ 下按职责分模块:
+ *   src/transport.ts     低级连接与 target 级原语(getJson/ws/send/evaluate/resolve)
+ *   src/inject-loader.ts 注入脚本加载与 __CDP_ARG__ 参数装配(打包产物在 dist/inject/)
+ *   src/api.ts           高层页面操作 API(snapshot/click/fill/wait/...)
+ *   src/monitor.ts       控制台监听:注入守护 daemon + logs 读取
+ *   src/browser.ts       确保浏览器就绪(冷启动自动探测 Edge/Chrome)
+ *   本入口               组装最终 api + CLI 子命令分发
  */
-'use strict';
-
-const { sleep } = require('./lib/transport');
-const { coreApi } = require('./lib/api');
-const { logs, cmdListen, daemonHealthy, LOGS_PORT, pidFilePath } = require('./lib/monitor');
-const { ensureBrowser } = require('./lib/browser');
+import { sleep } from './transport';
+import { coreApi } from './api';
+import { logs, cmdListen, daemonHealthy, LOGS_PORT } from './monitor';
+import { ensureBrowser } from './browser';
 
 // 最终 api 对象:核心页面操作 + 控制台监听读取 + 浏览器 ensure。require 本文件时导出它。
 const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 // ==================== CLI ====================
 
-const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'xpath', 'selector', 'xpath-file', 'selector-file']); // 这些标志取下一个参数为值
+const VALUE_OPTS = new Set(['target', 'file', 'url', 'level', 'since', 'xpath', 'selector', 'xpath-file', 'selector-file']);
 
-function parseArgs(argv) {
-  const args = [];
-  const opts = {};
+function parseArgs(argv: string[]): { args: string[]; opts: Record<string, any> } {
+  const args: string[] = [];
+  const opts: Record<string, any> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const name = a.slice(2);
@@ -61,18 +38,18 @@ function parseArgs(argv) {
 }
 
 /** 从 --xpath-file/--selector-file 读内容(去首尾空白),没给 flag 返回 undefined。 */
-function readOptFile(fs, file) {
+function readOptFile(fs: any, file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
   try { return fs.readFileSync(file, 'utf8').trim(); }
-  catch (e) { throw new Error(`读取参数文件失败: ${file} — ${e.message}`); }
+  catch (e: any) { throw new Error(`读取参数文件失败: ${file} — ${e.message}`); }
 }
 
-async function main() {
+async function main(): Promise<void> {
   const { args, opts } = parseArgs(process.argv.slice(2));
   const cmd = args.shift();
 
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
-    console.log(`用法: node cdp.js <子命令> [参数]
+    console.log(`用法: node dist/cdp.js <子命令> [参数]
   ensure [--url <url>]     确保浏览器已打开(自动探测 Edge/Chrome 启动 CDP),可选 --url 直接导航
   list                     列出所有 page tab(含手动开的)
   open <url>               新开一个 tab
@@ -111,11 +88,9 @@ async function main() {
     const path = await import('node:path');
     const abs = path.resolve(file);
     const code = fs.readFileSync(abs, 'utf8');
-    global.cdp = api;
-    // 注入受白名单限制的 require,让脚本能用 Node 内建模块(取临时路径 os.tmpdir()、
-    // 写文件 fs、拼路径 path 等)。否则 new Function 作用域只有全局 cdp,require 会 is not defined。
+    (globalThis as any).cdp = api;
     const BUILTIN_ALLOW = new Set(['os', 'path', 'fs', 'child_process', 'crypto', 'util', 'stream', 'url']);
-    const safeRequire = (id) => {
+    const safeRequire = (id: string): any => {
       if (BUILTIN_ALLOW.has(id)) return require(id);
       throw new Error(`脚本不可 require '${id}',仅允许 Node 内建: ${[...BUILTIN_ALLOW].join('/')}`);
     };
@@ -126,7 +101,7 @@ async function main() {
 
   if (cmd === 'ensure') {
     const r = await api.ensure(opts.url);
-    const lines = [];
+    const lines: string[] = [];
     lines.push(r.started ? '模式: 冷启动(本次由 ensure 启动浏览器)' : '模式: 热启动(浏览器本就已通过 CDP 就绪)');
     lines.push(`浏览器: ${r.browser || '未知'}`);
     lines.push(r.userData
@@ -141,8 +116,8 @@ async function main() {
   if (cmd === 'list') {
     const list = await api.list();
     if (list.length === 0) { console.log('(没有 page tab)'); return; }
-    const line = t => `${t.id}  ${t.title || '(无标题)'}  ${t.url}`;
-    console.log(list.map((t, i) => `${i + 1}. ${line(t)}`).join('\n'));
+    const line = (t: any) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}`;
+    console.log(list.map((t: any, i: number) => `${i + 1}. ${line(t)}`).join('\n'));
     return;
   }
 
@@ -159,13 +134,12 @@ async function main() {
     return;
   }
 
-  if (cmd === 'listen') { await cmdListen(); return; } // 常驻,不会返回
+  if (cmd === 'listen') { await cmdListen(); return; }
 
   if (cmd === 'listen-stop') {
     const fs = await import('node:fs');
     const os = await import('node:os');
     const path = await import('node:path');
-    // 优雅关闭:daemon 在发响应前 process.exit,response 被截断 reject 也算成功发起。
     try { await fetch(`http://127.0.0.1:${LOGS_PORT}/shutdown`, { method: 'POST' }); } catch {}
     let stopped = false;
     const t0 = Date.now();
@@ -173,7 +147,7 @@ async function main() {
       if (!(await daemonHealthy(LOGS_PORT))) { stopped = true; break; }
       await sleep(200);
     }
-    if (!stopped) { // 优雅关闭未生效 → 杀 pid 兜底
+    if (!stopped) {
       const pf = path.join(os.tmpdir(), 'cdp-listen.pid');
       if (fs.existsSync(pf)) {
         const pid = Number(fs.readFileSync(pf, 'utf8'));
@@ -194,7 +168,7 @@ async function main() {
     for (const e of entries) {
       const ts = new Date(e.ts).toTimeString().slice(0, 8);
       const loc = (e.line != null) ? ` (${e.line}:${e.col ?? ''})` : '';
-      const argsText = (e.args || []).map(a => a == null ? 'undefined' : (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
+      const argsText = (e.args || []).map((a: any) => a == null ? 'undefined' : (typeof a === 'string' ? a : JSON.stringify(a))).join(' ');
       console.log(`[${ts}][${e.level}] ${argsText}${loc}`);
     }
     return;
@@ -220,7 +194,7 @@ async function main() {
     case 'snapshot': {
       const value = await api.snapshot(target);
       if (!Array.isArray(value) || value.length === 0) { console.log('(没有可交互元素)'); break; }
-      console.log(value.map((e, i) =>
+      console.log(value.map((e: any, i: number) =>
         `${i + 1}. [${e.tag}] "${e.text || e.placeholder || ''}"  ${e.href ? e.href : ''}  sel=${e.selector}`
       ).join('\n'));
       break;
@@ -279,9 +253,9 @@ async function main() {
       const o = await api.outline(target);
       console.log(`标题: ${o.title}\nURL: ${o.url}\n`);
       console.log('— 标题层级 —');
-      console.log(o.headings.map(h => '  '.repeat(Math.max(0, h.level - 1)) + `H${h.level}: ${h.text}  sel=${h.selector}`).join('\n') || '(无标题)');
+      console.log(o.headings.map((h: any) => '  '.repeat(Math.max(0, h.level - 1)) + `H${h.level}: ${h.text}  sel=${h.selector}`).join('\n') || '(无标题)');
       console.log('\n— 关键链接 —');
-      console.log(o.links.map((l, i) => `${i + 1}. ${l.text}  ${l.href}`).join('\n') || '(无)');
+      console.log(o.links.map((l: any, i: number) => `${i + 1}. ${l.text}  ${l.href}`).join('\n') || '(无)');
       break;
     }
     case 'content': {
@@ -296,13 +270,14 @@ async function main() {
       break;
     }
     default:
-      throw new Error(`未知命令: ${cmd}(用 node cdp.js help 看用法)`);
+      throw new Error(`未知命令: ${cmd}(用 node dist/cdp.js help 看用法)`);
   }
 }
 
 // 作为模块被 require 时导出 API;作为脚本运行时走 CLI
+// (esbuild CJS 输出下 require.main === module 语义保留)。
 if (require.main === module) {
-  main().catch(err => { console.error(`错误: ${err.message}`); process.exit(1); });
+  main().catch((err: any) => { console.error(`错误: ${err.message}`); process.exit(1); });
 } else {
   module.exports = api;
 }

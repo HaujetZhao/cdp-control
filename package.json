@@ -1,0 +1,19 @@
+{
+  "name": "cdp-browser-control",
+  "version": "1.0.0",
+  "private": true,
+  "description": "通过 Chrome DevTools Protocol (CDP) 控制本地浏览器的脚本(取代 chrome-devtools MCP)。全 TS + esbuild 编译到 dist/ 运行。",
+  "engines": {
+    "node": ">=21"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}
