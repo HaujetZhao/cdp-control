@@ -131,9 +131,10 @@ const feedbackOpt = (c: any) => c
   .option('--no-feedback', '关闭操作后自动反馈(不等待、不观察、不 diff tab)')
   .option('--feedback-delay <ms>', '操作后等待时长,毫秒(默认 1000;给异步/懒加载内容出现留时间)', (v: string) => parseInt(v, 10), 1000);
 
-/** 组装反馈配置(供 api 动作方法):--no-feedback 或 --feedback-delay。 */
+/** 组装反馈配置(供 api 动作方法):--no-feedback 或 --feedback-delay。
+ * 注意 commander 的 `--no-feedback` 生成布尔 option 名为 `feedback`(默认 true,传 --no-feedback 时 false)。 */
 const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } => ({
-  noFeedback: !!opts.noFeedback,
+  noFeedback: opts.feedback === false,
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
@@ -186,7 +187,11 @@ targetCmd('logs', '读 target 控制台日志(常驻 daemon,支持过滤)')
   });
 
 if (require.main === module) {
-  program.parseAsync(process.argv).catch((err: any) => { console.error(`错误: ${err.message}`); process.exit(1); });
+  program.parseAsync(process.argv).catch((err: any) => {
+    console.error(`错误: ${err.message}`);
+    // 用 exitCode 而非 process.exit(1):强制退出会在 undici fetch 连接残留时触发 libuv 断言崩溃(Windows UV_HANDLE_CLOSING)。
+    process.exitCode = 1;
+  });
 }
 
 export = api;

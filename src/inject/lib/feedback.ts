@@ -19,9 +19,14 @@ export function startFeedback(): void {
   const st: FeedbackState = { added: [], texts: [] };
   const mo = new MutationObserver(ms => {
     for (const m of ms) {
-      for (const n of Array.from(m.addedNodes)) st.added.push(n);
+      for (const n of Array.from(m.addedNodes)) {
+        st.added.push(n);
+        // 文本变化也可能以"替换文本节点"出现(childList):如 element.textContent = 值 会删旧加新 Text 节点而非 characterData。
+        if (n.nodeType === 3) { const t = (n.nodeValue || '').trim(); if (t) st.texts.push(t); }
+      }
+      // 原地改字符走 characterData(如点赞数字 textContent 直接改文本节点 data)。
       if (m.type === 'characterData' && m.target.nodeType === 3) {
-        const t = (m.target.textContent || '').trim();
+        const t = (m.target.nodeValue || '').trim();
         if (t) st.texts.push(t);
       }
     }

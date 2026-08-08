@@ -110,11 +110,17 @@ async function runWithFeedback<T>(target: Target, doAction: () => Promise<T>, op
   if (opts.noFeedback) return { ...(await doAction()), feedback: null };
   await invoke(target, inject('feedback-start'));
   const before = await list();
-  const result = await doAction();
-  await sleep(opts.feedbackDelay ?? 1000);
-  const fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
-  const after = await list();
-  return { ...result, feedback: { ...fb, tabs: diffTabs(before, after) } };
+  try {
+    const result = await doAction();
+    await sleep(opts.feedbackDelay ?? 1000);
+    const fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
+    const after = await list();
+    return { ...result, feedback: { ...fb, tabs: diffTabs(before, after) } };
+  } catch (err) {
+    // 动作抛错(如 ref 失效):也断开 observer,避免 __cdpFeedback 残留影响下次;再重抛原错误。
+    try { await invoke(target, inject('feedback-collect')); } catch {}
+    throw err;
+  }
 }
 
 /** 归一化操作目标为注入侧参数:字符串→{sel},对象→{ref}。 */
