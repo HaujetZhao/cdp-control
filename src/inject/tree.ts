@@ -78,11 +78,12 @@ declare const __CDP_ARG__: TreeArgs;
       node.kids.push(simplify(k, depth + 1));
     }
     if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
-    if (!text && (inter || (isEl && el.tagName === 'IMG')) && (el as HTMLElement).innerText) { text = strip((el as HTMLElement).innerText).slice(0, 80); node.agg = true; }
+    // 交互/图片元素自身无直接文本时,用 grabText 聚合后代文本(空格分隔,穿透 shadow;替代 innerText——后者会把 inline 数字连排成 "822.2万904906:02")。
+    if (!text && (inter || (isEl && el.tagName === 'IMG'))) { text = strip(grabText(el, 0)).slice(0, 80); node.agg = true; }
     node.text = text;
     node.isContent = !!text || (isEl && el.tagName === 'IMG') || inter;
     node.size = 1 + node.kids.reduce((a, k) => a + k.size, 0);
-    if (!text && title && node.size <= 8 && (el as Element).tagName !== 'SVG' && (el as Element).tagName !== 'path' && (el as Element).tagName !== 'USE') {
+    if (!text && title && !node.kids.some(k => k.text) && node.size <= 8 && (el as Element).tagName !== 'SVG' && (el as Element).tagName !== 'path' && (el as Element).tagName !== 'USE') {
       node.leafValue = strip(title).slice(0, 40);
       node.isContent = true;
     }

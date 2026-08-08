@@ -119,6 +119,17 @@ test('formatTree: 无 ref 节点不标 [ref=i](不回归)', () => {
   assert.deepEqual(formatTree(root), ['nav', '  a "首页"']);
 });
 
+test('formatTree: leafValue 与首个子文本相同时去重(不输出 "X X")', () => {
+  // 复现 B站视频卡片标题 bug:<h3 title="极寒末日..."><a>极寒末日...</a></h3>
+  // leafValue 来自 title 兜底,子 <a> 直接文本与之相同,旧逻辑拼成 "极寒末日... 极寒末日..." 重复两遍。
+  const txt = mk({ tag: 'a', isContent: true, text: '极寒末日96分钟无删减合集', inter: true, size: 1 });
+  const item = mk({ tag: 'li', isContent: true, leafValue: '极寒末日96分钟无删减合集', size: 2, kids: [txt] });
+  const root = mk({ tag: 'div', isContent: false, size: 3, kids: [item] });
+  markText(root);
+  // leafValue 与后代首文本相同 → 只输出一次
+  assert.deepEqual(formatTree(root), ['div', '  "极寒末日96分钟无删减合集"']);
+});
+
 test('formatTree: leafValue 与 span 文本行也带 ref 标注', () => {
   const item = mk({ tag: 'li', isContent: true, leafValue: '点赞', size: 2, ref: 5, kids: [mk({ tag: 'span', isContent: true, text: '22.9万', size: 1 })] });
   const root = mk({ tag: 'div', isContent: false, size: 3, kids: [item] });
