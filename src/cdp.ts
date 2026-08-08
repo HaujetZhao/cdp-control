@@ -142,12 +142,12 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
 function printFeedback(fb: any): void {
   if (!fb) return;
   if (fb.lines?.length) {
-    console.log('→ 本次操作后页面变化(新增内容):');
+    console.log('→ 页面变化:');
     console.log(fb.lines.join('\n'));
   }
   const parts: string[] = [];
   if (fb.summary) parts.push(fb.summary);
-  if (fb.tabs?.opened?.length) parts.push('新开 tab: ' + fb.tabs.opened.map((t: any) => t.title || t.url).join(' | '));
+  if (fb.tabs?.opened?.length) parts.push('新开 tab: ' + fb.tabs.opened.map((t: any) => `${t.title || t.url} [${t.id}]`).join(' | '));
   if (fb.tabs?.closed?.length) parts.push('关闭 tab: ' + fb.tabs.closed.map((t: any) => t.title || t.url).join(' | '));
   if (parts.length) console.log(parts.join('; '));
 }
