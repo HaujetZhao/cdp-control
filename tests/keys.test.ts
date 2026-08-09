@@ -58,3 +58,29 @@ test('缺主键抛错', () => {
 test('未知功能键抛错', () => {
   assert.throws(() => parseKeySpec('F7'), /未知按键/);
 });
+
+// —— 滚动类键透传 CDP commands(触发浏览器原生滚动)——
+
+test('PageDown 解析出 commands: [scrollPageDown]', () => {
+  const r = parseKeySpec('PageDown');
+  assert.deepEqual(r.commands, ['scrollPageDown']);
+  assert.equal(r.key, 'PageDown');
+});
+
+test('PageUp 解析出 commands: [scrollPageUp]', () => {
+  assert.deepEqual(parseKeySpec('PageUp').commands, ['scrollPageUp']);
+});
+
+test('Home 解析出 commands: [scrollDocumentBegin]', () => {
+  assert.deepEqual(parseKeySpec('Home').commands, ['scrollDocumentBegin']);
+});
+
+test('End 解析出 commands: [scrollDocumentEnd]', () => {
+  assert.deepEqual(parseKeySpec('End').commands, ['scrollDocumentEnd']);
+});
+
+test('非滚动键(commands 缺省)无 commands 字段', () => {
+  assert.equal(parseKeySpec('Enter').commands, undefined);
+  assert.equal(parseKeySpec('a').commands, undefined);
+  assert.equal(parseKeySpec('space').commands, undefined);
+});
