@@ -159,7 +159,8 @@ export interface FeedbackOpts { feedbackDelay?: number; noFeedback?: boolean }
 
 /** 反馈结构:内容变化(注入侧)+ tab 变化(Node 侧 /json/list diff)。 */
 export interface FeedbackResult {
-  blocks?: { lines: string[]; count: number }[];   // 去重折叠后的新增内容块(可空)
+  note?: string;                                    // 说明(如"页面已跳转,旧 ref 失效,以下是新页整页视图")
+  blocks?: { lines: string[]; count: number }[];   // 去重折叠后的新增内容块(可空);跳转时为整页视图单块
   changes?: { before?: string; after: string }[];  // 文本变化(过滤前后相同),如 [{before:'63',after:'64'}]
   tabs?: { opened: Target[]; closed: Target[]; navigated?: { id: string; from: string; to: string }[] };
 }
@@ -179,9 +180,25 @@ async function runWithFeedback<T>(target: Target, doAction: () => Promise<T>, op
       return { ...result, feedback: null } as any;
     }
     await sleep(opts.feedbackDelay ?? 1000);
-    const fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
     const after = await list();
-    return { ...result, feedback: { ...fb, tabs: diffTabs(before, after) } };
+    const tabs = diffTabs(before, after);
+    // URL 跳转:旧 document/observer 全失效,增量反馈(append ref)无意义且会给 agent 一堆失效 ref;
+    // 改走整页 view(不带 ref/selector → __cdpRefs 从 0 重建),把新页整棵树给 agent,并注明跳转。
+    const nav = tabs.navigated?.[0];
+    let fb: FeedbackResult;
+    if (nav) {
+      // 用新 URL 过滤 fold 规则:view 按 target.url 算 hostname+pathname,跳转后必须用新地址;
+      // target.id 跳转前后相同,ws 不变,仍连同一页面,只覆盖 url 即可。
+      const v = await view({ ...target, url: nav.to });
+      fb = {
+        blocks: v.lines?.length ? [{ lines: v.lines, count: 1 }] : [],
+        changes: [],
+        note: `页面已跳转: ${nav.from} → ${nav.to};旧页 DOM/ref 全部失效,以上为新页整页视图(ref 从 0 重建)`,
+      };
+    } else {
+      fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
+    }
+    return { ...result, feedback: { ...fb, tabs } };
   } catch (err) {
     // 动作抛错(如 ref 失效):也断开 observer,避免 __cdpFeedback 残留影响下次;再重抛原错误。
     try { await invoke(target, inject('feedback-collect')); } catch {}
