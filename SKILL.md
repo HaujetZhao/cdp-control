@@ -128,6 +128,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `list` | 确保浏览器就绪(CDP 未起自动启动)并列出所有 page tab,先报 tab 总数 |
 | `open <url>` | 新开一个 tab,返回 targetId |
 | `close <target>` | 关闭 tab |
+| `fetch <url>` | 一次性抓取页面(替代 web fetch MCP):ensure → 临时开 tab 打开 url → view 建树 → 关闭 tab,输出视图内容(文本+结构,含 `[ref]`)。自动等页面加载;不残留 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `view [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 view(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 滚动触发懒加载再建树(默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]`。**INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]`**(空值省略),看得到表单内容不必 eval |
@@ -228,6 +229,7 @@ await cdp.close(t);
 | `cdp.resolve(匹配?)` | id/url/title 子串,可省略 | `target` 对象 |
 | `cdp.open(url)` | 字符串 | 字符串 `targetId`(⚠️ 非对象) |
 | `cdp.close(target)` | 对象 | — |
+| `cdp.fetchPage(url)` | 字符串 | `string[]` 视图 lines:临时开 tab 打开 url → 等加载 → view → 关 tab,一次性抓取页面内容(替代 web fetch MCP) |
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.view(target, opts?)` | 对象,`{selector?,ref?,ancestor?}` | 整页 body 文本+结构紧凑树:`{ok, lines}`;锚点互斥:ref 优先,其次 selector,缺省 body;`opts.ancestor` 统一向上爬 k 层;命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>` |

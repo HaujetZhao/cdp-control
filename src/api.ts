@@ -82,6 +82,23 @@ export async function view(target: Target, opts: ViewOpts = {}): Promise<any> {
   return invoke(target, viewExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo), 30000);
 }
 
+/** 一次性抓取页面:临时 open 新 tab 打开 url → 等页面加载(至少 interactive)→ view 建树 → 关闭 tab,
+ * 返回视图 lines(替代 web fetch MCP:一次拿到整页文本+结构,不残留 tab)。
+ * 顺序固定:open(新 tab)→ resolve(拿 target 对象)→ 等加载 → view → close;close 在 finally 保证关。 */
+export async function fetchPage(url: string): Promise<string[]> {
+  const tid = await open(url);
+  let t: Target | undefined;
+  try {
+    t = await resolve(tid);
+    // 等页面离开 loading(至少 interactive),避免抓到首帧空树;加载慢/超时按现状 view(拿空树,优雅降级)。
+    try { await waitForFn(t, `document.readyState!=='loading'`, { timeout: 20000, interval: 300 }); } catch {}
+    const r = await view(t);
+    return r.lines ?? [];
+  } finally {
+    if (t) { try { await close(t); } catch {} }
+  }
+}
+
 /** 按 view 的 ref 序号反查稳定 CSS selector,可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的 selector 复用。 */
 export async function locate(target: Target, ref: number, ancestor?: number): Promise<any> {
   return invoke(target, locateExpr(ref, ancestor));
@@ -274,7 +291,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  view, locate, lineage, fold, find, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  view, locate, lineage, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

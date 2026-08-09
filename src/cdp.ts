@@ -53,6 +53,14 @@ program.command('open').argument('<url>', '要打开的网址').description('新
 program.command('close').argument('<target>', '目标匹配').description('关闭 tab')
   .action(async (tgt) => { const t = await api.resolve(tgt); await api.close(t); console.log(`已关闭: ${t.title || t.url}`); });
 
+program.command('fetch').argument('<url>', '要抓取的网址').description('一次性抓取页面:ensure → 临时开 tab 打开 url → view 建树 → 关闭 tab,输出视图内容(替代 web fetch MCP)')
+  .action(async (url) => {
+    await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销)。
+    const lines = await api.fetchPage(url || 'about:blank');
+    if (!lines.length) { console.log('(空树)'); return; }
+    console.log(lines.join('\n'));
+  });
+
 // 隐藏命令:内部 daemon 自重生入口(cmdListen)。用户不直接调——监听 daemon 由 open/ensure/logs
 // 自动拉起,浏览器关闭后看门狗自退,无需手动 listen/listen-stop 管理(见 SKILL「读控制台日志」)。
 program.command('__daemon', { hidden: true }).description('(内部)控制台监听注入守护')
