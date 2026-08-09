@@ -123,6 +123,31 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是�
     console.log(`  selector: ${r.selector || '(无)'}`);
   });
 
+targetCmd('lineage', '列目标元素(爬 ancestor 后)从 html 到自身的祖先链:每层 tag/id/class/语义 data-* /aria/role。挑稳定锚点写 fold add 这种 uBlock 式短规则(如 #biliMainHeader)')
+  .argument('<n>', 'tree 输出的 ref 序号')
+  .option('--ancestor <n>', '向上爬 N 层父级再列祖先链(默认 0;把内容叶子抬升到语义区域容器)')
+  .action(async (n, opts) => {
+    const r = await api.lineage(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+    if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示
+    if (!r.chain?.length) { console.log('(空祖先链)'); return; }
+    // 缩进树:html 在 depth 0,每层 2 空格缩进;目标元素(最深层)标 [ref=N]
+    for (const node of r.chain) {
+      const indent = '  '.repeat(node.depth);
+      const parts: string[] = [node.tag];
+      if (node.id) parts.push('#' + node.id);
+      if (node.classes?.length) {
+        const cls = Array.isArray(node.classes) ? node.classes.join('.') : node.classes;
+        parts.push('.' + cls);
+      }
+      if (node.dataAttrs) for (const [k, v] of Object.entries(node.dataAttrs)) parts.push(`${k}="${v}"`);
+      if (node.role) parts.push(`role="${node.role}"`);
+      if (node.aria) parts.push(`aria="${node.aria}"`);
+      const mark = node.depth === r.targetDepth ? `  [ref=${n}]` : '';
+      console.log(`${indent}${parts.join(' ')}${mark}`);
+    }
+    console.log(`\n建议 selector(genSel): ${r.suggested || '(无)'}`);
+  });
+
 targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree 时命中区域折叠成一行 ▸,跨会话持久)。子命令:add/list/rm;或 --ref [--save] 折叠')
   .argument('[args...]', 'add <域名> <selector> <备注> | list | rm <id>;或省略走 --ref 模式')
   .option('--ref <n>', '按 ref 折叠其区域(可选 --ancestor 爬父到容器)')
