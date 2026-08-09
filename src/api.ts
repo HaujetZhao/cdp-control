@@ -6,18 +6,20 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, treeExpr, locateExpr, stashExpr } from './inject-loader';
+import { inject, treeExpr, locateExpr, foldExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
+import { matchFolds, hostOf, loadFolds, addFold, removeFold } from './folds';
 
 /**
  * 统一执行注入脚本并解包结果契约:
  * 注入脚本成功返回任意值(可含 {ok:true});失败返回 {ok:false, err}。
  * 这里统一把失败抛成异常,调用方无需各自判 ok。数据类入口(snapshot 等返回裸数组/对象)自然通过。
+ * 例外:ref 失效自愈({ok:false, refInvalid:true, recovered})不抛——上层据此打印 recovered tree,不走反馈。
  */
 async function invoke<T>(target: Target, expr: string, timeout?: number): Promise<T> {
   const r = await evaluate(target, expr, timeout);
-  if (r && typeof r === 'object' && (r as any).ok === false) throw new Error((r as any).err || '操作失败');
+  if (r && typeof r === 'object' && (r as any).ok === false && !(r as any).refInvalid) throw new Error((r as any).err || '操作失败');
   return r as T;
 }
 
@@ -64,25 +66,45 @@ export async function navigate(target: Target, url: string): Promise<void> {
   });
 }
 
-export interface TreeOpts { selector?: string; xpath?: string; visibleOnly?: boolean; ref?: number; ancestor?: number; scrollToLoad?: boolean }
+export interface TreeOpts { selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number; scrollToLoad?: boolean }
 
-/** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,最后 xpath,缺省 body;
- * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先上下滚动触发懒加载再建树。 */
+/** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
+ * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先上下滚动触发懒加载再建树。
+ * 折叠:Node 侧按 target 页 hostname 读 folds.txt 命中规则,传入注入侧 buildTree 折叠成一行(跨会话持久)。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
-  return invoke(target, treeExpr(opts.selector, opts.xpath, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad), 30000);
+  const folds = matchFolds(hostOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
+  return invoke(target, treeExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds), 30000);
 }
 
-/** 按 tree 的 ref 序号反查稳定定位器(selector + xpath),可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的定位器复用。 */
+/** 按 tree 的 ref 序号反查稳定 CSS selector,可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的 selector 复用。 */
 export async function locate(target: Target, ref: number, ancestor?: number): Promise<any> {
   return invoke(target, locateExpr(ref, ancestor));
 }
 
-export interface StashOpts { refs?: number[]; ancestor?: number; pop?: number; clear?: boolean }
-/** 会话级暂存排除区域(类比 git stash):把 ref 解析成元素(可选 --ancestor 爬到容器)暂存,之后的整页 tree 不再输出这些元素子树。
- * 无 refs/pop/clear 时列出已暂存区域;pop 恢复第 i 个(默认最新)可逆;clear 清空。 */
-export async function stash(target: Target, opts: StashOpts = {}): Promise<any> {
-  const list = !opts.refs?.length && opts.pop == null && !opts.clear;
-  return invoke(target, stashExpr(opts.refs, opts.ancestor, list, opts.pop, !!opts.clear));
+export interface FoldOpts {
+  ref?: number; ancestor?: number; note?: string; save?: boolean; domain?: string;
+  add?: { domain: string; selector: string; note: string }; list?: boolean; rm?: number;
+}
+/** 折叠规则管理(取代 stash):
+ *  - add {domain, selector, note}:加持久规则(folds.txt)
+ *  - rm <id>:删持久规则
+ *  - list:列持久 + 会话级临时
+ *  - ref + save:从 ref 反查 selector + 当前 hostname,落盘持久规则
+ *  - ref(无 save):会话级临时折叠(注入 __cdpFolds,刷新失效) */
+export async function fold(target: Target, opts: FoldOpts = {}): Promise<any> {
+  if (opts.rm != null) return { ok: removeFold(opts.rm), removed: opts.rm };
+  if (opts.list) {
+    const persist = loadFolds();
+    const tmp = await invoke<{ folds: any[] }>(target, foldExpr({ list: true }));
+    return { ok: true, persist, tmp: tmp.folds };
+  }
+  if (opts.add) { return { ok: true, rule: addFold(opts.add.domain, opts.add.selector, opts.add.note) }; }
+  if (opts.save) {
+    const loc = await invoke<{ selector: string }>(target, locateExpr(opts.ref!, opts.ancestor));
+    const domain = opts.domain || hostOf(target.url);
+    return { ok: true, rule: addFold(domain, loc.selector, opts.note || loc.selector) };
+  }
+  return invoke(target, foldExpr({ ref: opts.ref, ancestor: opts.ancestor, note: opts.note }));
 }
 
 /** 操作目标:selector 字符串,或 {ref:n, ancestor?} 用 tree 登记的引用序号(穿透 shadow,可选爬父)。 */
@@ -120,6 +142,10 @@ async function runWithFeedback<T>(target: Target, doAction: () => Promise<T>, op
   const before = await list();
   try {
     const result = await doAction();
+    // ref 失效自愈:无真实动作发生,跳过反馈等待/采集/tab diff,直接把 recovered 透传给 CLI。
+    if (result && typeof result === 'object' && (result as any).refInvalid) {
+      return { ...result, feedback: null } as any;
+    }
     await sleep(opts.feedbackDelay ?? 1000);
     const fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
     const after = await list();
@@ -211,7 +237,8 @@ export async function pressKey(target: Target, keySpec: string, opts: FeedbackOp
 /** 将鼠标移到 target 页面指定元素中心(按 selector 或 ref,触发 mouseover/mouseenter;默认带操作后反馈)。 */
 export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts = {}): Promise<any> {
   return runWithFeedback(target, async () => {
-    const pos = await invoke<{ ok: boolean; x: number; y: number }>(target, inject('hover', normArg(arg)));
+    const pos = await invoke<{ ok: boolean; refInvalid?: boolean; x: number; y: number }>(target, inject('hover', normArg(arg)));
+    if (pos?.refInvalid) return pos; // ref 失效:注入侧已自愈,不 dispatch 鼠标
     if (!pos?.ok) throw new Error('未找到: ' + (typeof arg === 'string' ? arg : 'ref=' + arg.ref));
     await withPage(target, async (ws) => {
       await send(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: pos.x, y: pos.y });
@@ -223,7 +250,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  tree, locate, stash, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  tree, locate, fold, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

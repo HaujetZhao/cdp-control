@@ -7,9 +7,10 @@
  * (tree 入口在整页建树前重置;反馈收集在拼接多个新增块前重置一次,保证跨块 ref 连续)。
  */
 import type { TreeNode } from './tree-format';
-import { stashSet } from './stash.ts';
+import { tmpFolds } from './fold';
+import type { FoldItem } from './arg';
 
-export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean }
+export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[] }
 
 const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
 const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
@@ -74,11 +75,31 @@ function prune(n: TreeNode): boolean {
 export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}): TreeNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;
-  const exclude = stashSet(); // 会话级暂存集合,命中的元素整棵子树跳过
+  // 折叠规则来源:持久(Node 侧 folds.ts 按 hostname 过滤后传入)+ 会话级临时(__cdpFolds)。统一按 selector 匹配。
+  const folds: FoldItem[] = [...(opts.folds || []), ...tmpFolds()];
+  // 折叠判定:元素命中任一 fold selector → 返回备注,否则 null。
+  const foldNote = (el: Element): string | null => {
+    for (const f of folds) { try { if (el.matches(f.selector)) return f.note || f.selector; } catch {} }
+    return null;
+  };
 
-  function simplify(el: Element | ShadowRoot, depth: number): TreeNode | null {
+  function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): TreeNode | null {
     const isEl = el instanceof Element;
-    if (isEl && exclude && exclude.includes(el as Element)) return null; // 整棵子树消失(不输出、不登记 ref)
+    // 折叠(非根元素命中 fold 规则):登记 ref(可展开)、设 fold=备注、不递归子树。
+    // 根不折叠:tree --ref i 展开折叠容器时,根本身(=该容器)不该再被折叠,否则永远展不开。
+    if (isEl && depth > 0) {
+      const note = foldNote(el as Element);
+      if (note !== null) {
+        const e = el as Element;
+        const ref = (globalThis as any).__cdpRefs.length;
+        (globalThis as any).__cdpRefs.push({ el: e, parentRef });
+        return {
+          tag: e.tagName.toLowerCase(), isContent: true, text: '', inter: false, ref,
+          inView: true, view: viewport ? isInViewport(e) : undefined, imgAlt: '',
+          shadow: !!e.shadowRoot, kids: [], size: 1, hasText: false, agg: false, fold: note,
+        };
+      }
+    }
     const tag = isEl ? el.tagName?.toLowerCase() || 'frag' : 'frag';
     const inter = isEl ? interactive(el as Element) : false;
     const title = isEl ? (el.getAttribute('title') || '') : '';
@@ -89,7 +110,8 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     let view: boolean | undefined;
     if (isEl && inView && (inter || !!text)) {
       ref = (globalThis as any).__cdpRefs.length;
-      (globalThis as any).__cdpRefs.push(el as Element);
+      // 登记表存 {el, parentRef}:parentRef = 最近的已登记祖先 ref 号(跳表),供 ref 失效自愈向上找存活容器。
+      (globalThis as any).__cdpRefs.push({ el: el as Element, parentRef });
       // viewport 标记:对带 ref 的节点算便宜的在视区判定(rect+宽高,不查 computed style)。
       if (viewport) view = isInViewport(el as Element);
     }
@@ -98,14 +120,16 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
       text, inter, ref, inView, view,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
-      // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 xpath 定位
+      // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 ref 定位
       shadow: isEl && !!(el as Element).shadowRoot,
       kids: [], size: 0, hasText: false, agg: false,
     };
+    // 子的 parentRef:本节点登记了 ref 就用本节点 ref,否则透传继承的 parentRef。
+    const childParent = ref != null ? ref : parentRef;
     for (const k of childrenOf(el as Element)) {
       const kt = k instanceof Element ? k.tagName.toUpperCase() : '';
       if (DROP.has(kt)) continue;
-      const kn = simplify(k, depth + 1);
+      const kn = simplify(k, depth + 1, childParent);
       if (kn) node.kids.push(kn); // 跳过被排除的 null
     }
     if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
@@ -121,7 +145,7 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     return node;
   }
 
-  let tree = simplify(root, 0);
+  let tree = simplify(root, 0, null);
   if (!tree) tree = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
   if (visibleOnly) { tree.kids = tree.kids.filter(k => prune(k)); }
   return tree;

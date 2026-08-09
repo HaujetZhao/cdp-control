@@ -12,7 +12,7 @@ import { ensureBrowser } from './browser';
 
 const api = { ...coreApi, logs, ensure: ensureBrowser };
 
-/** 读 --xpath-file/--selector-file 内容(去首尾空白)。 */
+/** 读 --selector-file 内容(去首尾空白)。 */
 function readOptFile(file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
   try { return readFileSync(file, 'utf8').trim(); }
@@ -87,19 +87,17 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
-  .option('--ref <n>', '按 tree 输出的 ref 序号建树根(与 --selector-file/--xpath-file 二选一)')
-  .option('--ancestor <n>', '从建树根向上爬 N 层父级再建树(默认 0;与 --ref/selector/xpath 任一锚点配合)')
+targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
+  .option('--ref <n>', '按 tree 输出的 ref 序号建树根(与 --selector-file 二选一)')
+  .option('--ancestor <n>', '从建树根向上爬 N 层父级再建树(默认 0;与 --ref/selector 任一锚点配合)')
   .option('--selector-file <file>', '从文件读 selector')
-  .option('--xpath-file <file>', '从文件读 xpath')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
   .option('--scroll-to-load', '先上下滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动,防 agent 找不到未加载区域')
   .action(async (opts) => {
     const sel = readOptFile(opts.selectorFile);
-    const xp = readOptFile(opts.xpathFile);
-    if (opts.ref != null && (sel || xp)) throw new Error('--ref 与 --selector-file/--xpath-file 只能选其一');
+    if (opts.ref != null && sel) throw new Error('--ref 与 --selector-file 只能选其一');
     const r = await api.tree(await needTarget(opts.target), {
-      selector: sel, xpath: xp, visibleOnly: !!opts.visibleOnly,
+      selector: sel, visibleOnly: !!opts.visibleOnly,
       ref: opts.ref != null ? Number(opts.ref) : undefined,
       ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
       scrollToLoad: !!opts.scrollToLoad,
@@ -108,47 +106,54 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
     console.log(r.lines.join('\n'));
   });
 
-targetCmd('locate', '从 tree 的 ref 序号反查稳定定位器(selector + xpath)。ref 是会话句柄,页面刷新后失效;此命令把 ref 翻译成刷新后仍可用的定位器,供 tree --selector-file/--xpath-file 复用')
+targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是会话句柄,页面刷新后失效;此命令把 ref 翻译成刷新后仍可用的 selector,供 tree --selector-file 复用')
   .argument('<n>', 'tree 输出的 ref 序号')
   .option('--ancestor <n>', '向上爬 N 层父级再定位(默认 0;把内容叶子抬升到语义区域容器)')
   .action(async (n, opts) => {
     const r = await api.locate(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
     console.log(`[${r.tag}] "${r.text || ''}"`);
     console.log(`  selector: ${r.selector || '(无)'}`);
-    console.log(`  xpath:    ${r.xpath || '(无)'}`);
   });
 
-targetCmd('stash', '类比 git stash:按 ref 把整页 tree 的某区域暂存藏起(之后的整页 tree 不再输出,可 pop 恢复)。用法:stash <refs...> [--ancestor] 暂存;stash list 列出;stash pop [i] 恢复第 i 个(默认最新);stash clear 清空')
-  .argument('[args...]', '暂存:tree 的 ref 序号(可逗号/空格分隔);或子命令 list / pop [i] / clear')
-  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再暂存(默认 0;把内容叶子抬到要藏的区域容器)')
+targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree 时命中区域折叠成一行 ▸,跨会话持久)。子命令:add/list/rm;或 --ref [--save] 折叠')
+  .argument('[args...]', 'add <域名> <selector> <备注> | list | rm <id>;或省略走 --ref 模式')
+  .option('--ref <n>', '按 ref 折叠其区域(可选 --ancestor 爬父到容器)')
+  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再折叠(默认 0;把内容叶子抬到区域容器)')
+  .option('--note <备注>', '折叠备注(tree 里 ▸ 后显示)')
+  .option('--save', '落盘为持久规则(默认仅会话级临时折叠,刷新失效)')
+  .option('--domain <d>', '持久规则的域名(默认当前页 hostname;支持 *.suffix 通配)')
   .action(async (args, opts) => {
     const t = await needTarget(opts.target);
     const [cmd, ...rest] = args || [];
     if (cmd === 'list') {
-      const r = await api.stash(t, {});
-      if (!r.stashed?.length) { console.log('无暂存区域(用 stash <ref> 暂存,之后的整页 tree 不再输出该区域)'); return; }
-      r.stashed.forEach((e: any) => console.log(`  [${e.i}] ${e.summary}`));
+      const r = await api.fold(t, { list: true });
+      if (!r.persist?.length && !r.tmp?.length) { console.log('无折叠规则(用 fold add 或 fold --ref --save 添加)'); return; }
+      if (r.persist?.length) { console.log('持久规则(folds.txt):'); r.persist.forEach((f: any) => console.log(`  [${f.id}] ${f.domain}  ${f.selector}  # ${f.note}`)); }
+      if (r.tmp?.length) { console.log('会话级临时(刷新失效):'); r.tmp.forEach((f: any, i: number) => console.log(`  [t${i}] ${f.selector}  # ${f.note}`)); }
       return;
     }
-    if (cmd === 'clear') {
-      await api.stash(t, { clear: true });
-      console.log('已清空暂存区域');
+    if (cmd === 'rm') {
+      const id = Number(rest[0]);
+      const r = await api.fold(t, { rm: id });
+      console.log(r.ok ? `已删除规则 [${id}]` : `未找到规则 [${id}]`);
       return;
     }
-    if (cmd === 'pop') {
-      const i = rest.length ? Number(rest[0]) : undefined;
-      const r = await api.stash(t, { pop: i != null && !Number.isNaN(i) ? i : -1 });
-      if (r.popped) console.log(`已恢复(pop): ${r.popped}`);
-      else console.log('无可恢复的暂存区域');
+    if (cmd === 'add') {
+      const [domain, selector, ...noteParts] = rest;
+      if (!domain || !selector) throw new Error('用法: fold add <域名> <selector> <备注>');
+      const r = await api.fold(t, { add: { domain, selector, note: noteParts.join(' ') } });
+      console.log(`已添加持久规则 [${r.rule.id}]: ${domain}  ${selector}  # ${r.rule.note}`);
       return;
     }
-    // 否则视为 refs 暂存
-    const numRefs = (args || []).flatMap((s: string) => s.split(',')).filter((s: string) => s !== '').map(Number);
-    const r = await api.stash(t, { refs: numRefs, ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined });
-    if (!r.stashed?.length && !r.skipped) { console.log('未指定有效 ref(用 stash <ref> 暂存,或 stash list/pop/clear)'); return; }
-    if (r.stashed?.length) console.log(`已暂存 ${r.stashed.length} 个区域:`);
-    (r.stashed || []).forEach((s: string) => console.log(`  · ${s}`));
-    if (r.skipped) console.log(`跳过 ${r.skipped} 个无效 ref`);
+    if (opts.ref == null) throw new Error('用法: fold --ref <n> [备注] [--save] [--domain d];或 fold add/list/rm');
+    // --ref 模式:未被识别的位置参数(非 add/list/rm)当作备注
+    const note = opts.note || (args && args.length ? args.join(' ') : undefined);
+    const r = await api.fold(t, {
+      ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
+      note, save: !!opts.save, domain: opts.domain,
+    });
+    if (r.rule) console.log(`已添加持久规则 [${r.rule.id}]: ${r.rule.domain}  ${r.rule.selector}  # ${r.rule.note}`);
+    else console.log(`已临时折叠: ${r.selector}  # ${r.note}`);
   });
 
 // ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。
@@ -173,8 +178,19 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
-/** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。 */
+/** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。
+ * ref 失效自愈:打印"最近存活容器 + 局部 tree",提示 agent 用里面的新 ref 重试(不打印"已操作")。 */
 function printAction(line: string, r: any): void {
+  if (r?.refInvalid) {
+    const rec = r.recovered;
+    if (rec) {
+      console.log(`ref 失效 → 已自动 tree 最近存活容器 [ref=${rec.rootRef}],用里面的新 [ref] 重试:`);
+      console.log(rec.lines.join('\n'));
+    } else {
+      console.log('ref 失效: 整条祖先链均已失效(可能页面已刷新),请重新 tree 拿新 ref');
+    }
+    return;
+  }
   console.log(line + (r?.selector ? ` ，该元素的 selector 为: ${r.selector}` : ''));
 }
 
