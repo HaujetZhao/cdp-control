@@ -61,13 +61,13 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `--ref <n>` | 以某 ref 的元素为树根(与 --selector-file 互斥) |
 | `--ancestor <k>` | 从锚点(任意)向上爬 k 层父级再建树;多与 --ref 配合把"内容叶子"抬到"区域容器" |
 | `--visible-only` | 筛选当前视口内可见元素(**仅"看当前屏上有啥",绝不做首次整页感知**) |
-| `--scroll-to-load` | 滚动触发懒加载(评论区等首屏外内容)再建树。默认向下/向上各一屏后回原位(**只移动 ±1 屏不会拉飞视口**);配合下方两参数可滚更远 |
+| `--scroll-to-load` | 滚动触发懒加载(评论区等首屏外内容)再建树。默认向下/向上各一屏后回原位(**只移动 ±1 屏不会拉飞视口**);配合下方两参数可滚更远。**默认已启用**:整页完整 view 首次自动 scroll-to-load(无需显式传),让 fetch/首次整页 view 一次抓全懒加载内容;同一页面刷新前只自动滚一次,之后整页 view 不再默认滚(除非显式 --scroll-to-load) |
 | `--scroll-pages <n>` | 与 `--scroll-to-load` 配合:循环向下滚 N 屏(每屏等 innerHeight + 150ms 间隔),边滚边检测 `scrollHeight` 增长,**连续 2 次不增长提前停**。用于无限流(持续滚+等加载)。**注意**:知乎等"用户主动滚动"反爬站点即便分步滚也可能触发不了,是站点反爬不是工具 bug |
 | `--scroll-to <selector>` | 与 `--scroll-to-load` 配合:先滚到匹配该 selector 的元素(B站评论区 `#bili-comments` 等),停下让懒加载触发,**命中不到优雅降级**(跳过该步、正常建树)。这是 `--scroll-to` 的主战场——比 `--scroll-pages` 精准 |
 
 **铁律(首次感知 = 完整 view,禁 `--visible-only`)**:
 - 第一次看页面必须完整 `view`(看全部内容,别 `| head` 截断,别 `--visible-only`)。`--visible-only` 只输出当前视口内元素——视口外的回答、评论区等**被整段漏掉**,让你以为页面只有首屏那么点(曾因只看可见区域找不到第 2 个回答)。
-- 完整 `view` 把整页(含视口外)文本+结构+ref 一次给全;`--visible-only` 只在"专门确认当前屏幕可见区域"时用。
+- 完整 `view` 把整页(含视口外)文本+结构+ref 一次给全;整页首次 view 已默认 scroll-to-load 触发懒加载,所以评论区等首屏外内容也一次到位;`--visible-only` 只在"专门确认当前屏幕可见区域"时用。
 
 **定位 = 从已有的 view 出发,别 JS 探查(最重要)**:
 - 你已看过整页 view,**层级、内容、ref 全在眼前**,不需要再猜结构。要定位区域/元素,一律从 view 里已有的 ref 出发,不要 `eval` JS 摸原始 DOM——那是浪费轮次的弯路。
@@ -128,10 +128,10 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `list` | 确保浏览器就绪(CDP 未起自动启动)并列出所有 page tab,先报 tab 总数 |
 | `open <url>` | 新开一个 tab,返回 targetId |
 | `close <target>` | 关闭 tab |
-| `fetch <url>` | 一次性抓取页面(替代 web fetch MCP):ensure → 临时开 tab 打开 url → view 建树 → 关闭 tab,输出视图内容(文本+结构,含 `[ref]`)。自动等页面加载;不残留 tab |
+| `fetch <url>` | 一次性抓取页面(替代 web fetch MCP):ensure → 临时开 tab 打开 url → 等页面渲染出实质内容 → view 建树(整页首次自动 scroll-to-load 触发懒加载)→ 关闭 tab,输出视图内容(文本+结构,含 `[ref]`)。不残留 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `view [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 view(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 滚动触发懒加载再建树(默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]`。**INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]`**(空值省略),看得到表单内容不必 eval |
+| `view [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 view(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;**整页首次 view 默认自动 scroll-to-load 触发懒加载再建树**(同页刷新前只自动滚一次;显式 --scroll-to-load 可重复滚:默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]`。**INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]`**(空值省略),看得到表单内容不必 eval |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i`,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈 |
 | `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 填输入框并派发 input/change。默认带操作后反馈 |
 | `focus <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 聚焦元素(配合按键用)。默认带操作后反馈 |
