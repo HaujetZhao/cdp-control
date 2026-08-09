@@ -5,6 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { markText, formatTree, type TreeNode } from '../src/inject/lib/tree-format.ts';
+import { leafText } from '../src/inject/lib/tree-utils.ts';
 
 /** 构造 TreeNode 的便捷 helper:size 由 markText 前手动填,hasText 由 markText 重算。 */
 function mk(over: Partial<TreeNode>): TreeNode {
@@ -220,4 +221,41 @@ test('formatTree: 根是 shadow host 时不占位(tree --ref N 展开场景,正�
   markText(root);
   // 根行带 [shadow] 标记 + [ref=0];子节点 span 正常成行
   assert.deepEqual(formatTree(root), ['bili-comments[shadow] [ref=0]', '  "评论 1" [ref=1]']);
+});
+
+test('formatTree: fold 节点被多层纯包装容器包裹仍输出 ▸ 占位(知乎顶栏 bug 回归)', () => {
+  // 真实场景:知乎顶栏 header.AppHeader 在 body>div#root>div>div.css>header(4 层包装)。
+  // fold 节点 text=''、kids=[],若 markText 不把它视作"有内容",则包装链 hasText=false,
+  // 被 productive filter 滤掉,walk 永远到不了 fold 节点 → 顶栏整块消失、无 ▸ 占位。
+  // 此测试锁定:fold 节点哪怕被多层 isContent=false 的纯包装 div 包裹,也要输出 ▸。
+  const foldNode = mk({ tag: 'header', isContent: true, text: '', ref: 1, fold: '知乎顶栏', size: 1, kids: [] });
+  const wrap3 = mk({ tag: 'div', isContent: false, size: 2, kids: [foldNode] });   // 模拟 div.css-s8xum0
+  const wrap2 = mk({ tag: 'div', isContent: false, size: 3, kids: [wrap3] });       // 模拟 div
+  const wrap1 = mk({ tag: 'div', isContent: false, size: 4, kids: [wrap2] });       // 模拟 div#root
+  const root = mk({ tag: 'body', isContent: false, size: 5, kids: [wrap1] });
+  markText(root);
+  // 期望:多层包装被折叠掉,只剩 ▸ 占位行(包装 div 不输出,因为 productive.length===1 递归 walk)
+  assert.deepEqual(formatTree(root), ['body', '  ▸ [ref=1] 知乎顶栏']);
+});
+
+test('markText: fold 节点(空文本空 kids)置 hasText=true 并传播给所有祖先', () => {
+  // 锁定 markText 对 fold 节点的处理:fold 节点本身 hasText=true,且把这个 true 传给父链。
+  // 若不传,父被 isTrivialLeaf 误判 + productive 滤掉,fold 占位消失。
+  const foldNode = mk({ tag: 'header', isContent: true, text: '', ref: 0, fold: '区', size: 1, kids: [] });
+  const wrap = mk({ tag: 'div', isContent: false, size: 2, kids: [foldNode] });
+  const root = mk({ tag: 'body', isContent: false, size: 3, kids: [wrap] });
+  markText(root);
+  assert.equal(foldNode.hasText, true, 'fold 节点自身 hasText 应为 true');
+  assert.equal(wrap.hasText, true, '直接父 hasText 应被 fold 子代传播为 true');
+  assert.equal(root.hasText, true, '祖先 hasText 应被传播为 true');
+});
+
+test('leafText: fold 节点返回其备注(让包装它的容器不被 isTrivialLeaf 误判)', () => {
+  // leafText 对 fold 节点应返回 fold 备注,否则纯包装容器 leafText='' → isTrivialLeaf=true
+  // → productive filter (k.hasText && !isTrivialLeaf) 失败 → fold 消失。
+  const foldNode = mk({ tag: 'header', fold: '顶栏', text: '', kids: [] });
+  assert.equal(leafText(foldNode), '顶栏');
+  // 包装容器通过 fold 子节点取到备注
+  const wrap = mk({ tag: 'div', kids: [foldNode] });
+  assert.equal(leafText(wrap), '顶栏');
 });

@@ -40,9 +40,13 @@ const inputAttr = (n: TreeNode): string => {
 const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + (n.view ? '·屏' : '') + ']' : '');
 
 /** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代),并顺带计算 hasInter(自身或任一后代可交互)。
- * 返回根节点"是否有文本"结果。hasInter 用于内联折叠判断:含交互子代的包装节点不能折叠,否则交互叶的 ref 丢失。 */
+ * 返回根节点"是否有文本"结果。hasInter 用于内联折叠判断:含交互子代的包装节点不能折叠,否则交互叶的 ref 丢失。
+ *
+ * fold 节点(text=''、kids=[],但有 ref+备注)视作"有内容":它本身是有效输出(▸ 行),
+ * 必须把 hasText 传 true 给祖先——否则包装它的中间容器 hasText=false,被 productive filter 滤掉,
+ * walk 永远到不了 fold 节点(整块从 tree 消失,见知乎顶栏 fold 后 ▸ 不显示的 bug)。 */
 export function markText(n: TreeNode): boolean {
-  let h = !!(n.text || n.imgAlt);
+  let h = !!(n.text || n.imgAlt) || n.fold != null;
   let hi = !!n.inter;
   for (const k of n.kids) { if (markText(k)) h = true; if (k.hasInter) hi = true; }
   n.hasText = h;
