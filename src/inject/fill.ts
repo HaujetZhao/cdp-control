@@ -4,7 +4,7 @@
  */
 import { setResult } from './lib/result';
 import { findTarget, notFoundResult } from './lib/find';
-import { genSel } from './lib/genSel';
+import { actionSelector } from './lib/find-root';
 import type { FillArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FillArgs;
@@ -21,5 +21,5 @@ declare const __CDP_ARG__: FillArgs;
   setter.call(el, __CDP_ARG__.value);
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
-  return setResult({ ok: true, tag: el.tagName.toLowerCase(), selector: genSel(el) });
+  return setResult({ ok: true, tag: el.tagName.toLowerCase(), ...actionSelector(el) });
 })();
