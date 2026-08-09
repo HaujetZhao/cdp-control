@@ -83,24 +83,25 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
-  .option('--ref <n>', '按 view 输出的 ref 序号建视图根(与 --selector-file 二选一)')
-  .option('--ancestor <n>', '从建视图根向上爬 N 层父级再建视图(默认 0;与 --ref/selector 任一锚点配合)')
+targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚点互斥:位置 ref 优先,其次 --selector-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
+  .argument('[n]', 'view 输出的 ref 序号建视图根(不传则从根 body 建树;与 --selector-file 二选一)')
+  .option('--ancestor <n>', '从建视图根向上爬 N 层父级再建视图(默认 0;与 ref/selector 任一锚点配合)')
   .option('--selector-file <file>', '从文件读 selector')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
   .option('--scroll-to-load', '先滚动触发懒加载(评论区等首屏外的内容)再建视图——模拟真实用户滚动,防 agent 找不到未加载区域(默认 ±1 屏回弹)')
   .option('--scroll-pages <n>', '与 --scroll-to-load 配合:循环向下滚 N 屏(边滚边检测 scrollHeight 增长,连续 2 次不增长提前停),用于无限流')
   .option('--scroll-to <selector>', '与 --scroll-to-load 配合:先滚到匹配该 selector 的元素(如 B站评论区 #bili-comments),命中不到优雅降级')
   .option('--scroll-wait <ms>', '与 --scroll-to-load 配合:滚动触发懒加载后等待内容渲染的毫秒数(默认 1000;调大给新回答/评论区更多加载时间)')
-  .action(async (opts) => {
+  .action(async (n, opts) => {
     const sel = readOptFile(opts.selectorFile);
-    if (opts.ref != null && sel) throw new Error('--ref 与 --selector-file 只能选其一');
+    const ref = n != null ? Number(n) : undefined;
+    if (ref != null && sel) throw new Error('ref 序号与 --selector-file 只能选其一');
     if ((opts.scrollPages != null || opts.scrollTo != null) && !opts.scrollToLoad) {
       throw new Error('--scroll-pages / --scroll-to 必须与 --scroll-to-load 配合使用');
     }
     const r = await api.view(await needTarget(opts.target), {
       selector: sel, visibleOnly: !!opts.visibleOnly,
-      ref: opts.ref != null ? Number(opts.ref) : undefined,
+      ref,
       ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
       scrollToLoad: !!opts.scrollToLoad,
       scrollPages: opts.scrollPages != null ? Number(opts.scrollPages) : undefined,
