@@ -17,12 +17,12 @@ const RE_REF_LITERAL = /^\{[\s\S]*ref[\s\S]*\}$/;
 
 /**
  * 归一化操作目标为注入侧参数:字符串→{sel},对象→{ref}。
- * 防呆:字符串形如 \"{ref:80}\"(对象字面量当 selector 字符串误用,CLI 应 --ref 80 而非 click \"{ref:80}\")
+ * 防呆:字符串形如 \"{ref:80}\"(对象字面量当 selector 字符串误用,CLI 应传数字 80 而非 click \"{ref:80}\")
  * 直接抛友好错误,不让 querySelector 抛原生 CSS 异常暴露内部栈。
  */
 export function normArg(a: TargetArg): { sel?: string; ref?: number } {
   if (typeof a === 'string' && RE_REF_LITERAL.test(a)) {
-    throw new Error('CLI 用 `--ref N`,脚本 API 才用 {ref:N};你传的是对象字面量字符串: ' + a);
+    throw new Error('CLI 直接传数字(如 80),脚本 API 才用 {ref:N};你传的是对象字面量字符串: ' + a);
   }
   return typeof a === 'string' ? { sel: a } : a;
 }

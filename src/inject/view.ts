@@ -17,7 +17,7 @@ declare const __CDP_ARG__: ViewArgs;
 
 // 整段包成 async(通过 setResult 传 promise,footer await):支持 --scroll-to-load 先异步滚动再建视图。
 setResult((async () => {
-  // 锚点互斥:--ref 优先(读上一次 view 登记的 __cdpRefs,须在下方清空表之前解析),
+  // 锚点互斥:ref 优先(读上一次 view 登记的 __cdpRefs,须在下方清空表之前解析),
   // 其次 selector,缺省 body。--ancestor 为统一爬父修饰符,对任一锚点生效。
   let root: Element | null;
   if (__CDP_ARG__.ref != null) {
