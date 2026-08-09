@@ -104,9 +104,12 @@ export async function fold(target: Target, opts: FoldOpts = {}): Promise<any> {
   }
   if (opts.add) { return { ok: true, rule: addFold(opts.add.domain, opts.add.selector, opts.add.note) }; }
   if (opts.save) {
-    const loc = await invoke<{ selector: string }>(target, locateExpr(opts.ref!, opts.ancestor));
+    // locate 失效(refInvalid)时 invoke 不抛、透传 recovered;此时 loc.selector 是 undefined,
+    // 不能 addFold,直接把 recovered 透传给 CLI 走自愈打印。
+    const loc = await invoke<{ selector: string } | { ok: false; refInvalid: true; recovered: any }>(target, locateExpr(opts.ref!, opts.ancestor));
+    if ((loc as any)?.refInvalid) return loc as any;
     const domain = opts.domain || hostOf(target.url);
-    return { ok: true, rule: addFold(domain, loc.selector, opts.note || loc.selector) };
+    return { ok: true, rule: addFold(domain, (loc as any).selector, opts.note || (loc as any).selector) };
   }
   return invoke(target, foldExpr({ ref: opts.ref, ancestor: opts.ancestor, note: opts.note }));
 }

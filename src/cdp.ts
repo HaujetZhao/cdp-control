@@ -118,6 +118,7 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是�
   .option('--ancestor <n>', '向上爬 N 层父级再定位(默认 0;把内容叶子抬升到语义区域容器)')
   .action(async (n, opts) => {
     const r = await api.locate(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+    if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示,不打印 selector
     console.log(`[${r.tag}] "${r.text || ''}"`);
     console.log(`  selector: ${r.selector || '(无)'}`);
   });
@@ -159,6 +160,7 @@ targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree �
       ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
       note, save: !!opts.save, domain: opts.domain,
     });
+    if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示,不打印"已折叠"
     if (r.rule) console.log(`已添加持久规则 [${r.rule.id}]: ${r.rule.domain}  ${r.rule.selector}  # ${r.rule.note}`);
     else console.log(`已临时折叠: ${r.selector}  # ${r.note}`);
   });
@@ -185,19 +187,31 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
+/**
+ * ref 失效自愈的三态文案(共享:click/fill/focus/hover/locate/fold 失效都走这套)。
+ *  - 从未存在(agent 打错号):提示检查 ref 号,不走自愈(别误导成"页面刷新")。
+ *  - 失效但找到存活祖先:打印最近存活容器 + 局部 tree,提示用新 ref 重试。
+ *  - 整链 detached(页面刷新/重建):提示重新 tree。
+ * 返回是否已打印(调用方据此跳过自己的正常输出)。
+ */
+function printRefInvalid(r: any): boolean {
+  if (!r?.refInvalid) return false;
+  const rec = r.recovered;
+  if (rec?.never) {
+    console.log(`ref 失效: ${rec.msg}`);
+  } else if (rec) {
+    console.log(`ref 失效 → 已自动 tree 最近存活容器 [ref=${rec.rootRef}],用里面的新 [ref] 重试:`);
+    console.log(rec.lines.join('\n'));
+  } else {
+    console.log('ref 失效: 整条祖先链均已失效(页面可能已刷新/重建),请重新 tree 拿新 ref');
+  }
+  return true;
+}
+
 /** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。
  * ref 失效自愈:打印"最近存活容器 + 局部 tree",提示 agent 用里面的新 ref 重试(不打印"已操作")。 */
 function printAction(line: string, r: any): void {
-  if (r?.refInvalid) {
-    const rec = r.recovered;
-    if (rec) {
-      console.log(`ref 失效 → 已自动 tree 最近存活容器 [ref=${rec.rootRef}],用里面的新 [ref] 重试:`);
-      console.log(rec.lines.join('\n'));
-    } else {
-      console.log('ref 失效: 整条祖先链均已失效(可能页面已刷新),请重新 tree 拿新 ref');
-    }
-    return;
-  }
+  if (printRefInvalid(r)) return;
   console.log(line + (r?.selector ? ` ，该元素的 selector 为: ${r.selector}` : ''));
 }
 

@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄),selector 是后台匹配(刷新后兜底)。** `tree --ref <n> --ancestor <k>` 查看局部;`locate <ref>` 从 ref 反查 selector 用作刷新后定位。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**ref 失效会自动自愈**(沿祖先链 tree 最近存活容器,无需自己猜),长页噪声用 `fold`(类 uBlock 的持久折叠规则:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄),selector 是后台匹配(刷新后兜底)。** `tree --ref <n> --ancestor <k>` 查看局部;`locate <ref>` 从 ref 反查 selector 用作刷新后定位。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**任何用 ref 的命令(click/fill/focus/hover/locate/fold)ref 失效都自动自愈**——沿祖先链 tree 最近存活容器给你新 ref;打错号(从未存在)直接报、不误导成"页面刷新";整链失效才提示重新 tree。长页噪声用 `fold`(类 uBlock 的持久折叠规则:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -12,7 +12,7 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 ## 核心模型(三件事)
 
 1. **tree = 感知**:整页 body 建为紧凑树(文本+结构),给每个可操作元素标 `[ref=i]`。**首次看页面必须完整 `tree`**(别 `| head` 截断,别 `--visible-only`)。
-2. **ref = 操作索引**:会话句柄,存 `window.__cdpRefs`,刷新失效、每次 tree 重排。操作一律优先 `--ref i`(穿透 shadow)。**ref 失效会自动自愈**(见下)。
+2. **ref = 操作索引**:会话句柄,存 `window.__cdpRefs`,刷新失效、每次 tree 重排。操作一律优先 `--ref i`(穿透 shadow)。**ref 失效自动自愈**(任何 ref 命令,见下)。
 3. **selector = 后台匹配**:刷新后 ref 失效,用 `locate <ref>` 把 ref 翻译成 selector 喂回 `tree --selector-file` 复用。
 
 重要原则:
@@ -118,11 +118,20 @@ cdp fold rm 1 --target ...                  # 5. 删持久规则 [id]
 
 - **内容反馈**:CLI 分块换行输出(内容 2 空格缩进)——`页面变化 · 新增内容:`(重复块折叠标 `(重复 N 次,已折叠)`)、`页面变化 · 文本变化:`(逐条 `旧 → 新`,过滤前后相同)。**文本变化报前后值**(点赞后数字 583→584 直接可见);点"显示评论"后评论进来,反馈里直接看得到。操作行同一行附 `，该元素的 selector 为: <唯一selector>`,后续对该元素操作优先用 selector 而非 ref,避免 ref 重渲染失效。
 - **tab 变化**:操作前后 diff `/json/list`。点 `target=_blank` 链接新开 tab 后,反馈直接告诉你 `新开 tab: <title> <url> [<targetId>]`,直接 `tree --target <targetId>` 继续,不必先 `list`。
-- **ref 失效自动自愈(不再需要猜容器)**:操作因 ref 失效(detached)时,工具**自动**沿 ref 的祖先链向上找到最近一个仍存活的容器,以它为根局部 tree,直接回报更新后的内容 + 新 ref,提示你用新 ref 重试。你**不需要**自己判断"该 tree 哪个更高层级的容器"——工具帮你定位到最近存活祖先。仅当整条祖先链都失效(页面整体刷新)才提示重新 `tree`。
 - **`--no-feedback`**:关闭(不等待、不观察、不 diff tab),高频操作想快时用。
 - **`--feedback-delay <ms>`**:自定义等待时长,默认 1000。
 - **反馈树 ref 是增量号,不顶掉旧 ref**:反馈新增内容里的 `[ref]` 从当前已有号继续递增(整页 tree 才从 0 重置)。反馈后既可用反馈树的增量 ref 操作新增内容(如点刚加载的"显示更多"),**原整页 ref 依旧有效**。注意:增量 ref 适合即时 `click`/`fill`;要 `tree --ref` 局部回看/`locate` 反查稳定定位器时,请先用整页 `tree` 重建 ref。
 - 脚本 API:`cdp.click(target, arg, { noFeedback?, feedbackDelay? })` → 返回 `{ok, tag, feedback:{lines, summary, tabs:{opened, closed}}}`(见下方脚本表)。
+
+## ref 失效自动自愈(所有 ref 命令)
+
+任何用 `--ref` 的命令——`click`/`fill`/`focus`/`hover`/`locate`/`fold`——遇到 ref 失效都**自动自愈**,你不用猜容器:
+
+- **失效但祖先还活着**:沿 ref 的 `parentRef` 链向上找最近一个仍 connected 的容器,以它为根局部 tree,直接回报更新后的内容 + 新 ref,提示你用新 ref 重试。你**不需要**判断"该 tree 哪个更高层级的容器"——工具定位到最近存活祖先。
+- **打错号(从未存在)**:ref 越界或登记表里没这个槽,工具直接报 `ref=N 从未存在(当前最大 ref=M),检查 ref 号`——**不**走自愈、**不**误导成"页面刷新"(避免你白去 reload)。
+- **整链失效(页面刷新/重建)**:祖先链全部 detached,才提示`整条祖先链均已失效,请重新 tree 拿新 ref`。
+
+> 三态由注入侧统一返回(`{ok:false, refInvalid:true, recovered:{never|rootRef,lines|null}}`),CLI 共享同一套打印,click 系与 locate/fold 行为一致。
 
 ## Quick Reference
 

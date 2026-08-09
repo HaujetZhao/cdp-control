@@ -7,6 +7,7 @@ import { setResult } from './lib/result';
 import { addTmpFold, clearTmpFolds, listTmpFolds } from './lib/fold';
 import { refElement, climbAncestors } from './lib/find-root';
 import { genSel } from './lib/genSel';
+import { notFoundResult, type OperableArg } from './lib/find';
 import type { FoldArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FoldArgs;
@@ -15,7 +16,7 @@ declare const __CDP_ARG__: FoldArgs;
   if (__CDP_ARG__.clear) { clearTmpFolds(); return setResult({ ok: true, cleared: true }); }
   if (__CDP_ARG__.list) return setResult({ ok: true, folds: listTmpFolds() });
   const base = refElement(__CDP_ARG__.ref!);
-  if (!base) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 无效或已失效(需先 tree 拿新 ref)` });
+  if (!base) return setResult(notFoundResult({ ref: __CDP_ARG__.ref! } as OperableArg));
   const el = climbAncestors(base, __CDP_ARG__.ancestor || 0);
   if (!el) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 向上爬 ${__CDP_ARG__.ancestor || 0} 层后无元素` });
   const selector = genSel(el);
