@@ -77,7 +77,7 @@ function prune(n: TreeNode): boolean {
 }
 
 /** 从 root 建精简树。opts.visibleOnly:建树后按视口可见裁剪(沿用 tree --visible-only 语义);
- * opts.viewport:对带 ref 的节点算 node.view(输出 [ref=i·屏] 标记),见 lib/tree-format.ts。 */
+ * opts.viewport:对带 ref 的节点算 node.view(输出 [ref=i, visible] 标记),见 lib/tree-format.ts。 */
 export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}): TreeNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;

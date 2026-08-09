@@ -5,7 +5,7 @@
  *
  * 契约:读取 __CDP_ARG__.rootExpr(解析建树根元素的 JS 表达式串),把结果写入 setResult。
  * 输出为带缩进文本行数组(标签 + 引用文本),无 [看]/[架]/[X] 状态前缀。
- * 建树复用 lib/tree-core 的 buildTree;带 ref 的节点额外标在视区(view,输出 [ref=i·屏])。
+ * 建树复用 lib/tree-core 的 buildTree;带 ref 的节点额外标在视区(view,输出 [ref=i, visible])。
  */
 import { setResult } from './lib/result';
 import { markText, formatTree } from './lib/tree-format';

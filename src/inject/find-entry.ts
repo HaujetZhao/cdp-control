@@ -45,7 +45,7 @@ function registerHit(el: Element): number {
 /** 取命中元素的 line(formatTree 根行,标上分配的 ref 号)。 */
 function lineOf(el: Element, ref: number): string {
   const tree = buildTree(el, { viewport: true });
-  tree.ref = ref; // 根节点标上分配的 ref,formatTree 输出 [ref=N·屏?]
+  tree.ref = ref; // 根节点标上分配的 ref,formatTree 输出 [ref=N, visible?]
   markText(tree);
   const lines = formatTree(tree);
   return lines[0] || `${el.tagName.toLowerCase()} [ref=${ref}]`;
