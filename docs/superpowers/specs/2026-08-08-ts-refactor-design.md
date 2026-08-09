@@ -12,7 +12,7 @@
 - 无法 `require`、无法直接单测,逻辑只能靠浏览器实测。
 - 170 行挤在一个 `return \`...\`` 里,prettier/eslint 无法格式化。
 
-同样的病在 `lib/api.js` 的 `shadowXPathExpr` 也有。所有注入脚本(`SNAPSHOT/CLICK/FILL/MONITOR/CONTENT/tree`)全被殃及。
+同样的病在 `lib/api.js` 的 `shadowXPathExpr` 也有。所有注入脚本(`SNAPSHOT/CLICK/FILL/MONITOR/CONTENT/view`)全被殃及。
 
 ## 2. 目标
 
@@ -38,8 +38,8 @@
 
 - `genSel.ts` — 共享的 `genSel` 纯函数。
 - `snapshot.ts` — 可交互元素清单。
-- `tree.ts` — 结构树(最大最复杂,含 tree-utils)。
-- `tree-utils.ts` — 抽出的纯函数:`isTrivialLeaf`/`inlineable`/`inlineLen`/`leafText`/`firstTxt`/`strip` 等。
+- `view.ts` — 结构树(最大最复杂,含 view-utils)。
+- `view-utils.ts` — 抽出的纯函数:`isTrivialLeaf`/`inlineable`/`inlineLen`/`leafText`/`firstTxt`/`strip` 等。
 - `content.ts` — 主内容文本。
 - `outline.ts` — 标题层级 + 关键链接。
 - `monitor.ts` — 控制台监控脚本。
@@ -80,7 +80,7 @@ npm run build
 
 ### 4.1 注入脚本的运行时读取
 
-Node 侧不再 `import { buildTreeExpr } from './scripts'` 构造字符串,而是运行时读打包产物:
+Node 侧不再 `import { buildViewExpr } from './scripts'` 构造字符串,而是运行时读打包产物:
 
 ```ts
 // src/inject-loader.ts
@@ -114,16 +114,16 @@ footer: { js: ';(() => { const r = globalThis.__cdpResult; delete globalThis.__c
 
 ## 5. 可测试性
 
-注入侧纯函数(`tree-utils.ts`)可在 Node 里直接测,不依赖 DOM。用 vitest(可选)或 Node 内置 `node:test` + `node:assert`(零额外依赖)。测试放 `tests/`。
+注入侧纯函数(`view-utils.ts`)可在 Node 里直接测,不依赖 DOM。用 vitest(可选)或 Node 内置 `node:test` + `node:assert`(零额外依赖)。测试放 `tests/`。
 
-DOM 依赖的集成逻辑(tree 的 `simplify`/`walk` 需真实 DOM)仍靠浏览器实测验收。
+DOM 依赖的集成逻辑(view 的 `simplify`/`walk` 需真实 DOM)仍靠浏览器实测验收。
 
 ## 6. 迁移顺序
 
 1. **脚手架**:`package.json`(type 处理 + scripts)、`tsconfig.json`、`esbuild` 构建脚本、`.gitignore`(dist/node_modules)。
 2. **注入脚本先迁**:把 `scripts.js` 各脚本抽成 `src/inject/*.ts`,esbuild 打包,验证产物能注入跑通。
 3. **Node 侧迁 `src/`**:`cdp.ts`/`api.ts`/`transport.ts`/`browser.ts`/`monitor.ts`/`types.ts`,改造为读注入产物。
-4. **抽纯函数加单测**:`tree-utils.ts` + `tests/`。
+4. **抽纯函数加单测**:`view-utils.ts` + `tests/`。
 5. **更新 SKILL.md**:`run` 指向 `node dist/cdp.js`;文档注明改代码后需 `npm run build`。
 6. **清理**:删 `lib/`、`cdp.js`(旧入口),或保留 `dist` 为运行入口。
 
