@@ -37,18 +37,6 @@ program
   .version('1.0.0')
   .description('CDP 浏览器控制(取代 chrome-devtools MCP)');
 
-program.command('ensure')
-  .description('确保浏览器已通过 CDP 就绪(自动探测 Edge/Chrome),可选 --url 直接导航')
-  .option('--url <url>', '打开指定网页')
-  .action(async (opts) => {
-    const r = await api.ensure(opts.url);
-    const lines: string[] = [r.started ? '模式: 冷启动(本次由 ensure 启动浏览器)' : '模式: 热启动(浏览器本就已通过 CDP 就绪)', `浏览器: ${r.browser || '未知'}`];
-    lines.push(r.userData ? `用户数据目录: ${r.userData}` : '用户数据目录: 未知(可设环境变量 CDP_USER_DATA 指定)');
-    if (r.url) { lines.push(`已打开: ${r.url}`); lines.push(`targetId: ${r.targetId}`); }
-    else lines.push('已连接: 未导航');
-    console.log(lines.join('\n'));
-  });
-
 program.command('list').description('确保浏览器就绪并列出所有 page tab(含手动开的)')
   .action(async () => {
     await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销),agent 无需先 ensure 再 list。
@@ -111,114 +99,6 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
     });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));
-  });
-
-targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是会话句柄,页面刷新后失效;此命令把 ref 翻译成刷新后仍可用的 selector,供 tree --selector-file 复用')
-  .argument('<n>', 'tree 输出的 ref 序号')
-  .option('--ancestor <n>', '向上爬 N 层父级再定位(默认 0;把内容叶子抬升到语义区域容器)')
-  .action(async (n, opts) => {
-    const r = await api.locate(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
-    if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示,不打印 selector
-    console.log(`[${r.tag}] "${r.text || ''}"`);
-    if (r.shadow) {
-      // shadow 内元素:标准 selector 在 document 上查不到(querySelector 返 null),不能用。
-      // 给 shadowChain(hostSel >>> innerSel >>> ...)——tree --selector-file 能解析它穿透。
-      console.log(`  ⚠ 该元素在 shadow DOM 内,标准 CSS selector 无法穿透(上面 selector 仅指向最外层 host)。`);
-      console.log(`  shadow 链(可写入 selector-file 复用): ${r.shadowChain || '(生成失败)'}`);
-      console.log(`  或直接用 ref=${n} 操作(操作命令穿透 shadow)。`);
-    } else {
-      console.log(`  selector: ${r.selector || '(无)'}`);
-    }
-  });
-
-targetCmd('find', '按文本或 selector 找元素,登记新 ref 返回(类 uBlock :has-text())。ref 失效后不必整页 tree,直接 find --text "关键词" 拿新 ref')
-  .option('--text <关键词>', '在整页(穿透 shadow)搜文本含该关键词的元素(自身或后代文本)')
-  .option('--selector <css>', '按 CSS selector 命中(支持 `>>>` shadow 链)')
-  .option('--ancestor <n>', '命中后向上爬 N 层父级到区域容器(默认 0)')
-  .option('--all', '返回全部命中并各自登记 ref(默认仅首个)')
-  .action(async (opts) => {
-    if (!opts.text && !opts.selector) throw new Error('需提供 --text 或 --selector');
-    if (opts.text && opts.selector) throw new Error('--text 与 --selector 只能选其一');
-    const r = await api.find(await needTarget(opts.target), {
-      text: opts.text, selector: opts.selector,
-      ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
-      all: !!opts.all,
-    });
-    if (!r.hits?.length) { console.log(r.err || '未找到'); return; }
-    for (const h of r.hits) {
-      console.log(`[ref=${h.ref}] ${h.line}`);
-    }
-  });
-
-targetCmd('lineage', '列目标元素(爬 ancestor 后)从 html 到自身的祖先链:每层 tag/id/class/语义 data-* /aria/role。挑稳定锚点写 fold add 这种 uBlock 式短规则(如 #biliMainHeader)')
-  .argument('<n>', 'tree 输出的 ref 序号')
-  .option('--ancestor <n>', '向上爬 N 层父级再列祖先链(默认 0;把内容叶子抬升到语义区域容器)')
-  .action(async (n, opts) => {
-    const r = await api.lineage(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
-    if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示
-    if (!r.chain?.length) { console.log('(空祖先链)'); return; }
-    // 缩进树:html 在 depth 0,每层 2 空格缩进;目标元素(最深层)标 [ref=N]
-    for (const node of r.chain) {
-      const indent = '  '.repeat(node.depth);
-      const parts: string[] = [node.tag];
-      if (node.id) parts.push('#' + node.id);
-      if (node.classes?.length) {
-        const cls = Array.isArray(node.classes) ? node.classes.join('.') : node.classes;
-        parts.push('.' + cls);
-      }
-      if (node.dataAttrs) for (const [k, v] of Object.entries(node.dataAttrs)) parts.push(`${k}="${v}"`);
-      if (node.role) parts.push(`role="${node.role}"`);
-      if (node.aria) parts.push(`aria="${node.aria}"`);
-      const mark = node.depth === r.targetDepth ? `  [ref=${n}]` : '';
-      console.log(`${indent}${parts.join(' ')}${mark}`);
-    }
-    console.log(`\n建议 selector(genSel): ${r.suggested || '(无)'}`);
-  });
-
-targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree 时命中区域折叠成一行 ▸,跨会话持久)。子命令:add/list/rm;或 --ref [--save] 折叠')
-  .argument('[args...]', 'add <域名> <selector> <备注> | list | rm <id>;或省略走 --ref 模式')
-  .option('--ref <n>', '按 ref 折叠其区域(可选 --ancestor 爬父到容器)')
-  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再折叠(默认 0;把内容叶子抬到区域容器)')
-  .option('--note <备注>', '折叠备注(tree 里 ▸ 后显示)')
-  .option('--save', '落盘为持久规则(默认仅会话级临时折叠,刷新失效)')
-  .option('--domain <d>', '持久规则的域名(默认当前页 hostname;支持 *.suffix 通配)')
-  .option('--path <前缀>', '持久规则的 URL pathname 前缀(限定只在该路径下命中,修同域名跨页错位,如 /video)')
-  .action(async (args, opts) => {
-    const t = await needTarget(opts.target);
-    const [cmd, ...rest] = args || [];
-    if (cmd === 'list') {
-      const r = await api.fold(t, { list: true });
-      if (!r.persist?.length && !r.tmp?.length) { console.log('无折叠规则(用 fold add 或 fold --ref --save 添加)'); return; }
-      if (r.persist?.length) {
-        console.log('持久规则(folds.txt):');
-        r.persist.forEach((f: any) => console.log(`  [${f.id}] ${f.domain}${f.pathPrefix ? ' ' + f.pathPrefix : ''}  ${f.selector}  # ${f.note}`));
-      }
-      if (r.tmp?.length) { console.log('会话级临时(刷新失效):'); r.tmp.forEach((f: any, i: number) => console.log(`  [t${i}] ${f.selector}  # ${f.note}`)); }
-      return;
-    }
-    if (cmd === 'rm') {
-      const id = Number(rest[0]);
-      const r = await api.fold(t, { rm: id });
-      console.log(r.ok ? `已删除规则 [${id}]` : `未找到规则 [${id}]`);
-      return;
-    }
-    if (cmd === 'add') {
-      const [domain, selector, ...noteParts] = rest;
-      if (!domain || !selector) throw new Error('用法: fold add <域名> <selector> <备注> [--path <前缀>]');
-      const r = await api.fold(t, { add: { domain, selector, note: noteParts.join(' '), path: opts.path } });
-      console.log(`已添加持久规则 [${r.rule.id}]: ${domain}${r.rule.pathPrefix ? ' ' + r.rule.pathPrefix : ''}  ${selector}  # ${r.rule.note}`);
-      return;
-    }
-    if (opts.ref == null) throw new Error('用法: fold --ref <n> [备注] [--save] [--domain d] [--path <前缀>];或 fold add/list/rm');
-    // --ref 模式:未被识别的位置参数(非 add/list/rm)当作备注
-    const note = opts.note || (args && args.length ? args.join(' ') : undefined);
-    const r = await api.fold(t, {
-      ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
-      note, save: !!opts.save, domain: opts.domain, path: opts.path,
-    });
-    if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示,不打印"已折叠"
-    if (r.rule) console.log(`已添加持久规则 [${r.rule.id}]: ${r.rule.domain}${r.rule.pathPrefix ? ' ' + r.rule.pathPrefix : ''}  ${r.rule.selector}  # ${r.rule.note}`);
-    else console.log(`已临时折叠: ${r.selector}  # ${r.note}`);
   });
 
 // ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。
