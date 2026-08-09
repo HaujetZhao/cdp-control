@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄)。** `tree --ref <n> --ancestor <k>` 查看局部。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**任何用 ref 的命令(click/fill/focus/hover)ref 失效都自动自愈**——沿祖先链 tree 最近存活容器给你新 ref;打错号(从未存在)直接报、不误导成"页面刷新";整链失效才提示重新 tree。长页噪声用 `fold` 持久规则(手动编辑 `$CDP_USER_DATA/folds.txt`,类 uBlock:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄)。** `tree --ref <n> --ancestor <k>` 查看局部。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**任何用 ref 的命令(click/fill/focus/hover)ref 失效都自动自愈**——沿祖先链 tree 最近存活容器给你新 ref;打错号(从未存在)直接报、不误导成"页面刷新";整链失效才提示重新 tree。长页噪声用 `fold` 持久规则(手动编辑 `$CDP_USER_DATA/folds.csv`,类 uBlock:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -89,10 +89,11 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 
 **整页 tree 去噪(`fold` 持久规则,类 uBlock Origin)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `fold` 把这些区域**折叠成一行**(输出 `▸ [ref=i] <备注>`,不展开子树但保留 ref),跨会话持久——下次打开同站点自动折叠。
 
-**规则手动编辑**:持久规则存 `$CDP_USER_DATA/folds.txt`(默认 `~/.cdp-browser/`),五列 tab:`<id>\t<域名>\t<selector>\t<备注>[\t<pathPrefix>]`。域名支持精确(`www.bilibili.com`)与通配(`*.zhihu.com`)。tree 时自动加载生效。
-- **`<id>` 单调递增不重排**(修连续 rm 漏删),新规则 id 取现有 max+1。旧三列格式文件读时自动迁移补 id。
-- **`<pathPrefix>` 限定页面路径**(借鉴 uBlock `:matches-path`):同域名不同页(B站首页 vs 视频页、知乎首页 vs 回答页)DOM 结构不同,只按域名存的规则会在别的页命中错位元素。加 `\t/video` 后该规则只在 pathname 以 `/video` 开头的页命中。无 pathPrefix 的规则不限路径。
-- 示例行:`12\twww.bilibili.com\t#biliMainHeader\t顶栏\t/video`(列间用 tab,selector 可含空格)。
+**规则手动编辑**:持久规则存 `dist/folds.csv`(与 `dist/cdp.js` 同级,便于编辑、随 dist 拷贝走),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`。tree 时自动加载生效。
+- **`<id>` 单调递增不重排**(修连续 rm 漏删),新规则 id 取现有 max+1。只认首列为数字的行,旧格式行直接跳过(不迁移)。
+- **`<域名>` 通配对齐 uBlock**:精确(`www.bilibili.com`)、子域通配(`*.zhihu.com` 匹配自身+任意子域)、entity 通配(`zhihu.*` 匹配任意 TLD)。空 = 不匹配。
+- **`<path>` glob 通配**:`*` 匹配任意字符含 `/`,如 `/video/*`、`/question/*`;空 = 不限路径。同域名不同页(B站首页 vs 视频页、知乎首页 vs 回答页)DOM 结构不同,只按域名存的规则会在别的页命中错位元素——用 path 限定。
+- 示例行:`12\twww.bilibili.com\t/video/*\t#biliMainHeader\t顶栏`(列间用 tab,selector 可含空格)。
 - **折叠判定**:tree 时命中 `el.matches(selector)` 的区域(非根元素)折叠成一行 `▸ [ref=i] <备注>`。
 - **展开折叠区域**:`tree --ref <折叠容器的 ref>` 就是普通局部 tree。**嵌套天然支持**:展开顶栏后,里面命中的子折叠规则(如搜索区)仍是折叠态。
 - `fold` 取代了旧的 `stash`(stash 已删除)。
@@ -140,7 +141,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `logs [--target] [--level error,warn] [--since <ms>] [--json]` | 读 target 控制台日志(见下方「读控制台日志」) |
 | `run <脚本文件>` | 执行自动化脚本(脚本里用全局 `cdp` API,可顶层 `await`) |
 
-环境变量:`CDP_HOST` / `CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(监听 daemon 端口,默认 9333)、`CDP_USER_DATA`(浏览器用户数据目录 + fold 规则文件位置,默认 `~/.cdp-browser`)。
+环境变量:`CDP_HOST` / `CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(监听 daemon 端口,默认 9333)、`CDP_USER_DATA`(浏览器用户数据目录,默认 `~/.cdp-browser`)、`CDP_FOLD_FILE`(fold 规则文件路径覆盖,默认 `dist/folds.csv`,供测试隔离)。
 
 ## 命令示例(真实流程)
 
@@ -151,7 +152,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 cdp open "https://www.zhihu.com/"     # 开页
 cdp tree --target zhihu               # 看整页,拿 ref(别 head/sed 截断)
 cdp tree --ref 53 --ancestor 4 --target zhihu   # 从内容叶子 ref 爬到区域容器,只列问题+回答
-# 去噪:手动编辑 $CDP_USER_DATA/folds.txt 加一行(如 `5\twww.zhihu.com\t.AppHeader\t顶栏`)→ tree 自动折叠顶栏
+# 去噪:手动编辑 dist/folds.csv 加一行(如 `5\t*.zhihu.com\t*\t.AppHeader\t顶栏`)→ tree 自动折叠顶栏
 ```
 
 ### 点击可能开新 tab → 反馈自动报落点

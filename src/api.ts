@@ -75,7 +75,7 @@ export interface TreeOpts {
 /** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
  * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先滚动触发懒加载再建树
  *   (默认 ±1 屏回弹;scrollPages 改为循环滚 N 屏;scrollTo 先滚到该 selector 元素,如 B站评论区)。
- * 折叠:Node 侧按 target 页 hostname+pathname 读 folds.txt 命中规则(pathPrefix 限定同域名下页面路径),
+ * 折叠:Node 侧按 target 页 hostname+pathname 读 folds.csv 命中规则(path glob 限定同域名下页面路径),
  * 传入注入侧 buildTree 折叠成一行(跨会话持久)。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
   const folds = matchFolds(hostOf(target.url), pathOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
@@ -95,7 +95,7 @@ export async function lineage(target: Target, ref: number, ancestor?: number): P
 
 export interface FoldOpts {
   ref?: number; ancestor?: number; note?: string; save?: boolean; domain?: string; path?: string;
-  add?: { domain: string; selector: string; note: string; path?: string }; list?: boolean; rm?: number;
+  add?: { domain: string; path: string; selector: string; note: string }; list?: boolean; rm?: number;
 }
 
 /** find:按文本(--text)或 selector(--selector)找元素,登记 ref 返回(追加,不重置)。
@@ -107,7 +107,7 @@ export async function find(target: Target, opts: FindOpts = {}): Promise<any> {
   return invoke(target, findExpr(opts));
 }
 /** 折叠规则管理(取代 stash):
- *  - add {domain, selector, note, path?}:加持久规则(folds.txt)
+ *  - add {domain, path, selector, note}:加持久规则(folds.csv)
  *  - rm <id>:删持久规则(其它规则 id 不重排)
  *  - list:列持久 + 会话级临时
  *  - ref + save:从 ref 反查 selector + 当前 hostname,落盘持久规则
@@ -119,14 +119,14 @@ export async function fold(target: Target, opts: FoldOpts = {}): Promise<any> {
     const tmp = await invoke<{ folds: any[] }>(target, foldExpr({ list: true }));
     return { ok: true, persist, tmp: tmp.folds };
   }
-  if (opts.add) { return { ok: true, rule: addFold(opts.add.domain, opts.add.selector, opts.add.note, opts.add.path) }; }
+  if (opts.add) { return { ok: true, rule: addFold(opts.add.domain, opts.add.path, opts.add.selector, opts.add.note) }; }
   if (opts.save) {
     // locate 失效(refInvalid)时 invoke 不抛、透传 recovered;此时 loc.selector 是 undefined,
     // 不能 addFold,直接把 recovered 透传给 CLI 走自愈打印。
     const loc = await invoke<{ selector: string } | { ok: false; refInvalid: true; recovered: any }>(target, locateExpr(opts.ref!, opts.ancestor));
     if ((loc as any)?.refInvalid) return loc as any;
     const domain = opts.domain || hostOf(target.url);
-    return { ok: true, rule: addFold(domain, (loc as any).selector, opts.note || (loc as any).selector, opts.path) };
+    return { ok: true, rule: addFold(domain, opts.path || '', (loc as any).selector, opts.note || (loc as any).selector) };
   }
   return invoke(target, foldExpr({ ref: opts.ref, ancestor: opts.ancestor, note: opts.note }));
 }

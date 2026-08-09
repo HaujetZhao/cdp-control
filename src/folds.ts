@@ -1,31 +1,31 @@
 /**
  * folds.ts — fold 折叠规则的持久化(Node 侧)。
- * 规则文件放在浏览器用户数据目录(CDP_USER_DATA,默认 ~/.cdp-browser)下 folds.txt,
- * 跨会话持久、跨项目共享(规则是"针对站点的浏览器偏好",不属于任何业务项目)。
+ * 规则文件放在 dist/cdp.js 同级(dist/folds.csv),便于手动编辑,随 dist 拷贝走。
  *
- * 文件格式(tab 分隔,因 selector 可能含空格——genSel 生成后代选择器):
- *   <id>\t<域名>\t<selector>\t<备注>[\t<pathPrefix>]
- *   - id:稳定标识(单调递增,删除不重排),第一列纯数字即 id;旧格式无 id 行由 loadFolds 迁移补号
- *   - 域名:精确(www.bilibili.com)或后缀通配(*.zhihu.com 匹配 zhihu.com 及其所有子域)
- *   - pathPrefix:可选,有则要求页面 pathname 以它前缀(借鉴 uBlock matches-path,修同域名跨页错位)
+ * 文件格式(csv,tab 分隔,固定 5 列,因 selector 可能含空格——genSel 生成后代选择器):
+ *   <id>\t<domain>\t<path>\t<selector>\t<note>
+ *   - id:稳定标识(单调递增,删除不重排)
+ *   - domain:精确(www.bilibili.com)、*.suffix 子域通配(*.zhihu.com 匹配自身+任意子域)、
+ *     suffix.* entity 通配(zhihu.* 匹配所有 TLD 的 zhihu)
+ *   - path:glob 通配(* 匹配任意字符含 /,如 /video/*、/question/*),空 = 不限定路径
+ *   - selector:命中该元素的 CSS selector,即要折叠的区域
  * 行首 # 为注释。
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export interface FoldRule {
   id: number;
   domain: string;
+  path: string;
   selector: string;
   note: string;
-  pathPrefix?: string;
 }
 
-/** 规则文件路径:与浏览器用户数据同目录(跨会话/跨项目持久)。 */
+/** 规则文件路径:与 cdp.js 同级(dist/ 下),便于手动编辑;随 dist 拷贝走、跨会话持久。
+ * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 dist/folds.csv。 */
 function foldsPath(): string {
-  const userData = process.env.CDP_USER_DATA || join(homedir(), '.cdp-browser');
-  return join(userData, 'folds.txt');
+  return process.env.CDP_FOLD_FILE || join(__dirname, 'folds.csv');
 }
 
 /** 从 url 提取 hostname;非法/空白返回 ''(about:blank 等不参与 fold 匹配)。 */
@@ -44,82 +44,74 @@ export function pathOf(url: string | undefined): string {
   } catch { return ''; }
 }
 
-/** 域名匹配:精确,或 *.suffix 后缀通配(suffix 自身 + 其任意子域)。 */
+/** 域名匹配:精确、*.suffix(自身+子域)、suffix.*(entity,任意 TLD)。 */
 export function domainMatch(domain: string, hostname: string): boolean {
   if (!hostname) return false;
   if (domain.startsWith('*.')) {
     const base = domain.slice(2);
     return hostname === base || hostname.endsWith('.' + base);
   }
+  if (domain.endsWith('.*')) { // entity: base 为域名段,其后接任意单段 TLD(可带子域)
+    const base = domain.slice(0, -2);
+    return new RegExp(`(^|\\.)${base}(\\.[^.]+)?$`).test(hostname);
+  }
   return hostname === domain;
 }
 
-/** 第一列是否为 id(纯正整数,域名总含 . 或字母,不会误判)。 */
-function isIdCol(s: string): boolean {
-  return /^\d+$/.test(s.trim()) && s.trim() !== '0';
+/** glob → RegExp:* 匹配任意字符(含 /),其余按字面;两端锚定。 */
+function globToRegExp(pat: string): RegExp {
+  const esc = pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('^' + esc.replace(/\*/g, '.*') + '$');
+}
+
+/** 路径匹配:path 为 glob,空 = 不限定。 */
+export function pathMatch(pattern: string, pathname: string): boolean {
+  if (!pattern) return true; // 空 = 不限定路径
+  return globToRegExp(pattern).test(pathname);
 }
 
 /**
- * 解析规则文本(逐行 tab 分列)。自适应新旧格式:
- *   - 第一列纯数字 → id 列,其后 domain/selector/note/pathPrefix
- *   - 否则旧格式:domain/selector/note/pathPrefix,id 留空(由 loadFolds 迁移补号)
- * 行首 # 注释;空行跳过;domain 或 selector 空跳过。
- * 返回的规则 id 可能为 0(表示"缺 id 待补"),供 loadFolds 判定是否需要迁移。
+ * 解析规则文本(逐行 tab 分列,固定 5 列 id/domain/path/selector/note)。
+ * 第一列必须纯数字 id,否则该行跳过(旧格式遗留,不迁移)。行首 # 注释;空行跳过。
  */
 export function parseRules(text: string): FoldRule[] {
   const rules: FoldRule[] = [];
   for (const raw of text.split(/\r?\n/)) {
     if (!raw.trim() || raw.trimStart().startsWith('#')) continue;
     const parts = raw.split('\t');
-    let idx = 0;
-    let id = 0;
-    if (parts.length && isIdCol(parts[0])) {
-      id = parseInt(parts[0], 10);
-      idx = 1;
-    }
-    const domain = (parts[idx] || '').trim();
-    const selector = (parts[idx + 1] || '').trim();
-    const note = (parts[idx + 2] || '').trim();
-    const pathPrefix = (parts[idx + 3] || '').trim() || undefined;
-    if (!domain || !selector) continue;
-    rules.push({ id, domain, selector, note, pathPrefix });
+    if (!/^\d+$/.test(parts[0].trim())) continue; // 旧格式/垃圾行,不迁移
+    rules.push({
+      id: parseInt(parts[0], 10),
+      domain: (parts[1] || '').trim(),
+      path: (parts[2] || '').trim(),
+      selector: (parts[3] || '').trim(),
+      note: (parts[4] || '').trim(),
+    });
   }
   return rules;
 }
 
-/** 读全部持久规则;文件不存在返回空数组。读后若发现任何"缺 id"行,立即重写迁移(单调补号)。 */
+/** 读全部持久规则;文件不存在返回空数组。 */
 export function loadFolds(): FoldRule[] {
   const p = foldsPath();
   if (!existsSync(p)) return [];
-  let rules: FoldRule[];
-  try { rules = parseRules(readFileSync(p, 'utf8')); }
+  try { return parseRules(readFileSync(p, 'utf8')); }
   catch { return []; }
-  if (rules.some(r => !r.id)) {
-    // 旧格式或手工缺 id:按现有最大 id + 1 给缺 id 行补号,落盘迁移。
-    let next = rules.reduce((m, r) => Math.max(m, r.id), 0);
-    for (const r of rules) if (!r.id) r.id = ++next;
-    writeRules(rules);
-  }
-  return rules;
 }
 
-/** 重写规则文件(保留各规则原 id,不再按行号重排——修连续 rm 漏删)。有 pathPrefix 才追加第 5 列。 */
+/** 重写规则文件(保留各规则原 id,不按行号重排)。dist/ 与 cdp.js 同级必然存在,无需建目录。 */
 function writeRules(rules: FoldRule[]): void {
-  const p = foldsPath();
-  mkdirSync(dirname(p), { recursive: true });
   const text = rules.map(r =>
-    r.pathPrefix
-      ? `${r.id}\t${r.domain}\t${r.selector}\t${r.note}\t${r.pathPrefix}`
-      : `${r.id}\t${r.domain}\t${r.selector}\t${r.note}`,
+    `${r.id}\t${r.domain}\t${r.path}\t${r.selector}\t${r.note}`,
   ).join('\n') + '\n';
-  writeFileSync(p, text, 'utf8');
+  writeFileSync(foldsPath(), text, 'utf8');
 }
 
-/** 追加一条持久规则。id = max(现有 id)+1(单调递增,不重排)。pathPrefix 可选。 */
-export function addFold(domain: string, selector: string, note: string, pathPrefix?: string): FoldRule {
+/** 追加一条持久规则。id = max(现有 id)+1(单调递增,不重排)。path 空 = 不限定。 */
+export function addFold(domain: string, path: string, selector: string, note: string): FoldRule {
   const rules = loadFolds();
   const id = rules.reduce((m, r) => Math.max(m, r.id), 0) + 1;
-  const rule: FoldRule = { id, domain, selector, note, pathPrefix: pathPrefix || undefined };
+  const rule: FoldRule = { id, domain, path, selector, note };
   rules.push(rule);
   writeRules(rules);
   return rule;
@@ -134,15 +126,13 @@ export function removeFold(id: number): boolean {
   return true;
 }
 
-/** 筛选匹配某 hostname(+pathname)的规则:domainMatch 外,有 pathPrefix 的再要求 pathname 前缀命中。 */
+/** 筛选匹配某 hostname(+pathname)的规则:domainMatch 外,path 再 glob 命中。 */
 export function matchFolds(hostname: string, pathname?: string): FoldRule[] {
+  const p = pathname || '';
   return loadFolds().filter(r => {
     if (!domainMatch(r.domain, hostname)) return false;
-    if (r.pathPrefix) {
-      const p = pathname || '';
-      // pathname 为空(非法 url/about:blank)时,带 pathPrefix 的规则不命中(避免误折)。
-      return p.startsWith(r.pathPrefix);
-    }
+    // pathname 为空(非法 url/about:blank)时,带 path 的规则不命中(避免误折)。
+    if (r.path) return p !== '' && pathMatch(r.path, p);
     return true;
   });
 }
