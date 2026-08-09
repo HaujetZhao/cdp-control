@@ -48,7 +48,7 @@ dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建�
 - `buildView(root,{visibleOnly,viewport,folds})` 被 view/feedback-collect/recoverRef/find-entry 共享。
 - **只追加 ref 到 `__cdpRefs`,不重置**:整页 `view` 才从 0 清空;其余只追加(增量号)。
 - `viewport:true` 算 `isInViewport` 存 `node.view`,输出 `[ref=i·屏]`/`[ref=i]`。
-- **fold 折叠**:持久规则(`folds`,Node 按 hostname 过滤)+会话临时(`__cdpFolds`)合并,`el.matches(selector)` 判定。命中**非根**元素(depth>0)登记 ref、`node.fold=备注`、`kids=[]` 不递归;**根不折叠**(否则 `view --ref` 展开折叠容器时根本身又被折叠);嵌套折叠自然支持。
+- **fold 折叠**:持久规则(`folds`,Node 按 hostname 过滤)+会话临时(`__cdpFolds`)合并,`el.matches(selector)` 判定。命中**非根**元素(depth>0)登记 ref、`node.fold=备注`、`kids=[]` 不递归;**根不折叠**(否则 `view <ref>` 展开折叠容器时根本身又被折叠);嵌套折叠自然支持。
 - **shadow host 占位**:带 `shadowRoot` 的 Element 无条件登记 ref+`isContent=true`(常无 light 文本)。`view-format.walk` 对 `depth>0 && shadow && ref` 输出 `<tag>[shadow] [ref=N]` 不展开子树,根正常走子树。
 - **表单采集**:simplify 对 INPUT/TEXTAREA 设 `inputInfo={type,value,placeholder}`(value 截 40),formatView 输出 `input[type=text value="..." placeholder="..."]`,agent 不必 eval。
 - **导出**:`strip`/`ownElText`(元素自身直接文本,locate/find 用它)/`subtreeText`(穿透 shadow,备用)/`childrenOf`(穿透 shadow 取子)/`isInViewport`/`buildView`。

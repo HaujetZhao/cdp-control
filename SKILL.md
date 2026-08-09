@@ -13,7 +13,7 @@ description: 控制本地浏览器——列出/打开/关闭/导航页面、提�
 
 铁律:
 - `list`/`open` 自动确保浏览器就绪(CDP 未起自动启动)。
-- **首次看页面必须完整 `view`**(别 `| head`,别 `--visible-only`);view 输出**严禁 head/sed/grep 过滤**,局部只能用 `--ref/--ancestor/--selector-file/--visible-only`。
+- **首次看页面必须完整 `view`**(别 `| head`,别 `--visible-only`);view 输出**严禁 head/sed/grep 过滤**,局部只能用 `view <ref>`/`--ancestor/--selector-file/--visible-only`。
 - 定位一律从 view 已有 ref 出发,**严禁 JS eval 探查 DOM**;要 selector(如写 fold 规则)手动写。
 - 多步交互写成 `.js` 脚本用 `run` 一次执行,省模型往返。
 
@@ -39,8 +39,8 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 | 参数 | 作用 |
 |---|---|
 | (默认) | 整页 |
+| `<ref>`(位置参) | 以某 ref 元素为树根(与 --selector-file 互斥) |
 | `--selector-file <f>` | 筛选指定区域(selector 手动写) |
-| `--ref <n>` | 以某 ref 元素为树根(与 --selector-file 互斥) |
 | `--ancestor <k>` | 从锚点向上爬 k 层父级再建树(把内容叶子抬到区域容器) |
 | `--visible-only` | 只看当前视口内元素(**仅"确认当前屏",绝不做首次整页感知**) |
 | `--scroll-to-load` | 滚动触发懒加载再建树,默认上下各一屏回原位。**整页完整 view 首次自动启用**(同页刷新前只滚一次),配合下列参数可滚更远 |
@@ -55,12 +55,12 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 **易错**:selector 一律从文件读(Git Bash 会改行首特殊字符);`eval` 里 `(() => ({...}))()` 返回空对象——箭头+对象字面量需显式 `return` 或写 `(function(){ return {...}; })()`。
 
 **操作(ref)**:
-- 整页 view 里 `[shadow]` 占位行(如 `bili-comments[shadow] [ref=N]`)是 Web Component 容器,内容在 shadow DOM,整页只占位不深入。**看内容用 `view --ref N`**;首屏空壳则 `view --ref N --scroll-to-load`。CSS 穿不透 shadow,操作一律用 ref。
+- 整页 view 里 `[shadow]` 占位行(如 `bili-comments[shadow] [ref=N]`)是 Web Component 容器,内容在 shadow DOM,整页只占位不深入。**看内容用 `view N`**;首屏空壳则 `view N --scroll-to-load`。CSS 穿不透 shadow,操作一律用 ref。
 - 操作优先 `[ref=i]`(`click --ref i`,零 selector,shadow 内也能定位)。
 - ref 是会话句柄,页面刷新失效、每次 view 重建。**每回合先 view 拿 ref 再操作**。
 
 **区域定位(想 view 一块"语义区域")**:
-- 同会话:`view --ref <n> --ancestor <k>`——拿区域内任一叶子 ref 向上爬 k 层到容器。
+- 同会话:`view <n> --ancestor <k>`——拿区域内任一叶子 ref 向上爬 k 层到容器。
 - 刷新后仍可用:把区域容器 selector(手动写,如 `#id` 或 fold 规则验证过的锚点)写文件,`view --selector-file <f>` 复用。
 - 多块布局(如知乎 Q&A 是"问题块+回答列"两个兄弟块、**没有共同容器**):分块各做一次 ref+ancestor 再并列看,别绕回 JS 探查。
 
@@ -71,7 +71,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 - `<域名>` 通配对齐 uBlock:精确(`www.bilibili.com`)/子域(`*.zhihu.com`)/entity(`zhihu.*`);空=不匹配。
 - `<path>` glob:`*` 含 `/`,如 `/video/*`;空=不限。同域名不同页结构不同,只用域名会跨页错位,用 path 限定。
 - 示例:`12\twww.bilibili.com\t/video/*\t#biliMainHeader\t顶栏`(tab 分隔,selector 可含空格)。
-- 折叠判定:命中 `el.matches(selector)` 的非根区域折叠成一行。**展开**:`view --ref <折叠容器 ref>`;**嵌套天然支持**。fold 取代旧 stash。
+- 折叠判定:命中 `el.matches(selector)` 的非根区域折叠成一行。**展开**:`view <折叠容器 ref>`;**嵌套天然支持**。fold 取代旧 stash。
 
 ## 操作后自动反馈(click/fill/focus/hover/press-key 默认开启)
 
@@ -79,7 +79,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 - **内容**:`页面变化 · 新增内容:`(重复块标 `(重复 N 次,已折叠)`)、`页面变化 · 文本变化:`(逐条 `旧 → 新`)。observer **穿透 shadow**、**跳过 video/audio/canvas 子树与连续播放时间戳**(01:55→01:56 折叠,不淹没点赞数等真变化)。操作行同附 `，该元素的 selector 为: <唯一selector>`,后续优先用 selector 而非 ref。
 - **tab**:操作前后 diff,点 `target=_blank` 新开 tab 直接报 `新开 tab: <title> <url> [<targetId>]`,直接 `view --target <targetId>` 继续。
 - `--no-feedback`:关闭。`--feedback-delay <ms>`:自定义等待(默认 1000)。
-- **反馈树 ref 是增量号,不顶旧 ref**:新增内容 `[ref]` 从当前已有号递增,可操作新增内容,**原整页 ref 仍有效**。增量 ref 适合即时 click/fill;要 `view --ref` 回看先整页 view。
+- **反馈树 ref 是增量号,不顶旧 ref**:新增内容 `[ref]` 从当前已有号递增,可操作新增内容,**原整页 ref 仍有效**。增量 ref 适合即时 click/fill;要 `view <ref>` 回看先整页 view。
 - 脚本:`cdp.click(target, arg, {noFeedback?, feedbackDelay?})` → `{ok, tag, feedback:{lines, summary, tabs:{opened, closed}}}`。
 
 ## ref 失效自动自愈(所有 ref 命令)
@@ -101,7 +101,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 | `fetch <url>` | 一次性抓取:临时开 tab→等渲染→view(整页首次自动 scroll-to-load)→关 tab,输出文本+结构含 `[ref]`,不残留 tab |
 | `navigate <url>` | 导航 |
 | `eval "<js>"` | 执行 JS,返回 returnByValue 值 |
-| `view [...]` | 整页文本+结构紧凑树。首次必须完整 view(禁 --visible-only/截断)。参数见上表(锚点互斥:--ref 优先、其次 --selector-file、缺省 body)。命中 fold 规则输出 `▸ [ref=i] <备注>`;视区标 `[ref=i·屏]`;INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]` |
+| `view [<ref>] [...]` | 整页文本+结构紧凑树。首次必须完整 view(禁 --visible-only/截断)。参数见上表(锚点互斥:位置 ref 优先、其次 --selector-file、缺省 body)。命中 fold 规则输出 `▸ [ref=i] <备注>`;视区标 `[ref=i·屏]`;INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]` |
 | `click <sel> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>]` | 点击(selector 或 `--ref i`,穿透 shadow)。默认带反馈 |
 | `fill <sel> <值> [--ref <n>] [--ancestor <k>] [...]` | 填输入框并派发 input/change。默认带反馈 |
 | `focus <sel> [--ref <n>] [--ancestor <k>] [...]` | 聚焦元素。默认带反馈 |
@@ -122,7 +122,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 ```bash
 cdp open "https://www.zhihu.com/"                 # 开页
 cdp view --target zhihu                           # 看整页拿 ref
-cdp view --ref 53 --ancestor 4 --target zhihu     # 从叶子 ref 爬到区域容器
+cdp view 53 --ancestor 4 --target zhihu     # 从叶子 ref 爬到区域容器
 cdp click --ref 44 --target zhihu                 # 点卡片/链接;反馈报"新开 tab"落点
 cdp click --ref 36 --target "BV1..."              # 点赞;反馈回文本变化(42→43)
 ```
