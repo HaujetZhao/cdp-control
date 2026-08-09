@@ -12,7 +12,7 @@ import { ensureBrowser } from './browser';
 
 const api = { ...coreApi, logs, ensure: ensureBrowser };
 
-/** 读 --xpath-file/--selector-file 内容(去首尾空白)。 */
+/** 读 --selector-file 内容(去首尾空白)。 */
 function readOptFile(file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
   try { return readFileSync(file, 'utf8').trim(); }
@@ -87,19 +87,17 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file/--xpath-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
-  .option('--ref <n>', '按 tree 输出的 ref 序号建树根(与 --selector-file/--xpath-file 二选一)')
-  .option('--ancestor <n>', '从建树根向上爬 N 层父级再建树(默认 0;与 --ref/selector/xpath 任一锚点配合)')
+targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
+  .option('--ref <n>', '按 tree 输出的 ref 序号建树根(与 --selector-file 二选一)')
+  .option('--ancestor <n>', '从建树根向上爬 N 层父级再建树(默认 0;与 --ref/selector 任一锚点配合)')
   .option('--selector-file <file>', '从文件读 selector')
-  .option('--xpath-file <file>', '从文件读 xpath')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
   .option('--scroll-to-load', '先上下滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动,防 agent 找不到未加载区域')
   .action(async (opts) => {
     const sel = readOptFile(opts.selectorFile);
-    const xp = readOptFile(opts.xpathFile);
-    if (opts.ref != null && (sel || xp)) throw new Error('--ref 与 --selector-file/--xpath-file 只能选其一');
+    if (opts.ref != null && sel) throw new Error('--ref 与 --selector-file 只能选其一');
     const r = await api.tree(await needTarget(opts.target), {
-      selector: sel, xpath: xp, visibleOnly: !!opts.visibleOnly,
+      selector: sel, visibleOnly: !!opts.visibleOnly,
       ref: opts.ref != null ? Number(opts.ref) : undefined,
       ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
       scrollToLoad: !!opts.scrollToLoad,
@@ -108,14 +106,13 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
     console.log(r.lines.join('\n'));
   });
 
-targetCmd('locate', '从 tree 的 ref 序号反查稳定定位器(selector + xpath)。ref 是会话句柄,页面刷新后失效;此命令把 ref 翻译成刷新后仍可用的定位器,供 tree --selector-file/--xpath-file 复用')
+targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是会话句柄,页面刷新后失效;此命令把 ref 翻译成刷新后仍可用的 selector,供 tree --selector-file 复用')
   .argument('<n>', 'tree 输出的 ref 序号')
   .option('--ancestor <n>', '向上爬 N 层父级再定位(默认 0;把内容叶子抬升到语义区域容器)')
   .action(async (n, opts) => {
     const r = await api.locate(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
     console.log(`[${r.tag}] "${r.text || ''}"`);
     console.log(`  selector: ${r.selector || '(无)'}`);
-    console.log(`  xpath:    ${r.xpath || '(无)'}`);
   });
 
 targetCmd('stash', '类比 git stash:按 ref 把整页 tree 的某区域暂存藏起(之后的整页 tree 不再输出,可 pop 恢复)。用法:stash <refs...> [--ancestor] 暂存;stash list 列出;stash pop [i] 恢复第 i 个(默认最新);stash clear 清空')

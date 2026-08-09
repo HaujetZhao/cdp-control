@@ -1,7 +1,7 @@
 /**
- * genSel.ts — 为 DOM 元素生成唯一选择器 / 绝对 xpath。
- * 被 get-focus / xpath / locate 复用,打包打进各入口。
- * genXpath 仅覆盖 light DOM(shadow 内元素的 parentElement 在 shadow 边界为 null,路径断)。
+ * genSel.ts — 为 DOM 元素生成唯一 CSS 选择器。
+ * 被 get-focus / locate 复用,打包打进各入口。
+ * 仅覆盖 light DOM(shadow 内元素的 parentElement 在 shadow 边界为 null,路径断在 host 锚定)。
  */
 
 /** 生成唯一 CSS 选择器;无效元素返回 null。 */
@@ -22,30 +22,4 @@ export function genSel(el: Element | null): string | null {
     cur = parent;
   }
   return path.join(' > ');
-}
-
-/**
- * 生成绝对 xpath(/html/body/div[1]/div[2]/…),每步 tag + 兄弟序号(1 基)。
- * 与 DevTools "Copy full XPath" 同构,喂回 tree --xpath-file 可定位同一元素(刷新后仍可用)。
- * 局限:shadow DOM 内元素 parentElement 在边界为 null,路径断在该处;已知可接受。
- */
-export function genXpath(el: Element | null): string {
-  if (!el) return '';
-  const parts: string[] = [];
-  let cur: Element = el;
-  let idAnchored = false;
-  for (;;) {
-    // 就近 id 锚定:遇到带 id 的祖先(含 el 自身)就用 `//*[@id=…]`,不再向上拼位置链。
-    // id 唯一、不随重排漂移,比全位置路径(html/body/div[1]/…)稳得多,也短。
-    const id = cur.getAttribute('id');
-    if (id) { parts.unshift(`*[@id="${id}"]`); idAnchored = true; break; }
-    const parent: Element | null = cur.parentElement;
-    if (!parent) { parts.unshift(cur.tagName.toLowerCase()); break; } // 顶层(html)不带序号
-    // xpath `tag[n]` 语义是"同名兄弟序号"(跳过中间其它标签),不是"第 n 个元素子"。
-    const same = Array.from(parent.children).filter(c => c.tagName === cur.tagName);
-    const idx = same.indexOf(cur) + 1;
-    parts.unshift(`${cur.tagName.toLowerCase()}[${idx}]`);
-    cur = parent;
-  }
-  return (idAnchored ? '//' : '/') + parts.join('/');
 }

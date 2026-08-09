@@ -24,7 +24,7 @@ function read(name: string): string {
 
 /**
  * 生成注入表达式。
- * @param name 注入入口名(对应 dist/inject/<name>.js),如 'tree' / 'xpath' / 'click'。
+ * @param name 注入入口名(对应 dist/inject/<name>.js),如 'tree' / 'click'。
  * @param args 可选参数对象,序列化为 JSON 前置到 `var __CDP_ARG__`。无参数则不前置。
  */
 export function inject(name: string, args?: unknown): string {
@@ -33,13 +33,13 @@ export function inject(name: string, args?: unknown): string {
   return `var __CDP_ARG__ = ${JSON.stringify(args)};\n${code}`;
 }
 
-/** 结构树入口(唯一感知命令)。锚点互斥:ref 优先,其次 selector,最后 xpath,缺省整页 body;
+/** 结构树入口(唯一感知命令)。锚点互斥:ref 优先,其次 selector,缺省整页 body;
  * visibleOnly 只输出视口内可见;ancestor 为统一爬父修饰符(对任一锚点生效)。 */
-export function treeExpr(selector?: string, xpath?: string, visibleOnly?: boolean, ref?: number, ancestor?: number, scrollToLoad?: boolean): string {
-  return inject('tree', { selector, xpath, visibleOnly: visibleOnly || undefined, ref, ancestor, scrollToLoad: scrollToLoad || undefined });
+export function treeExpr(selector?: string, visibleOnly?: boolean, ref?: number, ancestor?: number, scrollToLoad?: boolean): string {
+  return inject('tree', { selector, visibleOnly: visibleOnly || undefined, ref, ancestor, scrollToLoad: scrollToLoad || undefined });
 }
 
-/** locate:按 tree 的 ref 反查稳定定位器(selector + xpath),可选 --ancestor 爬父。 */
+/** locate:按 tree 的 ref 反查稳定 CSS selector,可选 --ancestor 爬父。 */
 export function locateExpr(ref: number, ancestor?: number): string {
   return inject('ref', { ref, ancestor });
 }

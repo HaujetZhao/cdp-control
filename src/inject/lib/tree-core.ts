@@ -98,7 +98,7 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
       text, inter, ref, inView, view,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
-      // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 xpath 定位
+      // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 ref 定位
       shadow: isEl && !!(el as Element).shadowRoot,
       kids: [], size: 0, hasText: false, agg: false,
     };
