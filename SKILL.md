@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄),selector 是后台匹配(刷新后兜底)。** `tree --ref <n> --ancestor <k>` 查看局部;`locate <ref>` 从 ref 反查 selector 用作刷新后定位;`find --text "关键词"`(类 uBlock `:has-text()`)按文本找元素登记新 ref,ref 失效后不必整页重 tree。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**任何用 ref 的命令(click/fill/focus/hover/locate/fold)ref 失效都自动自愈**——沿祖先链 tree 最近存活容器给你新 ref;打错号(从未存在)直接报、不误导成"页面刷新";整链失效才提示重新 tree。长页噪声用 `fold`(类 uBlock 的持久折叠规则:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄)。** `tree --ref <n> --ancestor <k>` 查看局部。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**任何用 ref 的命令(click/fill/focus/hover)ref 失效都自动自愈**——沿祖先链 tree 最近存活容器给你新 ref;打错号(从未存在)直接报、不误导成"页面刷新";整链失效才提示重新 tree。长页噪声用 `fold` 持久规则(手动编辑 `$CDP_USER_DATA/folds.txt`,类 uBlock:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -12,13 +12,12 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 ## 核心模型(三件事)
 
 1. **tree = 感知**:整页 body 建为紧凑树(文本+结构),给每个可操作元素标 `[ref=i]`。**首次看页面必须完整 `tree`**(别 `| head` 截断,别 `--visible-only`)。
-2. **ref = 操作索引**:会话句柄,存 `window.__cdpRefs`,刷新失效、每次 tree 重排。操作一律优先 `--ref i`(穿透 shadow)。**ref 失效自动自愈**(任何 ref 命令,见下);ref 失效后按文本重定位用 `find --text`(类 uBlock `:has-text()`,见下)。
-3. **selector = 后台匹配**:刷新后 ref 失效,用 `locate <ref>` 把 ref 翻译成 selector 喂回 `tree --selector-file` 复用。
+2. **ref = 操作索引**:会话句柄,存 `window.__cdpRefs`,刷新失效、每次 tree 重排。操作一律优先 `--ref i`(穿透 shadow)。**ref 失效自动自愈**(任何 ref 命令,见下)。
 
 重要原则:
-- `list` 自动确保浏览器就绪(CDP 未起则启动)并列出 tab,无需先 `ensure` 再 `list`。
+- `list` 自动确保浏览器就绪(CDP 未起则启动)并列出 tab,无需单独命令。
 - 打开页面后,优先 `tree` 感知整页拿 ref;**tree 输出严禁用 head/sed/grep 过滤**,局部只能用 `--ref/--ancestor/--selector-file/--visible-only`。
-- selector 只能用 `locate <ref>` 获取,**严禁 JS eval 探查 DOM**(从 tree 已有的 ref 出发定位,别摸原始 HTML)。
+- 定位一律从 tree 已有的 ref 出发,**严禁 JS eval 探查 DOM**(别摸原始 HTML);需要 selector(如写 fold 规则)时手动写。
 - 多步交互优先写成 `.js` 脚本,用 `node "<本 SKILL 所在目录>/dist/cdp.js" run 脚本.js` 一次执行,省模型 API 往返。
 
 ## When to Use
@@ -26,14 +25,9 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 - 读/操作浏览器里已手动打开的页面(知乎、财联社这种 tab),用 `tree` 感知。
 - 多步自动化(填表、爬取、提交)——**写脚本文件 + run** 首选,省往返、可复用、易改。
 
-## 调用前唯一入口:`ensure`
+## 调用前唯一入口
 
-```bash
-node "<本 SKILL 所在目录>/dist/cdp.js" ensure          # 确保浏览器已通过 CDP 就绪(不导航)
-node "<本 SKILL 所在目录>/dist/cdp.js" ensure --url "<网页地址>"   # 开浏览器并直接打开该页
-```
-
-`ensure` 内部自动:1) 检查 CDP 端口(默认 9222)是否就绪——已就绪直接继续;2) 没就绪 → 自动探测默认浏览器(优先 Edge,其次 Chrome);3) 用**独立用户数据目录**启动(默认 `~/.cdp-browser`,环境变量 `CDP_USER_DATA` 覆盖);4) 轮询等待 ready(最多 ~15s),给了 `--url` 则打开。**冷启动**(本次由 ensure 启动)复用首个空白 tab 导航;**热启动**(已就绪)新开 tab。
+浏览器就绪由 `list`/`open` 自动确保:CDP 未起则自动探测默认浏览器(优先 Edge,其次 Chrome),用**独立用户数据目录**启动(默认 `~/.cdp-browser`,环境变量 `CDP_USER_DATA` 覆盖),轮询等待 ready(最多 ~15s)。**冷启动**(本次启动)复用首个空白 tab 导航;**热启动**(已就绪)新开 tab。无需单独命令。
 
 ## 脚本调用方式
 
@@ -63,7 +57,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | 参数 | 作用 |
 |---|---|
 | (默认) | 整页 |
-| `--selector-file <f>` | 筛选指定区域(刷新后用 locate 得到的 selector 复用) |
+| `--selector-file <f>` | 筛选指定区域(selector 手动写,如 fold 规则或 `#id` 稳定锚点) |
 | `--ref <n>` | 以某 ref 的元素为树根(与 --selector-file 互斥) |
 | `--ancestor <k>` | 从锚点(任意)向上爬 k 层父级再建树;多与 --ref 配合把"内容叶子"抬到"区域容器" |
 | `--visible-only` | 筛选当前视口内可见元素(**仅"看当前屏上有啥",绝不做首次整页感知**) |
@@ -90,42 +84,16 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 
 **区域定位(想 tree 一块"语义区域"而不是单个叶子)**:
 - **同会话立即看**:`tree --ref <n> --ancestor <k>`——拿区域内任一内容叶子的 ref,向上爬 k 层到容器直接建树。
-- **刷新后仍可用(更常用)**:`locate <n> [--ancestor <k>]` 把 ref 翻译成**稳定 CSS selector**,写进文件后 `tree --selector-file` 复用。ref 刷新即失效,locate 得到的 selector 不依赖 ref、刷新后照样局部 tree:
-  ```
-  tree --target ...            # 1. 看整页,记下区域里某个内容叶子的 ref(如 [ref=53])
-  cdp locate 53 --ancestor 4   # 2. 反查该区域容器的 selector(直接贴出来)
-  cdp tree --selector-file f   # 3. 刷新后,把 selector 写入 f,照样定位这块区域
-  ```
-  selector 是 id 锚定 + `:nth-of-type` 链,可读、较稳。若页面改版后定位器失效,重新 `tree` 拿 ref 再 `locate` 一次即可。
-- **shadow DOM 元素的 locate**:目标在 shadow 内时,标准 CSS selector 在 document 上查不到(`querySelector` 返 null)。locate 会检测到并改输出 `shadow 链:hostSel >>> innerSel >>> ...`(`>>>` 是本工具自定义的 shadow 穿透符),把这条链写进 selector-file,`tree --selector-file` 能分段穿透 shadowRoot 命中。操作(点击/填值)则继续用 `--ref`(操作命令穿透 shadow)。
-- **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,或各自 `locate`,再并列看。别因此绕回 JS 探查。
+- **刷新后仍可用**:把区域容器的 selector(手动写,如 `#id` 或 fold 规则里验证过的锚点)写进文件,`tree --selector-file <f>` 复用——不依赖 ref,刷新后照样局部 tree。
+- **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,再并列看。别因此绕回 JS 探查。
 
-**按文本/selector 重定位元素(`find`,类 uBlock `:has-text()`)**:ref 失效或肉眼找元素费劲时,直接按文本关键词搜元素拿新 ref,不必整页重 tree + 肉眼找:
-```
-cdp find --text "28 条评论" --target ...     # 整页穿透 shadow 搜"元素自身直接文本含关键词"的元素,返回 [ref=N] <一行 tree>
-cdp find --text "登录" --all --target ...    # --all 收集全部命中(默认首个)
-cdp find --selector "#biliMainHeader" --target ...   # 或直接按 selector 命中(支持 >>> shadow 链)
-cdp find --text "评论" --ancestor 2 --target ...     # 命中后爬父到区域容器(与 tree/locate 一致)
-```
-命中**追加**进 `__cdpRefs`(不顶旧 ref,原整页 ref 依旧有效)。`--text` 是主战场:页面重渲染后某个按钮的 ref 失效,`find --text <按钮文字>` 直接拿新 ref 接着操作,省去整页重 tree。深度上限 + 文本截断防深层 shadow 卡死;命中即止(不深入其子,避免父子重复占满结果)。
+**整页 tree 去噪(`fold` 持久规则,类 uBlock Origin)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `fold` 把这些区域**折叠成一行**(输出 `▸ [ref=i] <备注>`,不展开子树但保留 ref),跨会话持久——下次打开同站点自动折叠。
 
-**整页 tree 去噪(`lineage` 透视 + `fold` 持久规则,类 uBlock Origin)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `fold` 把这些区域**折叠成一行**(输出 `▸ [ref=i] <备注>`,不展开子树但保留 ref),跨会话持久——下次打开同站点自动折叠。
-
-**主路径:lineage 看祖先链挑稳定锚点 → fold add 写 uBlock 式短规则**。`fold --ref --save` 让工具用 genSel 猜一个 selector,但有时你想要更短更稳的语义锚点(如 `#biliMainHeader` 而非某个 `data-v-xxx`)。`lineage` 把目标元素从 `<html>` 到自身的祖先链摊开,每层紧凑列出 tag/id/class/语义 data-*/aria/role,你一眼挑出最稳的层手写规则:
-```
-cdp tree --target ...                       # 1. 看整页,记下噪声区域里某个内容叶子的 ref(如顶栏 logo [ref=0])
-cdp lineage 0 --ancestor 3 --target ...     # 2. 列祖先链,挑稳定锚点(如 #biliMainHeader)——比 genSel 猜的更可控
-cdp fold add www.bilibili.com #biliMainHeader 顶栏 --path /video --target ...  # 3. 手写持久规则(uBlock 式短 selector)
-cdp tree --target ...                       # 4. 整页 tree 顶栏折叠成 ▸ [ref=0] 顶栏
-cdp fold list --target ...                  # 5. 列持久 + 会话级临时折叠规则(带 id + path 列)
-cdp fold rm <id> --target ...               # 6. 删持久规则(按 id,其它 id 不重排)
-```
-- **`lineage <n> [--ancestor <k>]`**:输出祖先链缩进树(html 在顶,目标元素在最深并标 `[ref=N]`),末尾附 genSel 的建议 selector 作参考。挑锚点优先级:id > 测试锚点(data-testid 等)> 语义 data-* > aria-label/role > 唯一 class。
-- **持久规则**存在 `$CDP_USER_DATA/folds.txt`(默认 `~/.cdp-browser/`),五列 tab:`<id>\t<域名>\t<selector>\t<备注>[\t<pathPrefix>]`。域名支持精确(`www.bilibili.com`)与通配(`*.zhihu.com`)。
-  - **id 稳定**:`addFold` 用 max(id)+1 单调递增,`rm <id>` 删后**其它 id 不重排**(连续 rm 不漏删)。旧三列格式文件读时自动迁移补 id。
-  - **`--path <前缀>` 限定页面路径**(借鉴 uBlock `:matches-path`):同域名不同页(B站首页 vs 视频页、知乎首页 vs 回答页)DOM 结构不同,只按域名存的规则会在别的页命中错位元素。加 `--path /video` 后该规则只在 pathname 以 `/video` 开头的页命中。无 `--path` 的规则不限路径。
-  - 也可从 ref 落盘:`fold --ref <n> [备注] --save [--path <前缀>]`(用 genSel 推 selector + 当前 hostname);或 `fold add <域名> <selector> <备注> [--path <前缀>]` 手写。
-- **会话级临时折叠**:`fold --ref i [备注]`(不带 `--save`),只本次会话生效、刷新清空。
+**规则手动编辑**:持久规则存 `$CDP_USER_DATA/folds.txt`(默认 `~/.cdp-browser/`),五列 tab:`<id>\t<域名>\t<selector>\t<备注>[\t<pathPrefix>]`。域名支持精确(`www.bilibili.com`)与通配(`*.zhihu.com`)。tree 时自动加载生效。
+- **`<id>` 单调递增不重排**(修连续 rm 漏删),新规则 id 取现有 max+1。旧三列格式文件读时自动迁移补 id。
+- **`<pathPrefix>` 限定页面路径**(借鉴 uBlock `:matches-path`):同域名不同页(B站首页 vs 视频页、知乎首页 vs 回答页)DOM 结构不同,只按域名存的规则会在别的页命中错位元素。加 `\t/video` 后该规则只在 pathname 以 `/video` 开头的页命中。无 pathPrefix 的规则不限路径。
+- 示例行:`12\twww.bilibili.com\t#biliMainHeader\t顶栏\t/video`(列间用 tab,selector 可含空格)。
+- **折叠判定**:tree 时命中 `el.matches(selector)` 的区域(非根元素)折叠成一行 `▸ [ref=i] <备注>`。
 - **展开折叠区域**:`tree --ref <折叠容器的 ref>` 就是普通局部 tree。**嵌套天然支持**:展开顶栏后,里面命中的子折叠规则(如搜索区)仍是折叠态。
 - `fold` 取代了旧的 `stash`(stash 已删除)。
 
@@ -137,18 +105,18 @@ cdp fold rm <id> --target ...               # 6. 删持久规则(按 id,其它 i
 - **tab 变化**:操作前后 diff `/json/list`。点 `target=_blank` 链接新开 tab 后,反馈直接告诉你 `新开 tab: <title> <url> [<targetId>]`,直接 `tree --target <targetId>` 继续,不必先 `list`。
 - **`--no-feedback`**:关闭(不等待、不观察、不 diff tab),高频操作想快时用。
 - **`--feedback-delay <ms>`**:自定义等待时长,默认 1000。
-- **反馈树 ref 是增量号,不顶掉旧 ref**:反馈新增内容里的 `[ref]` 从当前已有号继续递增(整页 tree 才从 0 重置)。反馈后既可用反馈树的增量 ref 操作新增内容(如点刚加载的"显示更多"),**原整页 ref 依旧有效**。注意:增量 ref 适合即时 `click`/`fill`;要 `tree --ref` 局部回看/`locate` 反查稳定定位器时,请先用整页 `tree` 重建 ref。
+- **反馈树 ref 是增量号,不顶掉旧 ref**:反馈新增内容里的 `[ref]` 从当前已有号继续递增(整页 tree 才从 0 重置)。反馈后既可用反馈树的增量 ref 操作新增内容(如点刚加载的"显示更多"),**原整页 ref 依旧有效**。注意:增量 ref 适合即时 `click`/`fill`;要 `tree --ref` 局部回看时,请先用整页 `tree` 重建 ref。
 - 脚本 API:`cdp.click(target, arg, { noFeedback?, feedbackDelay? })` → 返回 `{ok, tag, feedback:{lines, summary, tabs:{opened, closed}}}`(见下方脚本表)。
 
 ## ref 失效自动自愈(所有 ref 命令)
 
-任何用 `--ref` 的命令——`click`/`fill`/`focus`/`hover`/`locate`/`fold`——遇到 ref 失效都**自动自愈**,你不用猜容器:
+任何用 `--ref` 的命令——`click`/`fill`/`focus`/`hover`——遇到 ref 失效都**自动自愈**,你不用猜容器:
 
 - **失效但祖先还活着**:沿 ref 的 `parentRef` 链向上找最近一个仍 connected 的容器,以它为根局部 tree,直接回报更新后的内容 + 新 ref,提示你用新 ref 重试。你**不需要**判断"该 tree 哪个更高层级的容器"——工具定位到最近存活祖先。
 - **打错号(从未存在)**:ref 越界或登记表里没这个槽,工具直接报 `ref=N 从未存在(当前最大 ref=M),检查 ref 号`——**不**走自愈、**不**误导成"页面刷新"(避免你白去 reload)。
 - **整链失效(页面刷新/重建)**:祖先链全部 detached,才提示`整条祖先链均已失效,请重新 tree 拿新 ref`。
 
-> 三态由注入侧统一返回(`{ok:false, refInvalid:true, recovered:{never|rootRef,lines|null}}`),CLI 共享同一套打印,click 系与 locate/fold 行为一致。
+> 三态由注入侧统一返回(`{ok:false, refInvalid:true, recovered:{never|rootRef,lines|null}}`),CLI 共享同一套打印。
 
 ## Quick Reference
 
@@ -156,17 +124,12 @@ cdp fold rm <id> --target ...               # 6. 删持久规则(按 id,其它 i
 
 | 子命令 | 作用 |
 |---|---|
-| `ensure [--url <url>]` | 确保浏览器已打开(自动探测 Edge/Chrome 启动 CDP),可选 --url 直接导航 |
 | `list` | 确保浏览器就绪(CDP 未起自动启动)并列出所有 page tab,先报 tab 总数 |
 | `open <url>` | 新开一个 tab,返回 targetId |
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 滚动触发懒加载再建树(默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]`。**INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]`**(空值省略),看得到表单内容不必 eval |
-| `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定 CSS selector**。ref 是会话句柄,刷新后失效;locate 把它翻译成刷新后仍可用的 selector,供 `tree --selector-file` 复用(可选 --ancestor 把叶子抬到区域容器)。目标在 **shadow DOM** 内时改输出 `hostSel >>> innerSel >>> ...` 穿透链(标准 CSS 穿不透 shadow),写进 selector-file 仍可复用 |
-| `find --text "<关键词>" [--ancestor <k>] [--all] [--target]` / `find --selector "<css>" [--ancestor <k>] [--target]` | **按文本或 selector 找元素,登记新 ref 返回(类 uBlock `:has-text()`)**。ref 失效后不必整页重 tree:`find --text "28 条评论"` 直接拿新 ref。`--text` 整页穿透 shadow 搜"**元素自身直接文本**含关键词"的元素(用自身文本而非子树,才能命中"首页"那个 a/span 而非包含它的祖先 div);`--selector` 走 `document.querySelector`(支持 `>>>` shadow 链);`--ancestor` 命中后爬父到区域容器;`--all` 收集全部命中(默认首个)。命中追加进 `__cdpRefs`(**不顶旧 ref**),输出 `[ref=N] <该元素的一行 tree 输出>` |
-| `lineage <n> [--ancestor <k>] [--target]` | 列目标元素(爬 ancestor 后)从 html 到自身的**祖先链**:每层 tag/id/class/语义 data-* /aria/role,末尾附 genSel 建议 selector。挑稳定锚点手写 `fold add` 这种 uBlock 式短规则(如 `#biliMainHeader`),比 `fold --ref --save` 让工具猜更可控 |
-| `fold add <域名> <selector> <备注> [--path <前缀>]` / `fold list` / `fold rm <id>` / `fold --ref <n> [备注] [--ancestor <k>] [--save] [--domain <d>] [--path <前缀>] [--target]` | **类 uBlock 折叠规则**:持久规则存 `$CDP_USER_DATA/folds.txt`(五列:id/域名/selector/备注/pathPrefix),tree 时命中区域折叠成一行 ▸,跨会话自动生效。`add`/`--ref --save` 落盘;`--path` 限定页面 pathname 前缀(修同域名跨页错位);`rm <id>` 按 id 删(其它 id 不重排,连续 rm 不漏删);`list` 列持久+临时。展开用 `tree --ref <折叠容器 ref>` |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i`,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈 |
 | `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 填输入框并派发 input/change。默认带操作后反馈 |
 | `focus <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 聚焦元素(配合按键用)。默认带操作后反馈 |
@@ -181,27 +144,14 @@ cdp fold rm <id> --target ...               # 6. 删持久规则(按 id,其它 i
 
 ## 命令示例(真实流程)
 
-> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→**核对落点/结果**"走。**别把 `tree` 输出丢给 `head`/`sed`/`grep` 过滤**,看局部只能用 `tree --ref/--ancestor/--selector-file/--visible-only` 或 `find --text`。**CLI 用 `--ref n`,脚本 API 才用 `{ref:n}`**——`cdp click "{ref:44}"` 会被自动拦截报友好错误(对象字面量当 selector 误用)。
+> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→**核对落点/结果**"走。**别把 `tree` 输出丢给 `head`/`sed`/`grep` 过滤**,看局部只能用 `tree --ref/--ancestor/--selector-file/--visible-only`。**CLI 用 `--ref n`,脚本 API 才用 `{ref:n}`**——`cdp click "{ref:44}"` 会被自动拦截报友好错误(对象字面量当 selector 误用)。
 
 ### 逛页面 + 定位区域 + 去噪
 ```bash
 cdp open "https://www.zhihu.com/"     # 开页
 cdp tree --target zhihu               # 看整页,拿 ref(别 head/sed 截断)
-cdp lineage 1 --ancestor 4 --target zhihu      # 列顶栏祖先链,挑稳定锚点(如 .AppHeader)
-cdp fold add www.zhihu.com .AppHeader 知乎顶栏 --target zhihu   # 手写持久规则(uBlock 式短 selector)
-cdp tree --target zhihu               # 顶栏折叠成 ▸ 一行,树干净
 cdp tree --ref 53 --ancestor 4 --target zhihu   # 从内容叶子 ref 爬到区域容器,只列问题+回答
-cdp locate 53 --ancestor 4 --target zhihu       # 要刷新后仍可用的 selector
-cdp tree --selector-file ./f --target zhihu     # 用 selector 局部复看
-```
-
-### ref 失效后按文本重定位(find,不必整页重 tree)
-```bash
-cdp tree --target zhihu                         # 先整页 tree 拿 ref
-cdp click --ref 44 --target zhihu               # 操作后页面重渲染,ref 44 失效
-cdp find --text "写回答" --target zhihu         # 直接按文本搜元素拿新 ref(类 uBlock :has-text())
-cdp click --ref <新ref> --target zhihu          # 用新 ref 继续,不必整页重 tree
-cdp find --text "评论" --all --target zhihu     # 多个同名元素:--all 收集全部
+# 去噪:手动编辑 $CDP_USER_DATA/folds.txt 加一行(如 `5\twww.zhihu.com\t.AppHeader\t顶栏`)→ tree 自动折叠顶栏
 ```
 
 ### 点击可能开新 tab → 反馈自动报落点
@@ -222,13 +172,13 @@ cdp click --ref 36 --target "BV1..."  # 点赞;反馈直接回文本变化(如 "
 
 原理:直接监听 CDP 控制台事件只拿到描述文本,看不到对象嵌套。所以往页面注入 `console.*`/`onerror`/`unhandledrejection` 钩子,把**活的嵌套对象 + 调用链(stack)** 存进 `window.__cdpLogs`,读时结构化序列化。关键机制是 `Page.addScriptToEvaluateOnNewDocument`——注册在该 tab 会话上,**每次 document 创建(含刷新)自动先跑监控脚本**。
 
-- **自动装监听**:`open` / `ensure --url` 打开页面时自动拉起 daemon,它轮询 `/json/list` 给**每个** tab(含手动开的)注册监控脚本。
+- **自动装监听**:`open` / `list` 打开页面时自动拉起 daemon,它轮询 `/json/list` 给**每个** tab(含手动开的)注册监控脚本。
 - **读**:`node dist/cdp.js logs [--target <匹配>] [--level error,warn] [--since <ms>] [--json]`
   - `--level` 逗号分隔按级别过滤(`debug/log/info/warn/error`);未捕获异常归 `error`。
   - `--since <毫秒时间戳>` 只取该时间点之后。
   - 默认人类可读 `[HH:MM:SS][level] args`;`--json` 输出完整结构(嵌套对象 + `stack` 调用链)。
   - **读时自动补种**:`logs` 本身也会幂等注入监控脚本(防 daemon 未及装)。
-- **无需手动管理**:监听 daemon 由 `open`/`ensure`/`logs` **自动拉起**(隐藏 `__daemon` 入口,无 `listen`/`listen-stop`)。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
+- **无需手动管理**:监听 daemon 由 `open`/`list`/`logs` **自动拉起**(隐藏 `__daemon` 入口,无 `listen`/`listen-stop`)。daemon 端口 `CDP_LOGS_PORT`(默认 9333)。
 - **生命周期**:daemon 在**浏览器关闭后约 5s 自动退出**(看门狗),不留孤儿进程。
 - **脚本模式**:`cdp.logs(target, {level, since})` → 返回结构化日志数组,可与 `cdp.click`/`cdp.waitForFn` 配合做"跑完流程断言无报错"。
 
@@ -241,7 +191,7 @@ cdp click --ref 36 --target "BV1..."  # 点赞;反馈直接回文本变化(如 "
 
 **先探后写、写成文件、一次执行**——避免多次模型往返:
 
-1. **探明页面**:不知道元素时,先 `node dist/cdp.js list`(看 tab)+ `node dist/cdp.js tree --target <匹配>`(感知整页结构);要操作再 `cdp locate <ref>` 反查目标元素的稳定 selector。
+1. **探明页面**:不知道元素时,先 `node dist/cdp.js list`(看 tab)+ `node dist/cdp.js tree --target <匹配>`(感知整页结构,拿 ref)。
 2. **写脚本文件**:把整段操作写成一个 `.js` 放到**项目根**(见上方"脚本放置规范"),用全局 `cdp` API。
 3. **执行**:在项目根用绝对路径运行 `node "<本 SKILL 所在目录>/dist/cdp.js" run ./你的脚本.js`。出错改文件再跑;截图等输出直接落项目根。
 
@@ -280,10 +230,6 @@ await cdp.close(t);
 | `cdp.navigate(target, url)` | 对象,字符串 | — |
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.tree(target, opts?)` | 对象,`{selector?,ref?,ancestor?}` | 整页 body 文本+结构紧凑树:`{ok, lines}`;锚点互斥:ref 优先,其次 selector,缺省 body;`opts.ancestor` 统一向上爬 k 层;命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>` |
-| `cdp.locate(target, ref, ancestor?)` | 对象,数字,数字可选 | 从 ref 反查稳定 selector:`{ok, tag, text, selector, shadow?, shadowChain?}`;刷新后仍可用,喂给 `tree` 复用。shadow 元素:selector 退化为最外层 host 锚定,shadowChain 是 `>>>` 穿透链(写进 selector-file 可复用) |
-| `cdp.lineage(target, ref, ancestor?)` | 对象,数字,数字可选 | 列目标元素祖先链:`{ok, chain:[{depth,tag,id?,classes?,dataAttrs?,aria?,role?}], targetDepth, suggested}`;挑稳定锚点手写 fold 规则 |
-| `cdp.find(target, opts?)` | 对象,`{text?,selector?,ancestor?,all?}` | 按文本/selector 找元素登记新 ref:`{ok, hits:[{ref,tag,text,line}]}`;`text` 整页穿透 shadow 搜"元素自身直接文本含关键词",`selector` 走 querySelector(支持 `>>>`);命中追加进 __cdpRefs 不顶旧 ref |
-| `cdp.fold(target, opts?)` | 对象,`{ref?,ancestor?,note?,save?,domain?,path?,add?,list?,rm?}` | 折叠规则管理(见 CLI fold);`save:true` 从 ref 落盘持久,否则会话级临时;`path` 限定 pathname 前缀 |
 | `cdp.click(target, selector, opts?)` | 对象,字符串,`{noFeedback?, feedbackDelay?}` | `{ok, tag, feedback?}`;默认带操作后反馈 |
 | `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 点真实元素(穿透 shadow);ref 失效自动自愈 |
 | `cdp.fill(target, selector, value, opts?)` | 对象,字符串,字符串,opts | `{ok, tag, feedback?}` |
@@ -307,8 +253,8 @@ await cdp.close(t);
 - **`navigate` 后 target 对象的 `url`/`title` 是快照,不刷新** → 判断跳转是否成功用 `cdp.eval(t, 'location.href')`,别信缓存字段。
 - **`open` 失败/脚本中断会留下已建的 tab**(open 已建 target,后续报错不会自动关)→ 记得 `list` 核对后 `close` 清理。
 - **SPA(知乎热榜)首屏加载慢,固定 sleep 不一定够** → 优先 `waitFor`/`waitForFn` 等条件出现,别死等固定时长。
-- **连接失败** → 别手动排查端口,**先跑 `ensure`** 让它自动启动浏览器;仍失败用 `CDP_HOST/CDP_PORT` 指端口。
+- **连接失败** → 别手动排查端口,**先跑 `list`** 让它自动启动浏览器;仍失败用 `CDP_HOST/CDP_PORT` 指端口。
 - **fill 对富文本框无效** → 已派发 input/change;React 等框架可能需额外 setter,改用 `eval` 按框架方式设值。
-- **logs 拿不到历史日志** → daemon 只在 attach **之后**才收;加载早期日志读不到。想抓加载期日志要在导航**前**种上监听(open/ensure 已自动种)。
+- **logs 拿不到历史日志** → daemon 只在 attach **之后**才收;加载早期日志读不到。想抓加载期日志要在导航**前**种上监听(open/list 已自动种)。
 - **`--target 5173` 匹配到 DevTools 窗** → DevTools 的 url/title 也含 `5173`。用**完整 targetId** 精确指定(见 `list`)。
 - **监听 daemon 没起/日志读空** → 无需手动管 daemon;`logs` 本身会幂等拉起并补种监控。仍读空多半是刚开新 tab(~0.5–2s 才装上),先 `await sleep(1500)` 再读。
