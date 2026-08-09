@@ -88,6 +88,8 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
     for (const f of folds) { try { if (el.matches(f.selector)) return f.note || f.selector; } catch {} }
     return null;
   };
+  // 子树是否含"内容"节点(自身 isContent 或任一后代):判断纯容器是否在叶子路径上(有内容可包裹才登记隐藏 ref)。
+  const subtreeHasContent = (n: ViewNode): boolean => n.isContent || n.kids.some(subtreeHasContent);
 
   function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): ViewNode | null {
     const isEl = el instanceof Element;
@@ -161,6 +163,15 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
     if (!text && title && !node.kids.some(k => k.text) && node.size <= 8 && (el as Element).tagName !== 'SVG' && (el as Element).tagName !== 'path' && (el as Element).tagName !== 'USE') {
       node.leafValue = strip(title).slice(0, 40);
       node.isContent = true;
+    }
+    // 隐藏容器 ref:纯包装元素(无自身文本/交互/shadow/表单),但子树含内容(叶子路径上的祖父 div)。
+    // 只追加进 __cdpRefs(可被 view <ref>/fold/locate 定位),**不设 node.ref** —— formatView 不输出其 [ref=N],
+    // view 默认不显示、内联折叠行为也不变;info 反查 __cdpRefs 显示。parentRef 用进入时的最近已登记祖先;
+    // 追加在尾部,不挤占可见内容 ref 的编号。
+    if (isEl && inView && ref == null && !inter && !text && !hasShadow && !node.inputInfo
+        && node.kids.length > 0 && subtreeHasContent(node)) {
+      (globalThis as any).__cdpRefs.push({ el: el as Element, parentRef });
+      node.hidden = true;
     }
     return node;
   }
