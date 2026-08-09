@@ -37,14 +37,14 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
 - 浏览器连接
   - 检测用户可用浏览器
   - 检测用户默认浏览器
-  - 设定数据路径 --user-data-dir
+  - 设定数据路径 --user-data-dir，有默认值
   - list 时确保 cdp 浏览器已启动 --remote-debugging-port=9222 
 - 浏览器任务
   - 感知
     - tree 压缩页面为紧凑树，带结构、带信息
       - 用标识代表元素状态
         - 是否在视口内
-        - 用 ref 指向 DOM，可直接操作
+        - 用 ref 指向 DOM，可直接操作 click fill hover focus
       - 对 Shadow 要穿透
     - 聚焦
       - 全页感知可依规则折叠指定区域

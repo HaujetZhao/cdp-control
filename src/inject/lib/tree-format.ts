@@ -16,7 +16,7 @@ export interface TreeNode {
   fold?: string;   // 命中折叠规则:输出一行 ▸ [ref=i] <备注>,不展开子树(但保留 ref,tree --ref i 可展开)
   hasInter?: boolean; // 自身或任一后代可交互——含交互子代的包装节点不可内联折叠,否则交互叶的 ref 被整颗吞掉
   inView?: boolean; // visible-only:自身是否落在当前视口内且可见(仅 Element 计算;包装节点不查)
-  view?: boolean;   // viewport 标记:带 ref 的节点是否在当前视区内(便宜判定,rect+宽高,不查 computed style)。true → 输出 [ref=i·屏]
+  view?: boolean;   // viewport 标记:带 ref 的节点是否在当前视区内(便宜判定,rect+宽高,不查 computed style)。true → 输出 [ref=i, visible]
   inputInfo?: { type?: string; value?: string; placeholder?: string }; // INPUT/TEXTAREA/SELECT:tree 显示 type/value/placeholder,让 agent 看到表单内容
 }
 
@@ -36,8 +36,8 @@ const inputAttr = (n: TreeNode): string => {
   return parts.length ? '[' + parts.join(' ') + ']' : '';
 };
 
-/** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素;n.view 为 true 时追加 ·屏(在当前视区)。 */
-const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + (n.view ? '·屏' : '') + ']' : '');
+/** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素;n.view 为 true 时追加 ", visible"(在当前视区)。 */
+const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + (n.view ? ', visible' : '') + ']' : '');
 
 /** 标记节点是否有可视文本(自身 text/imgAlt 或任一后代),并顺带计算 hasInter(自身或任一后代可交互)。
  * 返回根节点"是否有文本"结果。hasInter 用于内联折叠判断:含交互子代的包装节点不能折叠,否则交互叶的 ref 丢失。

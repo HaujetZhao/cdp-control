@@ -161,7 +161,7 @@ export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResu
     const blines = formatTree(t);
     if (!blines.length) continue;
     // 折叠签名去掉 ref 号(内容相同但 ref 不同的重复块应视为同一条,如重复广告)。
-    const sig = blines.join('\n').replace(/\[ref=\d+(·屏)?\]/g, '');
+    const sig = blines.join('\n').replace(/\[ref=\d+(, visible)?\]/g, '');
     if (seen.has(sig)) { seen.get(sig)!.count++; }
     else { seen.set(sig, { lines: blines, count: 1 }); order.push(sig); }
   }
