@@ -11,31 +11,53 @@
  * shadow 穿透:MutationObserver 默认只观察调用 observe 的那棵树,**不进 shadowRoot**——B站点赞数、
  * 弹幕等多在 shadow 内,变化压根不进反馈。startFeedback 对 document + 所有 shadowRoot(限深度 ≤3)
  * 各起一个 observer,且 childList 新增节点若带 shadowRoot 也补装,保证 shadow 内变化能被采集。
+ *
+ * 噪声过滤:video/audio/canvas 子树(弹幕/播放进度/缓冲在 video 或其 shadow 内)整体跳过;
+ * 连续播放时间戳(01:55→01:56…)折叠为一条。点赞数等纯数字真变化不折叠,保留为真信号。
  */
-import { buildTree } from './tree-core';
-import { markText, formatTree } from './tree-format';
+import { buildTree } from './tree-core.ts';
+import { markText, formatTree } from './tree-format.ts';
 
 export interface FeedbackResult { blocks: FeedbackBlock[]; changes: FeedbackChange[] }
 
 /** 一个去重后的新增内容块:lines 为该块 tree 行,count 为它在本次出现的次数(重复块折叠)。 */
 export interface FeedbackBlock { lines: string[]; count: number }
 
-/** 一次文本变化:before 为旧值(可缺),after 为新值。 */
-export interface FeedbackChange { before?: string; after: string }
+/** 一次文本变化:before 为旧值(可缺),after 为新值;note 给折叠摘要用(如"播放进度,已折叠 N 条")。 */
+export interface FeedbackChange { before?: string; after: string; note?: string }
 
 interface FeedbackState { added: Node[]; changes: FeedbackChange[] }
 
 /** shadow 递归观察深度上限(防极深 shadow 树导致 observer 爆炸;B站等典型页面 shadow 嵌套 ≤3)。 */
 const MAX_SHADOW_DEPTH = 3;
 
+/** 子树黑名单:这些标签的子树内的所有变化都不进反馈(弹幕/播放进度/缓冲/canvas 动画都在这)。 */
+const IGNORE_SUBTREE_OF = ['VIDEO', 'AUDIO', 'CANVAS'];
+
 /** 取 mutation 里新增/移除的直接文本节点文本。 */
 const textNodes = (nodes: NodeList): string[] =>
   Array.from(nodes).filter(n => n.nodeType === 3).map(n => (n.nodeValue || '').trim()).filter(Boolean);
 
 /**
+ * 沿 parentElement + shadow host 上爬(穿透 shadow 边界),判定 node 是否在 IGNORE_SUBTREE_OF
+ * 任一标签的子树内。弹幕/播放进度条等多在 <video> 的 shadow 内,变化每秒数十次,会淹没真变化。
+ */
+function inIgnoredSubtree(node: Node): boolean {
+  let n: Node | null = node;
+  while (n) {
+    if (n.nodeType === 1 && IGNORE_SUBTREE_OF.includes((n as Element).tagName)) return true;
+    if ((n as any).parentElement) { n = (n as any).parentElement; continue; }
+    const root = (n as any).getRootNode && (n as any).getRootNode();
+    n = root && root instanceof ShadowRoot ? (root as ShadowRoot).host : null;
+  }
+  return false;
+}
+
+/**
  * 启动反馈观察:对 document 及其所有 shadowRoot(限深度 ≤3)各起一个 MutationObserver,
  * 记录 childList 新增节点与文本变化(前后值;attributes 不进反馈,噪声大)。
  * childList 新增节点若带 shadowRoot,补装 observer,覆盖运行时挂载的 shadow host。
+ * video/audio/canvas 子树内的变化整体跳过(弹幕/播放进度噪声)。
  */
 export function startFeedback(): void {
   if ((globalThis as any).__cdpFeedback) return; // 已启动则复用(防重复装)
@@ -44,6 +66,8 @@ export function startFeedback(): void {
   // callback 在所有 observer 间共享:统一推 state,并给新增带 shadowRoot 的节点补装。
   const onMutate = (ms: MutationRecord[]) => {
     for (const m of ms) {
+      // 子树黑名单:target 在 video/audio/canvas 子树内(含 shadow),整个 mutation 跳过。
+      if (inIgnoredSubtree(m.target)) continue;
       if (m.type === 'characterData' && m.target.nodeType === 3) {
         // 原地改字符(如点赞数字 textContent 直接改 data):characterDataOldValue 记录了旧值,拼成 旧→新。
         const before = (m.oldValue || '').trim();
@@ -142,17 +166,18 @@ export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResu
     else { seen.set(sig, { lines: blines, count: 1 }); order.push(sig); }
   }
   const blocks = order.map(s => seen.get(s)!);
-  // 文本变化:过滤"前后相同"(无实质变化,如广告原地刷新),只留真变化;去重取前 5。
+  // 文本变化:过滤"前后相同"(无实质变化,如广告原地刷新)+ 折叠连续播放时间戳(01:55→01:56…)为一条;去重取前 5。
+  // 折叠后再去重取前 5,保证视频时间戳不挤占名额(点赞数等纯数字真变化不被折叠,自然进 changes)。
   const seenCh = new Set<string>();
-  const real: FeedbackChange[] = [];
+  const deduped: FeedbackChange[] = [];
   for (const c of changes) {
     if (c.before && c.before === c.after) continue;
     const key = c.before ? `${c.before}→${c.after}` : `·${c.after}`;
     if (seenCh.has(key)) continue;
     seenCh.add(key);
-    real.push(c);
-    if (real.length >= 5) break;
+    deduped.push(c);
   }
+  const real = foldTimestampRun(deduped).slice(0, 5);
   return { blocks, changes: real };
 }
 
@@ -167,4 +192,35 @@ function hasAncestorInSet(el: Element, set: Set<Element>): boolean {
     n = root && root instanceof ShadowRoot ? (root as ShadowRoot).host : null;
   }
   return false;
+}
+
+/**
+ * 折叠连续播放时间戳序列:把同格式(\d{1,2}:\d{2})的 ≥3 条连续变化合并为
+ * 一条 `{before: 首, after: 末, note: "播放进度,已折叠 N 条"}`。纯数字计数(如点赞数
+ * 1402→1403→1404)是真信号,**不折叠**——只识别明确的时间戳格式,保守避免误杀。
+ * 序列头尾任一端不是时间戳的边不进序列(原样保留);runLen<3 也原样保留(偶发同名不折叠)。
+ */
+export function foldTimestampRun(changes: FeedbackChange[]): FeedbackChange[] {
+  const TIME = /^\d{1,2}:\d{2}$/;
+  const out: FeedbackChange[] = [];
+  let i = 0;
+  while (i < changes.length) {
+    const c = changes[i];
+    const headTime = c.before != null && TIME.test(c.before) && TIME.test(c.after);
+    if (!headTime) { out.push(c); i++; continue; }
+    let j = i + 1;
+    while (j < changes.length) {
+      const d = changes[j];
+      if (d.before != null && TIME.test(d.before) && TIME.test(d.after)) { j++; continue; }
+      break;
+    }
+    const runLen = j - i;
+    if (runLen < 3) {
+      for (let k = i; k < j; k++) out.push(changes[k]);
+    } else {
+      out.push({ before: changes[i].before, after: changes[j - 1].after, note: `播放进度,已折叠 ${runLen} 条` });
+    }
+    i = j;
+  }
+  return out;
 }
