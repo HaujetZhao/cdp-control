@@ -6,10 +6,10 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, treeExpr, locateExpr, foldExpr } from './inject-loader';
+import { inject, treeExpr, locateExpr, lineageExpr, foldExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
-import { matchFolds, hostOf, loadFolds, addFold, removeFold } from './folds';
+import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
 
 /**
  * 统一执行注入脚本并解包结果契约:
@@ -74,9 +74,10 @@ export interface TreeOpts {
 /** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
  * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先滚动触发懒加载再建树
  *   (默认 ±1 屏回弹;scrollPages 改为循环滚 N 屏;scrollTo 先滚到该 selector 元素,如 B站评论区)。
- * 折叠:Node 侧按 target 页 hostname 读 folds.txt 命中规则,传入注入侧 buildTree 折叠成一行(跨会话持久)。 */
+ * 折叠:Node 侧按 target 页 hostname+pathname 读 folds.txt 命中规则(pathPrefix 限定同域名下页面路径),
+ * 传入注入侧 buildTree 折叠成一行(跨会话持久)。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
-  const folds = matchFolds(hostOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
+  const folds = matchFolds(hostOf(target.url), pathOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
   return invoke(target, treeExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo), 30000);
 }
 
@@ -85,13 +86,19 @@ export async function locate(target: Target, ref: number, ancestor?: number): Pr
   return invoke(target, locateExpr(ref, ancestor));
 }
 
+/** lineage:列目标元素(爬 ancestor 后)从 html 到自身的祖先链,每层 tag/id/class/语义 data-* /aria/role + 建议 selector。
+ * 供 agent 挑稳定锚点自己写 fold add 这种 uBlock 式短规则(如 #biliMainHeader),而非只靠 genSel 猜一个。 */
+export async function lineage(target: Target, ref: number, ancestor?: number): Promise<any> {
+  return invoke(target, lineageExpr(ref, ancestor));
+}
+
 export interface FoldOpts {
-  ref?: number; ancestor?: number; note?: string; save?: boolean; domain?: string;
-  add?: { domain: string; selector: string; note: string }; list?: boolean; rm?: number;
+  ref?: number; ancestor?: number; note?: string; save?: boolean; domain?: string; path?: string;
+  add?: { domain: string; selector: string; note: string; path?: string }; list?: boolean; rm?: number;
 }
 /** 折叠规则管理(取代 stash):
- *  - add {domain, selector, note}:加持久规则(folds.txt)
- *  - rm <id>:删持久规则
+ *  - add {domain, selector, note, path?}:加持久规则(folds.txt)
+ *  - rm <id>:删持久规则(其它规则 id 不重排)
  *  - list:列持久 + 会话级临时
  *  - ref + save:从 ref 反查 selector + 当前 hostname,落盘持久规则
  *  - ref(无 save):会话级临时折叠(注入 __cdpFolds,刷新失效) */
@@ -102,14 +109,14 @@ export async function fold(target: Target, opts: FoldOpts = {}): Promise<any> {
     const tmp = await invoke<{ folds: any[] }>(target, foldExpr({ list: true }));
     return { ok: true, persist, tmp: tmp.folds };
   }
-  if (opts.add) { return { ok: true, rule: addFold(opts.add.domain, opts.add.selector, opts.add.note) }; }
+  if (opts.add) { return { ok: true, rule: addFold(opts.add.domain, opts.add.selector, opts.add.note, opts.add.path) }; }
   if (opts.save) {
     // locate 失效(refInvalid)时 invoke 不抛、透传 recovered;此时 loc.selector 是 undefined,
     // 不能 addFold,直接把 recovered 透传给 CLI 走自愈打印。
     const loc = await invoke<{ selector: string } | { ok: false; refInvalid: true; recovered: any }>(target, locateExpr(opts.ref!, opts.ancestor));
     if ((loc as any)?.refInvalid) return loc as any;
     const domain = opts.domain || hostOf(target.url);
-    return { ok: true, rule: addFold(domain, (loc as any).selector, opts.note || (loc as any).selector) };
+    return { ok: true, rule: addFold(domain, (loc as any).selector, opts.note || (loc as any).selector, opts.path) };
   }
   return invoke(target, foldExpr({ ref: opts.ref, ancestor: opts.ancestor, note: opts.note }));
 }
@@ -262,7 +269,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  tree, locate, fold, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  tree, locate, lineage, fold, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

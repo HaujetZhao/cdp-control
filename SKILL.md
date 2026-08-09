@@ -99,15 +99,22 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
   selector 是 id 锚定 + `:nth-of-type` 链,可读、较稳。若页面改版后定位器失效,重新 `tree` 拿 ref 再 `locate` 一次即可。
 - **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,或各自 `locate`,再并列看。别因此绕回 JS 探查。
 
-**整页 tree 去噪(`fold`,类 uBlock Origin 持久折叠规则)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `fold` 把这些区域**折叠成一行**(输出 `▸ [ref=i] <备注>`,不展开子树但保留 ref),跨会话持久——下次打开同站点自动折叠:
+**整页 tree 去噪(`lineage` 透视 + `fold` 持久规则,类 uBlock Origin)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `fold` 把这些区域**折叠成一行**(输出 `▸ [ref=i] <备注>`,不展开子树但保留 ref),跨会话持久——下次打开同站点自动折叠。
+
+**主路径:lineage 看祖先链挑稳定锚点 → fold add 写 uBlock 式短规则**。`fold --ref --save` 让工具用 genSel 猜一个 selector,但有时你想要更短更稳的语义锚点(如 `#biliMainHeader` 而非某个 `data-v-xxx`)。`lineage` 把目标元素从 `<html>` 到自身的祖先链摊开,每层紧凑列出 tag/id/class/语义 data-*/aria/role,你一眼挑出最稳的层手写规则:
 ```
-cdp tree --target ...                       # 1. 看整页,记下噪声区域里某个内容叶子的 ref(如顶栏 logo [ref=1])
-cdp fold --ref 1 --ancestor 4 顶栏 --save --target ...  # 2. 从叶子爬父到顶栏容器,落盘持久规则(备注"顶栏")
-cdp tree --target ...                       # 3. 整页 tree 顶栏折叠成一行 ▸ [ref=1] 顶栏,ref 重排
-cdp fold list --target ...                  # 4. 列出持久 + 会话级临时折叠规则
-cdp fold rm 1 --target ...                  # 5. 删持久规则 [id]
+cdp tree --target ...                       # 1. 看整页,记下噪声区域里某个内容叶子的 ref(如顶栏 logo [ref=0])
+cdp lineage 0 --ancestor 3 --target ...     # 2. 列祖先链,挑稳定锚点(如 #biliMainHeader)——比 genSel 猜的更可控
+cdp fold add www.bilibili.com #biliMainHeader 顶栏 --path /video --target ...  # 3. 手写持久规则(uBlock 式短 selector)
+cdp tree --target ...                       # 4. 整页 tree 顶栏折叠成 ▸ [ref=0] 顶栏
+cdp fold list --target ...                  # 5. 列持久 + 会话级临时折叠规则(带 id + path 列)
+cdp fold rm <id> --target ...               # 6. 删持久规则(按 id,其它 id 不重排)
 ```
-- **持久规则**存在 `$CDP_USER_DATA/folds.txt`(默认 `~/.cdp-browser/`),格式 `<域名>\t<selector>\t<备注>`,域名支持精确(`www.bilibili.com`)与通配(`*.zhihu.com`)。也可手写:`cdp fold add <域名> <selector> <备注>`。
+- **`lineage <n> [--ancestor <k>]`**:输出祖先链缩进树(html 在顶,目标元素在最深并标 `[ref=N]`),末尾附 genSel 的建议 selector 作参考。挑锚点优先级:id > 测试锚点(data-testid 等)> 语义 data-* > aria-label/role > 唯一 class。
+- **持久规则**存在 `$CDP_USER_DATA/folds.txt`(默认 `~/.cdp-browser/`),五列 tab:`<id>\t<域名>\t<selector>\t<备注>[\t<pathPrefix>]`。域名支持精确(`www.bilibili.com`)与通配(`*.zhihu.com`)。
+  - **id 稳定**:`addFold` 用 max(id)+1 单调递增,`rm <id>` 删后**其它 id 不重排**(连续 rm 不漏删)。旧三列格式文件读时自动迁移补 id。
+  - **`--path <前缀>` 限定页面路径**(借鉴 uBlock `:matches-path`):同域名不同页(B站首页 vs 视频页、知乎首页 vs 回答页)DOM 结构不同,只按域名存的规则会在别的页命中错位元素。加 `--path /video` 后该规则只在 pathname 以 `/video` 开头的页命中。无 `--path` 的规则不限路径。
+  - 也可从 ref 落盘:`fold --ref <n> [备注] --save [--path <前缀>]`(用 genSel 推 selector + 当前 hostname);或 `fold add <域名> <selector> <备注> [--path <前缀>]` 手写。
 - **会话级临时折叠**:`fold --ref i [备注]`(不带 `--save`),只本次会话生效、刷新清空。
 - **展开折叠区域**:`tree --ref <折叠容器的 ref>` 就是普通局部 tree。**嵌套天然支持**:展开顶栏后,里面命中的子折叠规则(如搜索区)仍是折叠态。
 - `fold` 取代了旧的 `stash`(stash 已删除)。
@@ -147,7 +154,8 @@ cdp fold rm 1 --target ...                  # 5. 删持久规则 [id]
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
 | `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 滚动触发懒加载再建树(默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]` |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定 CSS selector**。ref 是会话句柄,刷新后失效;locate 把它翻译成刷新后仍可用的 selector,供 `tree --selector-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
-| `fold add <域名> <selector> <备注>` / `fold list` / `fold rm <id>` / `fold --ref <n> [备注] [--ancestor <k>] [--save] [--domain <d>] [--target]` | **类 uBlock 折叠规则**:持久规则存 `$CDP_USER_DATA/folds.txt`,tree 时命中区域折叠成一行 ▸,跨会话自动生效。`add` 手写;`--ref i --save 备注` 从 ref 推 selector+当前域名落盘;`--ref i`(不带 --save)会话级临时折叠;`list` 列持久+临时;`rm <id>` 删持久。展开用 `tree --ref <折叠容器 ref>` |
+| `lineage <n> [--ancestor <k>] [--target]` | 列目标元素(爬 ancestor 后)从 html 到自身的**祖先链**:每层 tag/id/class/语义 data-* /aria/role,末尾附 genSel 建议 selector。挑稳定锚点手写 `fold add` 这种 uBlock 式短规则(如 `#biliMainHeader`),比 `fold --ref --save` 让工具猜更可控 |
+| `fold add <域名> <selector> <备注> [--path <前缀>]` / `fold list` / `fold rm <id>` / `fold --ref <n> [备注] [--ancestor <k>] [--save] [--domain <d>] [--path <前缀>] [--target]` | **类 uBlock 折叠规则**:持久规则存 `$CDP_USER_DATA/folds.txt`(五列:id/域名/selector/备注/pathPrefix),tree 时命中区域折叠成一行 ▸,跨会话自动生效。`add`/`--ref --save` 落盘;`--path` 限定页面 pathname 前缀(修同域名跨页错位);`rm <id>` 按 id 删(其它 id 不重排,连续 rm 不漏删);`list` 列持久+临时。展开用 `tree --ref <折叠容器 ref>` |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i`,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈 |
 | `fill <selector> <值> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 填输入框并派发 input/change。默认带操作后反馈 |
 | `focus <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 聚焦元素(配合按键用)。默认带操作后反馈 |
@@ -168,7 +176,8 @@ cdp fold rm 1 --target ...                  # 5. 删持久规则 [id]
 ```bash
 cdp open "https://www.zhihu.com/"     # 开页
 cdp tree --target zhihu               # 看整页,拿 ref(别 head/sed 截断)
-cdp fold --ref 1 --ancestor 4 知乎顶栏 --save --target zhihu   # 顶栏噪声折叠成持久规则
+cdp lineage 1 --ancestor 4 --target zhihu      # 列顶栏祖先链,挑稳定锚点(如 .AppHeader)
+cdp fold add www.zhihu.com .AppHeader 知乎顶栏 --target zhihu   # 手写持久规则(uBlock 式短 selector)
 cdp tree --target zhihu               # 顶栏折叠成 ▸ 一行,树干净
 cdp tree --ref 53 --ancestor 4 --target zhihu   # 从内容叶子 ref 爬到区域容器,只列问题+回答
 cdp locate 53 --ancestor 4 --target zhihu       # 要刷新后仍可用的 selector
@@ -252,7 +261,8 @@ await cdp.close(t);
 | `cdp.eval(target, js, timeout?)` | 对象,字符串 | `returnByValue` 值 |
 | `cdp.tree(target, opts?)` | 对象,`{selector?,ref?,ancestor?}` | 整页 body 文本+结构紧凑树:`{ok, lines}`;锚点互斥:ref 优先,其次 selector,缺省 body;`opts.ancestor` 统一向上爬 k 层;命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>` |
 | `cdp.locate(target, ref, ancestor?)` | 对象,数字,数字可选 | 从 ref 反查稳定 selector:`{ok, tag, text, selector}`;刷新后仍可用,喂给 `tree` 复用 |
-| `cdp.fold(target, opts?)` | 对象,`{ref?,ancestor?,note?,save?,domain?,add?,list?,rm?}` | 折叠规则管理(见 CLI fold);`save:true` 从 ref 落盘持久,否则会话级临时 |
+| `cdp.lineage(target, ref, ancestor?)` | 对象,数字,数字可选 | 列目标元素祖先链:`{ok, chain:[{depth,tag,id?,classes?,dataAttrs?,aria?,role?}], targetDepth, suggested}`;挑稳定锚点手写 fold 规则 |
+| `cdp.fold(target, opts?)` | 对象,`{ref?,ancestor?,note?,save?,domain?,path?,add?,list?,rm?}` | 折叠规则管理(见 CLI fold);`save:true` 从 ref 落盘持久,否则会话级临时;`path` 限定 pathname 前缀 |
 | `cdp.click(target, selector, opts?)` | 对象,字符串,`{noFeedback?, feedbackDelay?}` | `{ok, tag, feedback?}`;默认带操作后反馈 |
 | `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 点真实元素(穿透 shadow);ref 失效自动自愈 |
 | `cdp.fill(target, selector, value, opts?)` | 对象,字符串,字符串,opts | `{ok, tag, feedback?}` |
