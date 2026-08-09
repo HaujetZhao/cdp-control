@@ -1,10 +1,10 @@
 /**
- * find-root.ts — 从 selector 求建树根元素 + ref 解析 + shadow 检测/穿透链(注入侧,无 Node 依赖)。
- * 被 tree / locate / 操作动作入口复用。xpath 已退役,定位只走 selector + ref。
+ * find-root.ts — 从 selector 求建视图根元素 + ref 解析 + shadow 检测/穿透链(注入侧,无 Node 依赖)。
+ * 被 view / locate / 操作动作入口复用。xpath 已退役,定位只走 selector + ref。
  */
 import { genSel } from './genSel.ts';
 
-/** __cdpRefs 槽位形态:tree 登记的是 {el, parentRef}(ref 自愈后最终形态);兼容过渡期的纯 Element[]。 */
+/** __cdpRefs 槽位形态:view 登记的是 {el, parentRef}(ref 自愈后最终形态);兼容过渡期的纯 Element[]。 */
 export type RefEntry = { el: Element; parentRef: number | null } | Element;
 
 /** 取 __cdpRefs 数组(可能为 undefined / 空)。 */
@@ -25,7 +25,7 @@ export function entryParent(entry: RefEntry | undefined): number | null {
 }
 
 /** ref 失效自愈的分类(纯逻辑,无 DOM 调用,可单测):
- *  - 'none':无登记表(整页未 tree 过 / 已清空),无可恢复。
+ *  - 'none':无登记表(整页未 view 过 / 已清空),无可恢复。
  *  - 'never':ref 越界或该槽从未登记(agent 打错号),不走跳表自愈。maxRef 给文案核对。
  *  - 'live':曾登记,需沿 parentRef 链找首个仍 connected 的祖先。start=起始跳表号。 */
 export type RefClass =
@@ -42,11 +42,11 @@ export function classifyRef(ref: number): RefClass {
 }
 
 /**
- * 求建树根元素:selector 命中返回首个元素,否则 body。
+ * 求建视图根元素:selector 命中返回首个元素,否则 body。
  * selector 未命中返回 null(由调用方决定是否报错)。
  *
  * 支持 shadow 链:`a >>> b >>> c`。`>>>` 是本工具自定义的 shadow 穿透分隔符(非标准 CSS),
- * 由 locate 对 shadow 内元素生成,让 `tree --selector-file` 能复用。解析方式:
+ * 由 locate 对 shadow 内元素生成,让 `view --selector-file` 能复用。解析方式:
  *   第一段在 document 上 querySelector;之后每段在前一段元素的 shadowRoot 上 querySelector,
  *   逐层穿透(标准 CSS 无法跨 shadow 边界)。任一段未命中 / host 无 shadowRoot → null。
  */
@@ -84,9 +84,9 @@ export function findRootAll(selector: string): Element[] {
 }
 
 /**
- * 按 tree 输出的 ref 序号取真实元素(ref 存于 window.__cdpRefs,会话句柄)。
+ * 按 view 输出的 ref 序号取真实元素(ref 存于 window.__cdpRefs,会话句柄)。
  * 页面刷新后 __cdpRefs 随 document 重建而清空,此时返回 null(ref 失效)。
- * tree / locate 共用同一解析:先取 ref 元素,再 climbAncestors 爬到目标容器。
+ * view / locate 共用同一解析:先取 ref 元素,再 climbAncestors 爬到目标容器。
  */
 export function refElement(ref: number): Element | null {
   const arr = (globalThis as any).__cdpRefs;

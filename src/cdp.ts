@@ -75,12 +75,12 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
-  .option('--ref <n>', '按 tree 输出的 ref 序号建树根(与 --selector-file 二选一)')
-  .option('--ancestor <n>', '从建树根向上爬 N 层父级再建树(默认 0;与 --ref/selector 任一锚点配合)')
+targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
+  .option('--ref <n>', '按 view 输出的 ref 序号建视图根(与 --selector-file 二选一)')
+  .option('--ancestor <n>', '从建视图根向上爬 N 层父级再建视图(默认 0;与 --ref/selector 任一锚点配合)')
   .option('--selector-file <file>', '从文件读 selector')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
-  .option('--scroll-to-load', '先滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动,防 agent 找不到未加载区域(默认 ±1 屏回弹)')
+  .option('--scroll-to-load', '先滚动触发懒加载(评论区等首屏外的内容)再建视图——模拟真实用户滚动,防 agent 找不到未加载区域(默认 ±1 屏回弹)')
   .option('--scroll-pages <n>', '与 --scroll-to-load 配合:循环向下滚 N 屏(边滚边检测 scrollHeight 增长,连续 2 次不增长提前停),用于无限流')
   .option('--scroll-to <selector>', '与 --scroll-to-load 配合:先滚到匹配该 selector 的元素(如 B站评论区 #bili-comments),命中不到优雅降级')
   .action(async (opts) => {
@@ -89,7 +89,7 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
     if ((opts.scrollPages != null || opts.scrollTo != null) && !opts.scrollToLoad) {
       throw new Error('--scroll-pages / --scroll-to 必须与 --scroll-to-load 配合使用');
     }
-    const r = await api.tree(await needTarget(opts.target), {
+    const r = await api.view(await needTarget(opts.target), {
       selector: sel, visibleOnly: !!opts.visibleOnly,
       ref: opts.ref != null ? Number(opts.ref) : undefined,
       ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
@@ -108,7 +108,7 @@ function refOrSel(sel: string | undefined, opts: any): string | { ref: number; a
   throw new Error('需提供 selector 或 --ref');
 }
 const refOpt = (c: any) => c
-  .option('--ref <n>', '按 tree 输出的 ref 序号操作(穿透 shadow,与 selector 二选一)')
+  .option('--ref <n>', '按 view 输出的 ref 序号操作(穿透 shadow,与 selector 二选一)')
   .option('--ancestor <n>', '按 --ref 定位后向上爬 N 层父级再操作(默认 0;把内容叶子抬到区域容器)');
 
 /** 操作后自动反馈 option(click/fill/focus/hover/press-key 共用)。默认开启,等 feedbackDelay 后回报新增内容 + tab 变化。 */
@@ -126,8 +126,8 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
 /**
  * ref 失效自愈的三态文案(共享:click/fill/focus/hover/locate/fold 失效都走这套)。
  *  - 从未存在(agent 打错号):提示检查 ref 号,不走自愈(别误导成"页面刷新")。
- *  - 失效但找到存活祖先:打印最近存活容器 + 局部 tree,提示用新 ref 重试。
- *  - 整链 detached(页面刷新/重建):提示重新 tree。
+ *  - 失效但找到存活祖先:打印最近存活容器 + 局部 view,提示用新 ref 重试。
+ *  - 整链 detached(页面刷新/重建):提示重新 view。
  * 返回是否已打印(调用方据此跳过自己的正常输出)。
  */
 function printRefInvalid(r: any): boolean {
@@ -136,17 +136,17 @@ function printRefInvalid(r: any): boolean {
   if (rec?.never) {
     console.log(`ref 失效: ${rec.msg}`);
   } else if (rec) {
-    console.log(`ref 失效 → 已自动 tree 最近存活容器 [ref=${rec.rootRef}],用里面的新 [ref] 重试:`);
+    console.log(`ref 失效 → 已自动 view 最近存活容器 [ref=${rec.rootRef}],用里面的新 [ref] 重试:`);
     console.log(rec.lines.join('\n'));
   } else {
-    console.log('ref 失效: 整条祖先链均已失效(页面可能已刷新/重建),请重新 tree 拿新 ref');
+    console.log('ref 失效: 整条祖先链均已失效(页面可能已刷新/重建),请重新 view 拿新 ref');
   }
   return true;
 }
 
 /** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。
  * selector 超长截断(位置链常很长);shadow 内元素不返回 selector,提示用 ref 操作。
- * ref 失效自愈:打印"最近存活容器 + 局部 tree",提示 agent 用里面的新 ref 重试(不打印"已操作")。 */
+ * ref 失效自愈:打印"最近存活容器 + 局部 view",提示 agent 用里面的新 ref 重试(不打印"已操作")。 */
 function printAction(line: string, r: any): void {
   if (printRefInvalid(r)) return;
   if (r?.shadow) {

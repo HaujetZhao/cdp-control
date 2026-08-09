@@ -1,6 +1,6 @@
 /**
- * tree-utils.ts — 结构树输出的纯函数(无 DOM 依赖,可在 Node 里单测)。
- * 从旧 scripts.js buildTreeExpr 的 inline 逻辑抽出,语义不变。
+ * view-utils.ts — 结构视图输出的纯函数(无 DOM 依赖,可在 Node 里单测)。
+ * 从旧 scripts.js buildViewExpr 的 inline 逻辑抽出,语义不变。
  */
 
 /** 节点文本总长(递归求和,超阈值提前停,只判"够不够短")。 */

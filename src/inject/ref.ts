@@ -1,7 +1,7 @@
 /**
- * ref.ts — locate 注入入口:按 tree 的 ref 序号反查稳定 CSS selector。
+ * ref.ts — locate 注入入口:按 view 的 ref 序号反查稳定 CSS selector。
  * ref 是会话句柄(存 window.__cdpRefs),页面刷新后失效;此命令把 ref 翻译成
- * 刷新后仍可用的 CSS selector,供 tree --selector-file 复用。
+ * 刷新后仍可用的 CSS selector,供 view --selector-file 复用。
  * 可选 --ancestor 向上爬 N 层父级,把"内容叶子的 ref"抬升到"语义区域容器"。
  *
  * shadow DOM:目标在 shadow 内时,标准 CSS selector 在 document 上查不到(querySelector 返 null)。
@@ -11,7 +11,7 @@
 import { setResult } from './lib/result';
 import { refElement, climbAncestors, inShadow, buildShadowChain, outermostHost } from './lib/find-root';
 import { genSel } from './lib/genSel';
-import { ownElText } from './lib/tree-core';
+import { ownElText } from './lib/view-core';
 import { notFoundResult, type OperableArg } from './lib/find';
 import type { LocateArgs } from './lib/arg';
 

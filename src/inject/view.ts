@@ -1,35 +1,35 @@
 /**
- * tree.ts — 结构树入口(注入到浏览器页面执行)。
+ * view.ts — 结构视图入口(注入到浏览器页面执行)。
  * 精简整页 body(或指定区域)为"文本 + 结构"紧凑树。丢垃圾标签、折叠纯包装节点、
  * 穿透 shadow DOM、合并交互/标题叶。不做可见性判定——整页结构一次给全。
  *
- * 契约:读取 __CDP_ARG__.rootExpr(解析建树根元素的 JS 表达式串),把结果写入 setResult。
+ * 契约:读取 __CDP_ARG__.rootExpr(解析建视图根元素的 JS 表达式串),把结果写入 setResult。
  * 输出为带缩进文本行数组(标签 + 引用文本),无 [看]/[架]/[X] 状态前缀。
- * 建树复用 lib/tree-core 的 buildTree;带 ref 的节点额外标在视区(view,输出 [ref=i, visible])。
+ * 建视图复用 lib/view-core 的 buildView;带 ref 的节点额外标在视区(view,输出 [ref=i, visible])。
  */
 import { setResult } from './lib/result';
-import { markText, formatTree } from './lib/tree-format';
-import { buildTree } from './lib/tree-core';
+import { markText, formatView } from './lib/view-format';
+import { buildView } from './lib/view-core';
 import { findRoot, refElement, climbAncestors } from './lib/find-root';
-import type { TreeArgs } from './lib/arg';
+import type { ViewArgs } from './lib/arg';
 
-declare const __CDP_ARG__: TreeArgs;
+declare const __CDP_ARG__: ViewArgs;
 
-// 整段包成 async(通过 setResult 传 promise,footer await):支持 --scroll-to-load 先异步滚动再建树。
+// 整段包成 async(通过 setResult 传 promise,footer await):支持 --scroll-to-load 先异步滚动再建视图。
 setResult((async () => {
-  // 锚点互斥:--ref 优先(读上一次 tree 登记的 __cdpRefs,须在下方清空表之前解析),
+  // 锚点互斥:--ref 优先(读上一次 view 登记的 __cdpRefs,须在下方清空表之前解析),
   // 其次 selector,缺省 body。--ancestor 为统一爬父修饰符,对任一锚点生效。
   let root: Element | null;
   if (__CDP_ARG__.ref != null) {
     root = climbAncestors(refElement(__CDP_ARG__.ref), __CDP_ARG__.ancestor);
-    if (!root || root.nodeType !== 1) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 无效或已失效(ref 是会话句柄,页面刷新后失效;需先重新 tree 拿到新 ref)` });
+    if (!root || root.nodeType !== 1) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 无效或已失效(ref 是会话句柄,页面刷新后失效;需先重新 view 拿到新 ref)` });
   } else {
     root = climbAncestors(findRoot(__CDP_ARG__.selector), __CDP_ARG__.ancestor);
     if (!root || root.nodeType !== 1) return setResult({ ok: false, err: '未找到匹配的根节点(selector 未命中)' });
   }
-  // 全局 ref 登记表:本次 tree 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
+  // 全局 ref 登记表:本次 view 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
   (globalThis as any).__cdpRefs = [];
-  // --scroll-to-load:滚动触发懒加载(评论区等首屏外的内容),再建树。三种模式(默认行为不变):
+  // --scroll-to-load:滚动触发懒加载(评论区等首屏外的内容),再建视图。三种模式(默认行为不变):
   // (1) 默认(无 scrollPages/scrollTo):向下/向上各一屏后回原位,固定距离触发当前位置上下懒加载。
   //     刻意不大范围滚多屏再回顶——那会拉飞视口、让 agent 在已展开长内容页时丢失当前位置(曾踩坑)。
   // (2) scrollTo:先滚到匹配该 selector 的元素(B站评论区容器等),停下让懒加载触发。命中不到优雅降级(跳过)。
@@ -50,7 +50,7 @@ setResult((async () => {
           (el as Element).scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'start' });
           await new Promise(r => setTimeout(r, pause));
         }
-      } catch { /* selector 命中不到/scrollIntoView 异常:优雅降级,正常建树 */ }
+      } catch { /* selector 命中不到/scrollIntoView 异常:优雅降级,正常建视图 */ }
     }
 
     if (__CDP_ARG__.scrollPages && __CDP_ARG__.scrollPages > 0) {
@@ -78,7 +78,7 @@ setResult((async () => {
   }
   if (__CDP_ARG__.scrollToLoad) await scrollToLoad();
   const visibleOnly = !!__CDP_ARG__.visibleOnly;
-  const tree = buildTree(root, { visibleOnly, viewport: true, folds: __CDP_ARG__.folds });
-  markText(tree);
-  return setResult({ ok: true, lines: formatTree(tree) });
+  const v = buildView(root, { visibleOnly, viewport: true, folds: __CDP_ARG__.folds });
+  markText(v);
+  return setResult({ ok: true, lines: formatView(v) });
 })());

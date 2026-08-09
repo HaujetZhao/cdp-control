@@ -1,16 +1,16 @@
 /**
- * tree-core.ts — 结构树建树 core(从 DOM 采集精简树)。
- * 被 tree 入口与操作反馈(feedback-collect)共享:把"整棵 DOM 区域 → 内部 TreeNode 树"的逻辑集中于此。
- * 含 DOM 采集(simplify)与 visible-only 裁剪(prune),与纯变换(formatTree/markText)分离。
+ * view-core.ts — 结构视图建视图 core(从 DOM 采集精简树)。
+ * 被 view 入口与操作反馈(feedback-collect)共享:把"整棵 DOM 区域 → 内部 ViewNode 树"的逻辑集中于此。
+ * 含 DOM 采集(simplify)与 visible-only 裁剪(prune),与纯变换(formatView/markText)分离。
  *
- * 注意:buildTree 只"追加" ref 到 __cdpRefs,**不重置**——重置时机由调用方决定
- * (tree 入口在整页建树前重置;反馈收集在拼接多个新增块前重置一次,保证跨块 ref 连续)。
+ * 注意:buildView 只"追加" ref 到 __cdpRefs,**不重置**——重置时机由调用方决定
+ * (view 入口在整页建视图前重置;反馈收集在拼接多个新增块前重置一次,保证跨块 ref 连续)。
  */
-import type { TreeNode } from './tree-format.ts';
+import type { ViewNode } from './view-format.ts';
 import { tmpFolds } from './fold.ts';
 import type { FoldItem } from './arg.ts';
 
-export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[] }
+export interface ViewBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[] }
 
 const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
 /** 压空白 + 零宽字符、首尾 trim 的归一化(供文本采集/比对统一用)。 */
@@ -65,8 +65,8 @@ export const isInViewport = (el: Element): boolean => {
   return !(r.top >= innerHeight || r.bottom <= 0 || r.left >= innerWidth || r.right <= 0);
 };
 // visible-only 裁剪:返回"子树是否含视口内可见节点"。非视口但有视口内后代的节点退化为纯容器骨架
-// (清空自身文本/ref,让 formatTree 不输出视口外的内容),但保留 kids 供进入视口内的后代显示。
-function prune(n: TreeNode): boolean {
+// (清空自身文本/ref,让 formatView 不输出视口外的内容),但保留 kids 供进入视口内的后代显示。
+function prune(n: ViewNode): boolean {
   n.kids = n.kids.filter(k => prune(k));
   const hasView = !!n.inView || n.kids.length > 0;
   if (!n.inView) {
@@ -76,9 +76,9 @@ function prune(n: TreeNode): boolean {
   return hasView;
 }
 
-/** 从 root 建精简树。opts.visibleOnly:建树后按视口可见裁剪(沿用 tree --visible-only 语义);
- * opts.viewport:对带 ref 的节点算 node.view(输出 [ref=i, visible] 标记),见 lib/tree-format.ts。 */
-export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}): TreeNode {
+/** 从 root 建精简树。opts.visibleOnly:建视图后按视口可见裁剪(沿用 view --visible-only 语义);
+ * opts.viewport:对带 ref 的节点算 node.view(输出 [ref=i, visible] 标记),见 lib/view-format.ts。 */
+export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}): ViewNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;
   // 折叠规则来源:持久(Node 侧 folds.ts 按 hostname 过滤后传入)+ 会话级临时(__cdpFolds)。统一按 selector 匹配。
@@ -89,10 +89,10 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     return null;
   };
 
-  function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): TreeNode | null {
+  function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): ViewNode | null {
     const isEl = el instanceof Element;
     // 折叠(非根元素命中 fold 规则):登记 ref(可展开)、设 fold=备注、不递归子树。
-    // 根不折叠:tree --ref i 展开折叠容器时,根本身(=该容器)不该再被折叠,否则永远展不开。
+    // 根不折叠:view --ref i 展开折叠容器时,根本身(=该容器)不该再被折叠,否则永远展不开。
     if (isEl && depth > 0) {
       const note = foldNote(el as Element);
       if (note !== null) {
@@ -113,7 +113,7 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     // visible-only 下只登记视口内可见内容节点的 ref,序号连续、输出的 [ref=i] 都指向真实可操作元素。
     const inView = visibleOnly && isEl ? isInView(el as Element) : true;
     // 带 shadowRoot 的 host(如 bili-comments)无条件登记 ref:它们常无 light 文本、首屏还是空壳,
-    // 不强制登记就会在整页 tree 里静默消失,agent 无从知道页面有评论区。登记后 formatTree 输出占位行。
+    // 不强制登记就会在整页 view 里静默消失,agent 无从知道页面有评论区。登记后 formatView 输出占位行。
     const hasShadow = isEl && inView && !!(el as Element).shadowRoot;
     let ref: number | undefined;
     let view: boolean | undefined;
@@ -124,14 +124,14 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
       // viewport 标记:对带 ref 的节点算便宜的在视区判定(rect+宽高,不查 computed style)。
       if (viewport) view = isInViewport(el as Element);
     }
-    const node: TreeNode = {
+    const node: ViewNode = {
       tag,
       // shadow host 强制 isContent:空壳 host(无文本、shadow 子树也未加载)也要被 walk 到、输出占位,
-      // 否则会被 productive 过滤掉,agent 在整页 tree 里看不到它存在。
+      // 否则会被 productive 过滤掉,agent 在整页 view 里看不到它存在。
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow,
       text, inter, ref, inView, view,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
-      // 表单元素采集 type/value/placeholder(tree 显示),让 agent 看到搜索框内容、不必 eval。
+      // 表单元素采集 type/value/placeholder(view 显示),让 agent 看到搜索框内容、不必 eval。
       // textarea 采 value/placeholder;input 采 type/value/placeholder;select 不采(options 由交互展开)。
       inputInfo: isEl && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')
         ? {
@@ -165,8 +165,8 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     return node;
   }
 
-  let tree = simplify(root, 0, null);
-  if (!tree) tree = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
-  if (visibleOnly) { tree.kids = tree.kids.filter(k => prune(k)); }
-  return tree;
+  let v = simplify(root, 0, null);
+  if (!v) v = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
+  if (visibleOnly) { v.kids = v.kids.filter(k => prune(k)); }
+  return v;
 }
