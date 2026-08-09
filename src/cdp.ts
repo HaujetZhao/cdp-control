@@ -170,8 +170,19 @@ const feedbackCfg = (opts: any): { noFeedback: boolean; feedbackDelay: number } 
   feedbackDelay: opts.feedbackDelay != null ? Number(opts.feedbackDelay) : 1000,
 });
 
-/** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。 */
+/** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。
+ * ref 失效自愈:打印"最近存活容器 + 局部 tree",提示 agent 用里面的新 ref 重试(不打印"已操作")。 */
 function printAction(line: string, r: any): void {
+  if (r?.refInvalid) {
+    const rec = r.recovered;
+    if (rec) {
+      console.log(`ref 失效 → 已自动 tree 最近存活容器 [ref=${rec.rootRef}],用里面的新 [ref] 重试:`);
+      console.log(rec.lines.join('\n'));
+    } else {
+      console.log('ref 失效: 整条祖先链均已失效(可能页面已刷新),请重新 tree 拿新 ref');
+    }
+    return;
+  }
   console.log(line + (r?.selector ? ` ，该元素的 selector 为: ${r.selector}` : ''));
 }
 

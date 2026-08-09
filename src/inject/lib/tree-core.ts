@@ -76,7 +76,7 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
   const viewport = !!opts.viewport;
   const exclude = stashSet(); // 会话级暂存集合,命中的元素整棵子树跳过
 
-  function simplify(el: Element | ShadowRoot, depth: number): TreeNode | null {
+  function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): TreeNode | null {
     const isEl = el instanceof Element;
     if (isEl && exclude && exclude.includes(el as Element)) return null; // 整棵子树消失(不输出、不登记 ref)
     const tag = isEl ? el.tagName?.toLowerCase() || 'frag' : 'frag';
@@ -89,7 +89,8 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     let view: boolean | undefined;
     if (isEl && inView && (inter || !!text)) {
       ref = (globalThis as any).__cdpRefs.length;
-      (globalThis as any).__cdpRefs.push(el as Element);
+      // 登记表存 {el, parentRef}:parentRef = 最近的已登记祖先 ref 号(跳表),供 ref 失效自愈向上找存活容器。
+      (globalThis as any).__cdpRefs.push({ el: el as Element, parentRef });
       // viewport 标记:对带 ref 的节点算便宜的在视区判定(rect+宽高,不查 computed style)。
       if (viewport) view = isInViewport(el as Element);
     }
@@ -102,10 +103,12 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
       shadow: isEl && !!(el as Element).shadowRoot,
       kids: [], size: 0, hasText: false, agg: false,
     };
+    // 子的 parentRef:本节点登记了 ref 就用本节点 ref,否则透传继承的 parentRef。
+    const childParent = ref != null ? ref : parentRef;
     for (const k of childrenOf(el as Element)) {
       const kt = k instanceof Element ? k.tagName.toUpperCase() : '';
       if (DROP.has(kt)) continue;
-      const kn = simplify(k, depth + 1);
+      const kn = simplify(k, depth + 1, childParent);
       if (kn) node.kids.push(kn); // 跳过被排除的 null
     }
     if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
@@ -121,7 +124,7 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     return node;
   }
 
-  let tree = simplify(root, 0);
+  let tree = simplify(root, 0, null);
   if (!tree) tree = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
   if (visibleOnly) { tree.kids = tree.kids.filter(k => prune(k)); }
   return tree;

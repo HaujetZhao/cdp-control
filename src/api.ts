@@ -14,10 +14,11 @@ import { maybeSpawnDaemon, injectMonitor } from './monitor';
  * 统一执行注入脚本并解包结果契约:
  * 注入脚本成功返回任意值(可含 {ok:true});失败返回 {ok:false, err}。
  * 这里统一把失败抛成异常,调用方无需各自判 ok。数据类入口(snapshot 等返回裸数组/对象)自然通过。
+ * 例外:ref 失效自愈({ok:false, refInvalid:true, recovered})不抛——上层据此打印 recovered tree,不走反馈。
  */
 async function invoke<T>(target: Target, expr: string, timeout?: number): Promise<T> {
   const r = await evaluate(target, expr, timeout);
-  if (r && typeof r === 'object' && (r as any).ok === false) throw new Error((r as any).err || '操作失败');
+  if (r && typeof r === 'object' && (r as any).ok === false && !(r as any).refInvalid) throw new Error((r as any).err || '操作失败');
   return r as T;
 }
 
@@ -120,6 +121,10 @@ async function runWithFeedback<T>(target: Target, doAction: () => Promise<T>, op
   const before = await list();
   try {
     const result = await doAction();
+    // ref 失效自愈:无真实动作发生,跳过反馈等待/采集/tab diff,直接把 recovered 透传给 CLI。
+    if (result && typeof result === 'object' && (result as any).refInvalid) {
+      return { ...result, feedback: null } as any;
+    }
     await sleep(opts.feedbackDelay ?? 1000);
     const fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
     const after = await list();
@@ -211,7 +216,8 @@ export async function pressKey(target: Target, keySpec: string, opts: FeedbackOp
 /** 将鼠标移到 target 页面指定元素中心(按 selector 或 ref,触发 mouseover/mouseenter;默认带操作后反馈)。 */
 export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts = {}): Promise<any> {
   return runWithFeedback(target, async () => {
-    const pos = await invoke<{ ok: boolean; x: number; y: number }>(target, inject('hover', normArg(arg)));
+    const pos = await invoke<{ ok: boolean; refInvalid?: boolean; x: number; y: number }>(target, inject('hover', normArg(arg)));
+    if (pos?.refInvalid) return pos; // ref 失效:注入侧已自愈,不 dispatch 鼠标
     if (!pos?.ok) throw new Error('未找到: ' + (typeof arg === 'string' ? arg : 'ref=' + arg.ref));
     await withPage(target, async (ws) => {
       await send(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: pos.x, y: pos.y });
