@@ -13,7 +13,8 @@ import type { FoldItem } from './arg.ts';
 export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[] }
 
 const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
-const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
+/** 压空白 + 零宽字符、首尾 trim 的归一化(供文本采集/比对统一用)。 */
+export const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
 const ownText = (el: Element) => {
   const parts: string[] = [];
   for (const n of Array.from(el.childNodes)) if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim()) parts.push(n.nodeValue);
@@ -31,8 +32,13 @@ const grabText = (el: Element | ShadowRoot, d: number): string => {
   }
   return parts.join(' ');
 };
+/** 取元素自身**直接**子文本节点拼成的文本(不含子元素文本,空白归一化)。find/locate 都要避免子树聚合误导。 */
+export const ownElText = (el: Element): string => ownText(el);
+/** 穿透 shadow 取整棵子树文本(空格分隔)。供 find 文本搜索比对"元素或后代是否含关键词"。 */
+export const subtreeText = (el: Element | ShadowRoot): string => strip(grabText(el, 0));
 // 泛化:children 含 light DOM + shadowRoot 子(穿透 Web Component shadow DOM,如 B站评论区)
-const childrenOf = (el: Element): (Element | ShadowRoot)[] => {
+/** 取元素的 light 子 + shadowRoot 子(穿透 Web Component shadow DOM,如 B站评论区)。 */
+export const childrenOf = (el: Element): (Element | ShadowRoot)[] => {
   const k: (Element | ShadowRoot)[] = [];
   for (let i = 0; i < el.children.length; i++) k.push(el.children[i]);
   if (el.shadowRoot) for (let i = 0; i < el.shadowRoot.children.length; i++) k.push(el.shadowRoot.children[i]);
