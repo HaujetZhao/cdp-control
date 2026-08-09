@@ -43,10 +43,23 @@ export function classifyRef(ref: number): RefClass {
 /**
  * 求建树根元素:selector 命中返回首个元素,否则 body。
  * selector 未命中返回 null(由调用方决定是否报错)。
+ *
+ * 支持 shadow 链:`a >>> b >>> c`。`>>>` 是本工具自定义的 shadow 穿透分隔符(非标准 CSS),
+ * 由 locate 对 shadow 内元素生成,让 `tree --selector-file` 能复用。解析方式:
+ *   第一段在 document 上 querySelector;之后每段在前一段元素的 shadowRoot 上 querySelector,
+ *   逐层穿透(标准 CSS 无法跨 shadow 边界)。任一段未命中 / host 无 shadowRoot → null。
  */
 export function findRoot(selector?: string): Element | null {
-  if (selector) return document.querySelector(selector);
-  return document.body;
+  if (!selector) return document.body;
+  const parts = selector.split('>>>').map(s => s.trim());
+  if (parts.length === 1) return document.querySelector(parts[0]);
+  // shadow 链:逐段穿透 shadowRoot
+  let node: any = document.querySelector(parts[0]);
+  for (let i = 1; i < parts.length; i++) {
+    if (!node || !node.shadowRoot) return null;
+    node = node.shadowRoot.querySelector(parts[i]);
+  }
+  return node ?? null;
 }
 
 /**
