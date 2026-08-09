@@ -11,6 +11,7 @@
 import { setResult } from './lib/result';
 import { refElement, climbAncestors, inShadow, buildShadowChain, outermostHost } from './lib/find-root';
 import { genSel } from './lib/genSel';
+import { ownElText } from './lib/tree-core';
 import { notFoundResult, type OperableArg } from './lib/find';
 import type { LocateArgs } from './lib/arg';
 
@@ -21,7 +22,8 @@ declare const __CDP_ARG__: LocateArgs;
   if (!base) return setResult(notFoundResult({ ref: __CDP_ARG__.ref } as OperableArg));
   const el = climbAncestors(base, __CDP_ARG__.ancestor || 0);
   if (!el) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 向上爬 ${__CDP_ARG__.ancestor || 0} 层后无元素` });
-  const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  // 用元素**自身直接文本**(只取直接子文本节点),不混入子树文本(避免按钮显示子树里作者名等误导)。
+  const text = ownElText(el).slice(0, 80);
   const shadow = inShadow(el);
   // shadow 内元素:标准 selector 在 document 上查不到。返回其最外层 host 的 selector(至少指向容器),
   // 真正可用的穿透链在 shadowChain。普通 light 元素:genSel 正常。

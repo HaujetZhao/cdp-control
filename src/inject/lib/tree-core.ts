@@ -71,7 +71,7 @@ function prune(n: TreeNode): boolean {
   const hasView = !!n.inView || n.kids.length > 0;
   if (!n.inView) {
     n.text = ''; n.leafValue = undefined; n.imgAlt = ''; n.ref = undefined; n.agg = false;
-    n.isContent = false;
+    n.isContent = false; n.inputInfo = undefined;
   }
   return hasView;
 }
@@ -131,6 +131,15 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow,
       text, inter, ref, inView, view,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
+      // 表单元素采集 type/value/placeholder(tree 显示),让 agent 看到搜索框内容、不必 eval。
+      // textarea 采 value/placeholder;input 采 type/value/placeholder;select 不采(options 由交互展开)。
+      inputInfo: isEl && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')
+        ? {
+            type: el.tagName === 'INPUT' ? (el.getAttribute('type') || 'text') : undefined,
+            value: ((el as any).value || '').slice(0, 40),
+            placeholder: el.getAttribute('placeholder') || undefined,
+          }
+        : undefined,
       // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 ref 定位
       shadow: isEl && !!(el as Element).shadowRoot,
       kids: [], size: 0, hasText: false, agg: false,
