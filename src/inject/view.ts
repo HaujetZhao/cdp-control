@@ -27,8 +27,10 @@ setResult((async () => {
     root = climbAncestors(findRoot(__CDP_ARG__.selector), __CDP_ARG__.ancestor);
     if (!root || root.nodeType !== 1) return setResult({ ok: false, err: '未找到匹配的根节点(selector 未命中)' });
   }
-  // 全局 ref 登记表:本次 view 遍历重建,index 即输出里的 [ref=i]。agent 用真实元素引用操作,穿透 shadow。
-  (globalThis as any).__cdpRefs = [];
+  // 全局 ref 登记表:整页 view(ref/selector 均缺省)才重置,从 0 重新编号,index 即输出里的 [ref=i];
+  // 局部 view(<ref>/<selector>)只追加(增量号),保住整页已登记的其他 ref 不被顶掉(view 151 后再 view 152 仍有效)。
+  const resetRefs = __CDP_ARG__.ref == null && !__CDP_ARG__.selector;
+  if (resetRefs) (globalThis as any).__cdpRefs = [];
   // --scroll-to-load:滚动触发懒加载(评论区等首屏外的内容),再建视图。三种模式(默认行为不变):
   // (1) 默认(无 scrollPages/scrollTo):向下/向上各一屏后回原位,固定距离触发当前位置上下懒加载。
   //     刻意不大范围滚多屏再回顶——那会拉飞视口、让 agent 在已展开长内容页时丢失当前位置(曾踩坑)。
