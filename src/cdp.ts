@@ -145,10 +145,12 @@ targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree �
       console.log(`已添加持久规则 [${r.rule.id}]: ${domain}  ${selector}  # ${r.rule.note}`);
       return;
     }
-    if (opts.ref == null) throw new Error('用法: fold --ref <n> [--note 备注] [--save] [--domain d];或 fold add/list/rm');
+    if (opts.ref == null) throw new Error('用法: fold --ref <n> [备注] [--save] [--domain d];或 fold add/list/rm');
+    // --ref 模式:未被识别的位置参数(非 add/list/rm)当作备注
+    const note = opts.note || (args && args.length ? args.join(' ') : undefined);
     const r = await api.fold(t, {
       ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
-      note: opts.note, save: !!opts.save, domain: opts.domain,
+      note, save: !!opts.save, domain: opts.domain,
     });
     if (r.rule) console.log(`已添加持久规则 [${r.rule.id}]: ${r.rule.domain}  ${r.rule.selector}  # ${r.rule.note}`);
     else console.log(`已临时折叠: ${r.selector}  # ${r.note}`);

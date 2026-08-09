@@ -6,16 +6,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseRules, domainMatch, hostOf } from '../src/folds.ts';
 
-test('parseRules: 域名+selector+# 备注;行号=所在行(1 基)', () => {
-  const txt = '# 注释\n\nwww.bilibili.com  .bili-header  # 顶部导航\n*.zhihu.com .AppHeader #知乎顶栏\n';
+test('parseRules: 三列 tab 分隔;行号=所在行(1 基);# 注释行跳过', () => {
+  const txt = '# 注释\n\nwww.bilibili.com\t.bili-header\t顶部导航\n*.zhihu.com\t.AppHeader\t知乎顶栏\n';
   const r = parseRules(txt);
   assert.equal(r.length, 2);
   assert.deepEqual(r[0], { id: 3, domain: 'www.bilibili.com', selector: '.bili-header', note: '顶部导航' });
   assert.deepEqual(r[1], { id: 4, domain: '*.zhihu.com', selector: '.AppHeader', note: '知乎顶栏' });
 });
 
-test('parseRules: 无备注(# 缺省)行不报错', () => {
-  const r = parseRules('a.com .x\n');
+test('parseRules: selector 含空格(后代选择器)不被切碎', () => {
+  const r = parseRules('www.bilibili.com\t#app > div:nth-of-type(2) > div\t顶栏\n');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].selector, '#app > div:nth-of-type(2) > div');
+});
+
+test('parseRules: 无备注(第三列空)行不报错', () => {
+  const r = parseRules('a.com\t.x\t\n');
   assert.deepEqual(r[0], { id: 1, domain: 'a.com', selector: '.x', note: '' });
 });
 

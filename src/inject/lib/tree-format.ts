@@ -103,8 +103,8 @@ export function formatTree(tree: TreeNode): string[] {
     const kids = n.kids;
     if (!kids.length) return;
     const newPath = path.concat([tagLabel(n)]);
-    // productive = 有文本且非琐碎叶,或可交互(空 input 等无文本交互节点也要纳入,否则 tree 里不可见、ref 拿不到)
-    const productive = kids.filter(k => (k.hasText && !isTrivialLeaf(k)) || k.inter);
+    // productive = 有文本且非琐碎叶,或可交互,或折叠节点(折叠节点 hasText/inter 都 false,需显式纳入才能 walk 到 ▸ 输出)
+    const productive = kids.filter(k => (k.hasText && !isTrivialLeaf(k)) || k.inter || k.fold != null);
     if (productive.length === 1) { walk(productive[0], depth, newPath); return; }
     if (productive.length >= 2) {
       // 交互/带 ref/含交互子代的节点不内联折叠:必须各自成行,否则 [ref=i] 标注被吞、agent 拿不到可操作句柄。

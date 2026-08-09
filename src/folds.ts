@@ -3,10 +3,10 @@
  * 规则文件放在浏览器用户数据目录(CDP_USER_DATA,默认 ~/.cdp-browser)下 folds.txt,
  * 跨会话持久、跨项目共享(规则是"针对站点的浏览器偏好",不属于任何业务项目)。
  *
- * 文件格式(类 uBlock Origin):
- *   <域名>  <selector>  # <备注>
+ * 文件格式(三列 tab 分隔,因 selector 可能含空格——genSel 生成后代选择器):
+ *   <域名>\t<selector>\t<备注>
  * 域名可为精确(www.bilibili.com)或后缀通配(*.zhihu.com 匹配 zhihu.com 及其所有子域)。
- * selector 暂不支持含空格(单个复合选择器,折叠通常针对单个容器 class)。
+ * 行首 # 为注释。规则主要由 `fold add` / `fold --ref --save` 命令生成,不鼓励手写。
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -36,19 +36,18 @@ export function domainMatch(domain: string, hostname: string): boolean {
   return hostname === domain;
 }
 
-/** 解析规则文本(逐行;# 后为备注;空行/纯注释跳过)。id = 行号(1 基),供 rm 定位。 */
+/** 解析规则文本(逐行 tab 分列:domain / selector / note;行首 # 注释;空行跳过)。id = 行号(1 基),供 rm 定位。 */
 export function parseRules(text: string): FoldRule[] {
   const rules: FoldRule[] = [];
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i];
-    const hash = raw.indexOf('#');
-    const body = (hash >= 0 ? raw.slice(0, hash) : raw).trim();
-    if (!body) continue;
-    const note = (hash >= 0 ? raw.slice(hash + 1) : '').trim();
-    const parts = body.split(/\s+/);
-    if (parts.length < 2) continue; // 至少 domain + selector
-    const [domain, selector] = parts;
+    if (!raw.trim() || raw.trimStart().startsWith('#')) continue;
+    const parts = raw.split('\t');
+    const domain = (parts[0] || '').trim();
+    const selector = (parts[1] || '').trim();
+    const note = (parts[2] || '').trim();
+    if (!domain || !selector) continue;
     rules.push({ id: i + 1, domain, selector, note });
   }
   return rules;
@@ -62,11 +61,11 @@ export function loadFolds(): FoldRule[] {
   catch { return []; }
 }
 
-/** 重写规则文件(丢掉 id,id 仅内存定位用)。 */
+/** 重写规则文件(丢掉 id,id 仅内存定位用)。三列 tab 分隔。 */
 function writeRules(rules: Omit<FoldRule, 'id'>[]): void {
   const p = foldsPath();
   mkdirSync(dirname(p), { recursive: true });
-  const text = rules.map(r => `${r.domain}\t${r.selector}` + (r.note ? `\t# ${r.note}` : '')).join('\n') + '\n';
+  const text = rules.map(r => `${r.domain}\t${r.selector}\t${r.note}`).join('\n') + '\n';
   writeFileSync(p, text, 'utf8');
 }
 
