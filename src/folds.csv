@@ -8,3 +8,4 @@
 #   <备注>   折叠行的显示文本
 # 知乎顶栏(www.zhihu.com##.css-s8xum0)
 1	www.zhihu.com		.css-s8xum0	顶栏
+2	www.zhihu.com	/question/*	.css-2pfapc	页脚(footer)
