@@ -6,6 +6,6 @@
 #   <path>   glob 通配(* 匹配任意字符含 /,如 /video/*、/question/*),空 = 不限路径
 #   <selector>  折叠区域的 CSS selector(view 命中时整块折叠成一行 ▸)
 #   <备注>   折叠行的显示文本
-# 知乎顶栏(www.zhihu.com##.css-s8xum0)
-1	www.zhihu.com		.css-s8xum0	顶栏
-2	www.zhihu.com	/question/*	.css-2pfapc	页脚(footer)
+1	www.zhihu.com	*	.css-s8xum0	顶栏
+2	www.zhihu.com	*	.css-2pfapc	页脚(footer)
+2	www.zhihu.com	*	.HotSearchCard	热搜小卡片
