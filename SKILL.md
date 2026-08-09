@@ -67,7 +67,9 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `--ref <n>` | 以某 ref 的元素为树根(与 --selector-file 互斥) |
 | `--ancestor <k>` | 从锚点(任意)向上爬 k 层父级再建树;多与 --ref 配合把"内容叶子"抬到"区域容器" |
 | `--visible-only` | 筛选当前视口内可见元素(**仅"看当前屏上有啥",绝不做首次整页感知**) |
-| `--scroll-to-load` | 固定距离滚动触发懒加载(评论区等首屏外内容)再建树——向下/向上各一屏后回原位,**只移动 ±1 屏不会拉飞视口**;远处内容先自己滚到附近再建树 |
+| `--scroll-to-load` | 滚动触发懒加载(评论区等首屏外内容)再建树。默认向下/向上各一屏后回原位(**只移动 ±1 屏不会拉飞视口**);配合下方两参数可滚更远 |
+| `--scroll-pages <n>` | 与 `--scroll-to-load` 配合:循环向下滚 N 屏(每屏等 innerHeight + 150ms 间隔),边滚边检测 `scrollHeight` 增长,**连续 2 次不增长提前停**。用于无限流(持续滚+等加载)。**注意**:知乎等"用户主动滚动"反爬站点即便分步滚也可能触发不了,是站点反爬不是工具 bug |
+| `--scroll-to <selector>` | 与 `--scroll-to-load` 配合:先滚到匹配该 selector 的元素(B站评论区 `#bili-comments` 等),停下让懒加载触发,**命中不到优雅降级**(跳过该步、正常建树)。这是 `--scroll-to` 的主战场——比 `--scroll-pages` 精准 |
 
 **铁律(首次感知 = 完整 tree,禁 `--visible-only`)**:
 - 第一次看页面必须完整 `tree`(看全部内容,别 `| head` 截断,别 `--visible-only`)。`--visible-only` 只输出当前视口内元素——视口外的回答、评论区等**被整段漏掉**,让你以为页面只有首屏那么点(曾因只看可见区域找不到第 2 个回答)。
@@ -134,7 +136,7 @@ cdp fold rm 1 --target ...                  # 5. 删持久规则 [id]
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 固定距离滚动(下+上各一屏,回原位)触发懒加载再建树。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]` |
+| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 滚动触发懒加载再建树(默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]` |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定 CSS selector**。ref 是会话句柄,刷新后失效;locate 把它翻译成刷新后仍可用的 selector,供 `tree --selector-file` 复用(可选 --ancestor 把叶子抬到区域容器) |
 | `fold add <域名> <selector> <备注>` / `fold list` / `fold rm <id>` / `fold --ref <n> [备注] [--ancestor <k>] [--save] [--domain <d>] [--target]` | **类 uBlock 折叠规则**:持久规则存 `$CDP_USER_DATA/folds.txt`,tree 时命中区域折叠成一行 ▸,跨会话自动生效。`add` 手写;`--ref i --save 备注` 从 ref 推 selector+当前域名落盘;`--ref i`(不带 --save)会话级临时折叠;`list` 列持久+临时;`rm <id>` 删持久。展开用 `tree --ref <折叠容器 ref>` |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i`,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈 |

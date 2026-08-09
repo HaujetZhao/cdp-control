@@ -34,9 +34,20 @@ export function inject(name: string, args?: unknown): string {
 }
 
 /** 结构树入口(唯一感知命令)。锚点互斥:ref 优先,其次 selector,缺省整页 body;
- * visibleOnly 只输出视口内可见;ancestor 为统一爬父修饰符(对任一锚点生效);folds 为当前 hostname 命中的折叠规则。 */
-export function treeExpr(selector?: string, visibleOnly?: boolean, ref?: number, ancestor?: number, scrollToLoad?: boolean, folds?: unknown): string {
-  return inject('tree', { selector, visibleOnly: visibleOnly || undefined, ref, ancestor, scrollToLoad: scrollToLoad || undefined, folds });
+ * visibleOnly 只输出视口内可见;ancestor 为统一爬父修饰符(对任一锚点生效);folds 为当前 hostname 命中的折叠规则。
+ * scrollToLoad 启用滚动加载(默认 ±1 屏回弹);scrollPages 循环滚 N 屏(边滚边检测增长);
+ * scrollTo 先滚到该 selector 元素(B站评论区容器)。 */
+export function treeExpr(
+  selector?: string, visibleOnly?: boolean, ref?: number, ancestor?: number,
+  scrollToLoad?: boolean, folds?: unknown, scrollPages?: number, scrollTo?: string,
+): string {
+  return inject('tree', {
+    selector, visibleOnly: visibleOnly || undefined, ref, ancestor,
+    scrollToLoad: scrollToLoad || undefined,
+    scrollPages: scrollPages != null ? scrollPages : undefined,
+    scrollTo: scrollTo || undefined,
+    folds,
+  });
 }
 
 /** locate:按 tree 的 ref 反查稳定 CSS selector,可选 --ancestor 爬父。 */
