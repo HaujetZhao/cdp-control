@@ -9,3 +9,11 @@
 1	www.zhihu.com	*	.css-s8xum0	顶栏
 2	www.zhihu.com	*	.css-2pfapc	页脚(footer)
 2	www.zhihu.com	*	.HotSearchCard	热搜小卡片
+3	*.csdn.net	*	#toolbarBox	顶栏
+4	*.csdn.net	*	.recommend-box	相关推荐
+5	*.csdn.net	*	.blog-footer-bottom	页脚
+6	*.csdn.net	*	.blog_container_aside	右侧侧边栏
+7	*.csdn.net	*	#recommend-right	底部重复侧边栏
+8	*.csdn.net	*	.comment-rewarddialog-box	红包表单
+9	*.csdn.net	*	#redEnvolope	红包广告
+10	*.csdn.net	*	.csdn-side-toolbar	悬浮侧边栏
