@@ -130,13 +130,17 @@ targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree �
   .option('--note <备注>', '折叠备注(tree 里 ▸ 后显示)')
   .option('--save', '落盘为持久规则(默认仅会话级临时折叠,刷新失效)')
   .option('--domain <d>', '持久规则的域名(默认当前页 hostname;支持 *.suffix 通配)')
+  .option('--path <前缀>', '持久规则的 URL pathname 前缀(限定只在该路径下命中,修同域名跨页错位,如 /video)')
   .action(async (args, opts) => {
     const t = await needTarget(opts.target);
     const [cmd, ...rest] = args || [];
     if (cmd === 'list') {
       const r = await api.fold(t, { list: true });
       if (!r.persist?.length && !r.tmp?.length) { console.log('无折叠规则(用 fold add 或 fold --ref --save 添加)'); return; }
-      if (r.persist?.length) { console.log('持久规则(folds.txt):'); r.persist.forEach((f: any) => console.log(`  [${f.id}] ${f.domain}  ${f.selector}  # ${f.note}`)); }
+      if (r.persist?.length) {
+        console.log('持久规则(folds.txt):');
+        r.persist.forEach((f: any) => console.log(`  [${f.id}] ${f.domain}${f.pathPrefix ? ' ' + f.pathPrefix : ''}  ${f.selector}  # ${f.note}`));
+      }
       if (r.tmp?.length) { console.log('会话级临时(刷新失效):'); r.tmp.forEach((f: any, i: number) => console.log(`  [t${i}] ${f.selector}  # ${f.note}`)); }
       return;
     }
@@ -148,20 +152,20 @@ targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree �
     }
     if (cmd === 'add') {
       const [domain, selector, ...noteParts] = rest;
-      if (!domain || !selector) throw new Error('用法: fold add <域名> <selector> <备注>');
-      const r = await api.fold(t, { add: { domain, selector, note: noteParts.join(' ') } });
-      console.log(`已添加持久规则 [${r.rule.id}]: ${domain}  ${selector}  # ${r.rule.note}`);
+      if (!domain || !selector) throw new Error('用法: fold add <域名> <selector> <备注> [--path <前缀>]');
+      const r = await api.fold(t, { add: { domain, selector, note: noteParts.join(' '), path: opts.path } });
+      console.log(`已添加持久规则 [${r.rule.id}]: ${domain}${r.rule.pathPrefix ? ' ' + r.rule.pathPrefix : ''}  ${selector}  # ${r.rule.note}`);
       return;
     }
-    if (opts.ref == null) throw new Error('用法: fold --ref <n> [备注] [--save] [--domain d];或 fold add/list/rm');
+    if (opts.ref == null) throw new Error('用法: fold --ref <n> [备注] [--save] [--domain d] [--path <前缀>];或 fold add/list/rm');
     // --ref 模式:未被识别的位置参数(非 add/list/rm)当作备注
     const note = opts.note || (args && args.length ? args.join(' ') : undefined);
     const r = await api.fold(t, {
       ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
-      note, save: !!opts.save, domain: opts.domain,
+      note, save: !!opts.save, domain: opts.domain, path: opts.path,
     });
     if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示,不打印"已折叠"
-    if (r.rule) console.log(`已添加持久规则 [${r.rule.id}]: ${r.rule.domain}  ${r.rule.selector}  # ${r.rule.note}`);
+    if (r.rule) console.log(`已添加持久规则 [${r.rule.id}]: ${r.rule.domain}${r.rule.pathPrefix ? ' ' + r.rule.pathPrefix : ''}  ${r.rule.selector}  # ${r.rule.note}`);
     else console.log(`已临时折叠: ${r.selector}  # ${r.note}`);
   });
 
