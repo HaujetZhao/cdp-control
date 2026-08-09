@@ -21,7 +21,8 @@ export interface FillArgs { sel?: string; ref?: number; ancestor?: number; value
 export interface FoldItem { selector: string; note: string }
 export interface ViewArgs {
   selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number;
-  scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string; folds?: FoldItem[];
+  scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string;
+  scrollWait?: number; folds?: FoldItem[];
 }
 
 /** locate:按 view 的 ref 序号反查稳定 CSS selector,可选 --ancestor 向上爬 N 层。 */

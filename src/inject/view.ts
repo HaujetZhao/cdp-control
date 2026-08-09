@@ -84,6 +84,9 @@ setResult((async () => {
   if (__CDP_ARG__.scrollToLoad || (isFullView && !hasExplicitScroll && !(globalThis as any).__cdpFullViewDone)) {
     if (isFullView && !hasExplicitScroll) (globalThis as any).__cdpFullViewDone = true; // 先置位防并发重滚
     await scrollToLoad();
+    // 滚动触发懒加载后等待内容渲染(scrollWait 默认 1000ms;显式传可调),否则滚动完立即建树,新回答/评论区还没加载出来。
+    const wait = __CDP_ARG__.scrollWait != null ? __CDP_ARG__.scrollWait : 1000;
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
   }
   const visibleOnly = !!__CDP_ARG__.visibleOnly;
   const v = buildView(root, { visibleOnly, viewport: true, folds: __CDP_ARG__.folds });

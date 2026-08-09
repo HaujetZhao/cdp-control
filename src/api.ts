@@ -69,7 +69,7 @@ export async function navigate(target: Target, url: string): Promise<void> {
 
 export interface ViewOpts {
   selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number;
-  scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string;
+  scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string; scrollWait?: number;
 }
 
 /** 结构视图:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
@@ -79,7 +79,7 @@ export interface ViewOpts {
  * 传入注入侧 buildView 折叠成一行(跨会话持久)。 */
 export async function view(target: Target, opts: ViewOpts = {}): Promise<any> {
   const folds = matchFolds(hostOf(target.url), pathOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
-  return invoke(target, viewExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo), 30000);
+  return invoke(target, viewExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo, opts.scrollWait), 30000);
 }
 
 /** 一次性抓取页面:临时 open 新 tab 打开 url → 等页面加载(至少 interactive)→ view 建树 → 关闭 tab,

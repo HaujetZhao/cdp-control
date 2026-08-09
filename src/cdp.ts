@@ -91,6 +91,7 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
   .option('--scroll-to-load', '先滚动触发懒加载(评论区等首屏外的内容)再建视图——模拟真实用户滚动,防 agent 找不到未加载区域(默认 ±1 屏回弹)')
   .option('--scroll-pages <n>', '与 --scroll-to-load 配合:循环向下滚 N 屏(边滚边检测 scrollHeight 增长,连续 2 次不增长提前停),用于无限流')
   .option('--scroll-to <selector>', '与 --scroll-to-load 配合:先滚到匹配该 selector 的元素(如 B站评论区 #bili-comments),命中不到优雅降级')
+  .option('--scroll-wait <ms>', '与 --scroll-to-load 配合:滚动触发懒加载后等待内容渲染的毫秒数(默认 1000;调大给新回答/评论区更多加载时间)')
   .action(async (opts) => {
     const sel = readOptFile(opts.selectorFile);
     if (opts.ref != null && sel) throw new Error('--ref 与 --selector-file 只能选其一');
@@ -104,6 +105,7 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
       scrollToLoad: !!opts.scrollToLoad,
       scrollPages: opts.scrollPages != null ? Number(opts.scrollPages) : undefined,
       scrollTo: opts.scrollTo || undefined,
+      scrollWait: opts.scrollWait != null ? Number(opts.scrollWait) : undefined,
     });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));
