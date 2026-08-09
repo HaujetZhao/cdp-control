@@ -171,6 +171,7 @@ function printAction(line: string, r: any): void {
 function printFeedback(fb: any): void {
   if (!fb) return;
   const out: string[] = [];
+  if (fb.note) out.push(fb.note);
   if (fb.blocks?.length) {
     out.push('页面变化 · 新增内容:');
     for (const b of fb.blocks) {
