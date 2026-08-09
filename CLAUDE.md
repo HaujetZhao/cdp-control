@@ -77,8 +77,8 @@ dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建�
 - 会话临时折叠存页面全局 `__cdpFolds`(`lib/fold.ts`),刷新清空。注入入口 `inject/fold.ts`(临时折叠/list/clear);`--save` 落盘由 Node `api.fold` 调 `locateExpr`。
 - **fold ≠ stash**:stash 是"藏"(整棵不输出、刷新丢);fold 是"折叠"(一行 `▸ [ref=i] <备注>` 保留 ref 可展开、跨会话持久、基于 selector 规则)。
 
-### lineage
-`inject/lineage.ts` 列目标从 `<html>` 到自身的祖先链,每层紧凑描述 `tag/id/class/语义 data-*/aria-label/role` + `genSel` 建议。设计意图:genSel 有时挑的锚点不是 agent 要的语义锚点,lineage 把整条链摊开**决策权交还 agent**(看清 `#biliMainHeader` 在第 N 层直接写 fold 规则)。与 locate 差别:locate 回一个 genSel(工具帮我定);lineage 回祖先链全貌(我自己挑)。
+### lineage(info)
+`inject/lineage.ts` 列目标从 `<html>` 到自身的祖先链,每层紧凑描述 `tag/id/class/语义 data-*/aria-label/role` + `genSel` 建议。设计意图:genSel 有时挑的锚点不是 agent 要的语义锚点,lineage 把整条链摊开**决策权交还 agent**(看清 `#biliMainHeader` 在第 N 层直接写 fold 规则)。与 locate 差别:locate 回一个 genSel(工具帮我定);lineage 回祖先链全貌(我自己挑)。**CLI 命令名为 `info`(别名 `lineage`,对应 DESIGN.md 的 info 条目),`api.lineage(target, ref, ancestor?)` 供脚本用**;`cdp.ts` `printInfoChain` 负责格式化输出。
 
 ### find
 `inject/find-entry.ts`(类 uBlock `:has-text()`)解决"view 严禁 grep、ref 易失效"——按文本/selector 找元素登记新 ref,不必整页重 tree。`--text` 整页 DFS(`childrenOf` 穿透 shadow + `ownElText` 取**自身直接文本**)搜关键词,深度上限 `MAX_DEPTH=14`,命中即止。**为何用自身文本而非 subtreeText**:子树文本让最外层容器先命中(body 几乎含所有文本)。命中元素追加进 `__cdpRefs`(`{el,parentRef:null}`),`buildView(el,{viewport:true})` 取根行标 ref。`--ancestor` 爬父;`--all` 收集全部。`FindCmdArgs{text?,selector?,ancestor?,all?}`。

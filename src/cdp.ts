@@ -198,6 +198,22 @@ function printFeedback(fb: any): void {
 const argLabel = (a: string | { ref: number; ancestor?: number }): string =>
   typeof a === 'string' ? a : 'ref=' + a.ref + (a.ancestor ? `↑${a.ancestor}` : '');
 
+/** info 结果(祖先链)格式化:逐层 tag#id.class[data-*][aria][role],根→叶,末尾附目标层号与建议 selector。 */
+function printInfoChain(r: any): void {
+  if (!r?.chain?.length) { console.log('(空链)'); return; }
+  for (const l of r.chain) {
+    const parts: string[] = [`depth ${l.depth}: ${l.tag}`];
+    if (l.id) parts.push('#' + l.id);
+    if (l.classes) parts.push('.' + (Array.isArray(l.classes) ? l.classes.join('.') : String(l.classes)));
+    if (l.dataAttrs) for (const [k, v] of Object.entries(l.dataAttrs)) parts.push(`[${k}="${v}"]`);
+    if (l.aria) parts.push(`[aria="${l.aria}"]`);
+    if (l.role) parts.push(`[role="${l.role}"]`);
+    console.log(parts.join(' '));
+  }
+  if (r.targetDepth != null) console.log(`→ 目标在第 ${r.targetDepth} 层`);
+  if (r.suggested) console.log(`建议 selector: ${r.suggested}`);
+}
+
 feedbackOpt(refOpt(targetCmd('click', '点击元素'))).argument('[selector]', 'selector 或 --ref')
   .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已点击: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
 
@@ -209,6 +225,16 @@ feedbackOpt(refOpt(targetCmd('focus', '聚焦元素'))).argument('[selector]', '
 
 targetCmd('get-focus', '查看当前焦点元素在哪')
   .action(async (opts) => { const f = await api.getFocus(await needTarget(opts.target)); if (!f) { console.log('(当前无焦点元素)'); return; } console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`); });
+
+targetCmd('info', '列目标元素祖先链(tag/id/class/语义 data-*/aria/role 逐层),附建议 selector——看清稳定锚点,自己写 fold 规则')
+  .alias('lineage')
+  .option('--ref <n>', '按 view 输出的 ref 序号定位(必填,穿透 shadow)')
+  .option('--ancestor <n>', '按 --ref 定位后向上爬 N 层父级再列(默认 0)')
+  .action(async (opts) => {
+    if (opts.ref == null) throw new Error('info 需要 --ref N(来自 view 输出的 ref)');
+    const r = await api.lineage(await needTarget(opts.target), Number(opts.ref), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+    printInfoChain(r);
+  });
 
 feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab')).argument('<key>', '按键')
   .action(async (key: string, opts: any) => { const r = await api.pressKey(await needTarget(opts.target), key, feedbackCfg(opts)); console.log(`已按键: ${key}`); printFeedback(r?.feedback); });
