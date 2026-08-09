@@ -1,7 +1,6 @@
 /**
  * folds.ts — fold 折叠规则的持久化(Node 侧)。
- * 规则文件放在浏览器用户数据目录(CDP_USER_DATA,默认 ~/.cdp-browser)下 folds.txt,
- * 跨会话持久、跨项目共享(规则是"针对站点的浏览器偏好",不属于任何业务项目)。
+ * 规则文件放在 dist/cdp.js 同级(dist/folds.txt),便于手动编辑,随 dist 拷贝走。
  *
  * 文件格式(csv,tab 分隔,固定 5 列,因 selector 可能含空格——genSel 生成后代选择器):
  *   <id>\t<domain>\t<path>\t<selector>\t<note>
@@ -12,9 +11,8 @@
  *   - selector:命中该元素的 CSS selector,即要折叠的区域
  * 行首 # 为注释。
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 export interface FoldRule {
   id: number;
@@ -24,10 +22,10 @@ export interface FoldRule {
   note: string;
 }
 
-/** 规则文件路径:与浏览器用户数据同目录(跨会话/跨项目持久)。 */
+/** 规则文件路径:与 cdp.js 同级(dist/ 下),便于手动编辑;随 dist 拷贝走、跨会话持久。
+ * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 dist/folds.txt。 */
 function foldsPath(): string {
-  const userData = process.env.CDP_USER_DATA || join(homedir(), '.cdp-browser');
-  return join(userData, 'folds.txt');
+  return process.env.CDP_FOLD_FILE || join(__dirname, 'folds.txt');
 }
 
 /** 从 url 提取 hostname;非法/空白返回 ''(about:blank 等不参与 fold 匹配)。 */
@@ -101,14 +99,12 @@ export function loadFolds(): FoldRule[] {
   catch { return []; }
 }
 
-/** 重写规则文件(保留各规则原 id,不按行号重排)。 */
+/** 重写规则文件(保留各规则原 id,不按行号重排)。dist/ 与 cdp.js 同级必然存在,无需建目录。 */
 function writeRules(rules: FoldRule[]): void {
-  const p = foldsPath();
-  mkdirSync(dirname(p), { recursive: true });
   const text = rules.map(r =>
     `${r.id}\t${r.domain}\t${r.path}\t${r.selector}\t${r.note}`,
   ).join('\n') + '\n';
-  writeFileSync(p, text, 'utf8');
+  writeFileSync(foldsPath(), text, 'utf8');
 }
 
 /** 追加一条持久规则。id = max(现有 id)+1(单调递增,不重排)。path 空 = 不限定。 */

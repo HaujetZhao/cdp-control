@@ -89,7 +89,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 
 **整页 tree 去噪(`fold` 持久规则,类 uBlock Origin)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `fold` 把这些区域**折叠成一行**(输出 `▸ [ref=i] <备注>`,不展开子树但保留 ref),跨会话持久——下次打开同站点自动折叠。
 
-**规则手动编辑**:持久规则存 `$CDP_USER_DATA/folds.txt`(默认 `~/.cdp-browser/`),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`。tree 时自动加载生效。
+**规则手动编辑**:持久规则存 `dist/folds.txt`(与 `dist/cdp.js` 同级,便于编辑、随 dist 拷贝走),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`。tree 时自动加载生效。
 - **`<id>` 单调递增不重排**(修连续 rm 漏删),新规则 id 取现有 max+1。只认首列为数字的行,旧格式行直接跳过(不迁移)。
 - **`<域名>` 通配对齐 uBlock**:精确(`www.bilibili.com`)、子域通配(`*.zhihu.com` 匹配自身+任意子域)、entity 通配(`zhihu.*` 匹配任意 TLD)。空 = 不匹配。
 - **`<path>` glob 通配**:`*` 匹配任意字符含 `/`,如 `/video/*`、`/question/*`;空 = 不限路径。同域名不同页(B站首页 vs 视频页、知乎首页 vs 回答页)DOM 结构不同,只按域名存的规则会在别的页命中错位元素——用 path 限定。
@@ -141,7 +141,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 | `logs [--target] [--level error,warn] [--since <ms>] [--json]` | 读 target 控制台日志(见下方「读控制台日志」) |
 | `run <脚本文件>` | 执行自动化脚本(脚本里用全局 `cdp` API,可顶层 `await`) |
 
-环境变量:`CDP_HOST` / `CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(监听 daemon 端口,默认 9333)、`CDP_USER_DATA`(浏览器用户数据目录 + fold 规则文件位置,默认 `~/.cdp-browser`)。
+环境变量:`CDP_HOST` / `CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(监听 daemon 端口,默认 9333)、`CDP_USER_DATA`(浏览器用户数据目录,默认 `~/.cdp-browser`)、`CDP_FOLD_FILE`(fold 规则文件路径覆盖,默认 `dist/folds.txt`,供测试隔离)。
 
 ## 命令示例(真实流程)
 
@@ -152,7 +152,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 cdp open "https://www.zhihu.com/"     # 开页
 cdp tree --target zhihu               # 看整页,拿 ref(别 head/sed 截断)
 cdp tree --ref 53 --ancestor 4 --target zhihu   # 从内容叶子 ref 爬到区域容器,只列问题+回答
-# 去噪:手动编辑 $CDP_USER_DATA/folds.txt 加一行(如 `5\t*.zhihu.com\t*\t.AppHeader\t顶栏`)→ tree 自动折叠顶栏
+# 去噪:手动编辑 dist/folds.txt 加一行(如 `5\t*.zhihu.com\t*\t.AppHeader\t顶栏`)→ tree 自动折叠顶栏
 ```
 
 ### 点击可能开新 tab → 反馈自动报落点

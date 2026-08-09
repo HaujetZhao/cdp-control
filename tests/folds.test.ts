@@ -12,14 +12,14 @@ import {
   parseRules, domainMatch, pathMatch, hostOf, pathOf, matchFolds, loadFolds, addFold, removeFold,
 } from '../src/folds.ts';
 
-// 每个需要落盘的测试用独立临时目录,避免互相污染 / 污染用户真实 folds.txt。
+// 每个需要落盘的测试用独立临时 folds 文件,避免互相污染 / 污染真实 dist/folds.txt。
 function withTmpDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-folds-'));
-  const prev = process.env.CDP_USER_DATA;
-  process.env.CDP_USER_DATA = dir;
+  const prev = process.env.CDP_FOLD_FILE;
+  process.env.CDP_FOLD_FILE = join(dir, 'folds.txt');
   try { return fn(dir); }
   finally {
-    process.env.CDP_USER_DATA = prev;
+    process.env.CDP_FOLD_FILE = prev;
     rmSync(dir, { recursive: true, force: true });
   }
 }
