@@ -6,9 +6,9 @@
  * 注意:buildTree 只"追加" ref 到 __cdpRefs,**不重置**——重置时机由调用方决定
  * (tree 入口在整页建树前重置;反馈收集在拼接多个新增块前重置一次,保证跨块 ref 连续)。
  */
-import type { TreeNode } from './tree-format';
-import { tmpFolds } from './fold';
-import type { FoldItem } from './arg';
+import type { TreeNode } from './tree-format.ts';
+import { tmpFolds } from './fold.ts';
+import type { FoldItem } from './arg.ts';
 
 export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[] }
 
