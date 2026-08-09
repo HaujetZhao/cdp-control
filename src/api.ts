@@ -66,14 +66,18 @@ export async function navigate(target: Target, url: string): Promise<void> {
   });
 }
 
-export interface TreeOpts { selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number; scrollToLoad?: boolean }
+export interface TreeOpts {
+  selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number;
+  scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string;
+}
 
 /** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
- * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先上下滚动触发懒加载再建树。
+ * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先滚动触发懒加载再建树
+ *   (默认 ±1 屏回弹;scrollPages 改为循环滚 N 屏;scrollTo 先滚到该 selector 元素,如 B站评论区)。
  * 折叠:Node 侧按 target 页 hostname 读 folds.txt 命中规则,传入注入侧 buildTree 折叠成一行(跨会话持久)。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
   const folds = matchFolds(hostOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
-  return invoke(target, treeExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds), 30000);
+  return invoke(target, treeExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo), 30000);
 }
 
 /** 按 tree 的 ref 序号反查稳定 CSS selector,可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的 selector 复用。 */

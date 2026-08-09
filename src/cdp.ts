@@ -92,15 +92,22 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(锚点�
   .option('--ancestor <n>', '从建树根向上爬 N 层父级再建树(默认 0;与 --ref/selector 任一锚点配合)')
   .option('--selector-file <file>', '从文件读 selector')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
-  .option('--scroll-to-load', '先上下滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动,防 agent 找不到未加载区域')
+  .option('--scroll-to-load', '先滚动触发懒加载(评论区等首屏外的内容)再建树——模拟真实用户滚动,防 agent 找不到未加载区域(默认 ±1 屏回弹)')
+  .option('--scroll-pages <n>', '与 --scroll-to-load 配合:循环向下滚 N 屏(边滚边检测 scrollHeight 增长,连续 2 次不增长提前停),用于无限流')
+  .option('--scroll-to <selector>', '与 --scroll-to-load 配合:先滚到匹配该 selector 的元素(如 B站评论区 #bili-comments),命中不到优雅降级')
   .action(async (opts) => {
     const sel = readOptFile(opts.selectorFile);
     if (opts.ref != null && sel) throw new Error('--ref 与 --selector-file 只能选其一');
+    if ((opts.scrollPages != null || opts.scrollTo != null) && !opts.scrollToLoad) {
+      throw new Error('--scroll-pages / --scroll-to 必须与 --scroll-to-load 配合使用');
+    }
     const r = await api.tree(await needTarget(opts.target), {
       selector: sel, visibleOnly: !!opts.visibleOnly,
       ref: opts.ref != null ? Number(opts.ref) : undefined,
       ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
       scrollToLoad: !!opts.scrollToLoad,
+      scrollPages: opts.scrollPages != null ? Number(opts.scrollPages) : undefined,
+      scrollTo: opts.scrollTo || undefined,
     });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));

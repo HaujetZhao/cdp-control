@@ -14,9 +14,15 @@ export interface FillArgs { sel?: string; ref?: number; ancestor?: number; value
 
 /** tree:按 selector / ref 求建树根元素(注入侧 findRoot + refElement/climbAncestors 解析,含 shadow 穿透)。
  * 锚点互斥:ref 优先,其次 selector;缺省 body。ancestor 为统一爬父修饰符(对任一锚点生效)。
- * folds:当前 hostname 命中的持久折叠规则(Node 侧 folds.ts 过滤后传入),buildTree 遇匹配 selector 折叠成一行。 */
+ * folds:当前 hostname 命中的持久折叠规则(Node 侧 folds.ts 过滤后传入),buildTree 遇匹配 selector 折叠成一行。
+ * scrollToLoad:启用滚动加载。无 scrollPages/scrollTo 时为默认 ±1 屏回弹;给 scrollPages 改为循环向下滚 N 屏
+ *   (边滚边检测 scrollHeight 增长,连续 2 次不增长提前停);给 scrollTo 改为先滚到该 selector 元素再建树
+ *   (B站评论区等容器)。两者可并用(先滚到元素,再循环滚 N 屏)。 */
 export interface FoldItem { selector: string; note: string }
-export interface TreeArgs { selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number; scrollToLoad?: boolean; folds?: FoldItem[] }
+export interface TreeArgs {
+  selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number;
+  scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string; folds?: FoldItem[];
+}
 
 /** locate:按 tree 的 ref 序号反查稳定 CSS selector,可选 --ancestor 向上爬 N 层。 */
 export interface LocateArgs { ref: number; ancestor?: number }
