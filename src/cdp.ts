@@ -190,6 +190,10 @@ function printFeedback(fb: any): void {
     out.push('关闭 tab:');
     for (const t of fb.tabs.closed) out.push('  · ' + (t.title || t.url));
   }
+  if (fb.tabs?.navigated?.length) {
+    out.push('跳转 tab:');
+    for (const n of fb.tabs.navigated) out.push('  · ' + `${n.to} [${n.id}]` + (n.from ? ` (原 ${n.from})` : ''));
+  }
   if (out.length) console.log(out.join('\n'));
 }
 

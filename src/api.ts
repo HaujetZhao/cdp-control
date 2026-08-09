@@ -11,6 +11,7 @@ import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
 import { normArg, type TargetArg } from './target-arg';
+import { diffTabs } from './tab-diff';
 
 /**
  * 统一执行注入脚本并解包结果契约:
@@ -160,17 +161,7 @@ export interface FeedbackOpts { feedbackDelay?: number; noFeedback?: boolean }
 export interface FeedbackResult {
   blocks?: { lines: string[]; count: number }[];   // 去重折叠后的新增内容块(可空)
   changes?: { before?: string; after: string }[];  // 文本变化(过滤前后相同),如 [{before:'63',after:'64'}]
-  tabs?: { opened: Target[]; closed: Target[] };
-}
-
-/** 两次 /json/list 快照的 tab 差异:opened=本次新增、closed=本次消失。 */
-function diffTabs(before: Target[], after: Target[]): { opened: Target[]; closed: Target[] } {
-  const beforeIds = new Set(before.map(t => t.id));
-  const afterIds = new Set(after.map(t => t.id));
-  return {
-    opened: after.filter(t => !beforeIds.has(t.id)),
-    closed: before.filter(t => !afterIds.has(t.id)),
-  };
+  tabs?: { opened: Target[]; closed: Target[]; navigated?: { id: string; from: string; to: string }[] };
 }
 
 /**
