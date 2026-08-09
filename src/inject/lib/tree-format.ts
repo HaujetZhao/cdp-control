@@ -66,6 +66,12 @@ export function formatTree(tree: TreeNode): string[] {
       out.push('  '.repeat(depth) + '▸ [ref=' + n.ref + '] ' + n.fold + (n.shadow ? '[shadow]' : ''));
       return;
     }
+    // 整页 tree 对带 shadowRoot 的 host(depth>0 子节点,已登记 ref)只输出占位行,不展开其 shadow 子树
+    // ——深入 shadow 用 `tree --ref N` / `--selector-file`(局部 tree 时该 host 是根 depth=0,正常展开)。
+    if (depth > 0 && n.shadow && n.ref != null) {
+      out.push('  '.repeat(depth) + tagLabel(n) + refTag(n));
+      return;
+    }
     if (n.isContent) {
       if (n.leafValue) {
         const val = firstTxt(n.kids);
@@ -103,8 +109,9 @@ export function formatTree(tree: TreeNode): string[] {
     const kids = n.kids;
     if (!kids.length) return;
     const newPath = path.concat([tagLabel(n)]);
-    // productive = 有文本且非琐碎叶,或可交互,或折叠节点(折叠节点 hasText/inter 都 false,需显式纳入才能 walk 到 ▸ 输出)
-    const productive = kids.filter(k => (k.hasText && !isTrivialLeaf(k)) || k.inter || k.fold != null);
+    // productive = 有文本且非琐碎叶,或可交互,或折叠节点,或带 ref 的 shadow host
+    // (后两者 hasText/inter 都 false,需显式纳入才能 walk 到占位/▸ 输出;空壳 shadow host 不纳入就会从整页 tree 消失)
+    const productive = kids.filter(k => (k.hasText && !isTrivialLeaf(k)) || k.inter || k.fold != null || (k.shadow && k.ref != null));
     if (productive.length === 1) { walk(productive[0], depth, newPath); return; }
     if (productive.length >= 2) {
       // 交互/带 ref/含交互子代的节点不内联折叠:必须各自成行,否则 [ref=i] 标注被吞、agent 拿不到可操作句柄。
