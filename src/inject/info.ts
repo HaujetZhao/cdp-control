@@ -1,20 +1,20 @@
 /**
- * lineage.ts — lineage 透视注入入口:列目标元素(爬 ancestor 后)从 <html> 到自身的祖先链。
+ * info.ts — info 透视注入入口:列目标元素(爬 ancestor 后)从 <html> 到自身的祖先链。
  * 每层紧凑显示 tag/id/class/语义 data-* /aria-label/role,让 agent 一眼挑出稳定锚点
  * 自己写 `fold add` 这种 uBlock 式短规则(如 `###biliMainHeader` 折 B站顶栏),
  * 而非只靠 genSel 猜一个。另附 genSel(el) 的建议 selector 作参考。
  *
  * 设计意图:genSel 已能生成 selector,但有时它选的不是 agent 想要的"语义锚点"
- * (比如挑了某个 data-v-xxx 而非更稳的 #id)。lineage 把整条祖先链信息摊开,
+ * (比如挑了某个 data-v-xxx 而非更稳的 #id)。info 把整条祖先链信息摊开,
  * 决策权交还 agent —— 它看清 #biliMainHeader 在第 3 层,直接 `fold add www.bilibili.com #biliMainHeader 顶栏`。
  */
 import { setResult } from './lib/result';
 import { refElement, climbAncestors } from './lib/find-root';
 import { genSel } from './lib/genSel';
 import { notFoundResult, type OperableArg } from './lib/find';
-import type { LineageArgs } from './lib/arg';
+import type { InfoArgs } from './lib/arg';
 
-declare const __CDP_ARG__: LineageArgs;
+declare const __CDP_ARG__: InfoArgs;
 
 /** 语义化 data-* 属性名(与 genSel 对齐:这些优先于泛化 data-*)。 */
 const SEMANTIC_DATA = [

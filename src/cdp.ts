@@ -227,12 +227,10 @@ targetCmd('get-focus', '查看当前焦点元素在哪')
   .action(async (opts) => { const f = await api.getFocus(await needTarget(opts.target)); if (!f) { console.log('(当前无焦点元素)'); return; } console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`); });
 
 targetCmd('info', '列目标元素祖先链(tag/id/class/语义 data-*/aria/role 逐层),附建议 selector——看清稳定锚点,自己写 fold 规则')
-  .alias('lineage')
-  .option('--ref <n>', '按 view 输出的 ref 序号定位(必填,穿透 shadow)')
-  .option('--ancestor <n>', '按 --ref 定位后向上爬 N 层父级再列(默认 0)')
-  .action(async (opts) => {
-    if (opts.ref == null) throw new Error('info 需要 --ref N(来自 view 输出的 ref)');
-    const r = await api.lineage(await needTarget(opts.target), Number(opts.ref), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+  .argument('<n>', 'view 输出的 ref 序号(穿透 shadow)')
+  .option('--ancestor <k>', '按 ref 定位后向上爬 K 层父级再列(默认 0)')
+  .action(async (n, opts) => {
+    const r = await api.info(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
     printInfoChain(r);
   });
 
