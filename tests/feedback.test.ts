@@ -1,6 +1,6 @@
 /**
  * feedback.test.ts — 反馈纯函数单测(零运行时依赖,node:test)。
- * feedback.ts 的 DOM 部分(startFeedback/collectFeedback 装 observer、buildTree 采集)依赖
+ * feedback.ts 的 DOM 部分(startFeedback/collectFeedback 装 observer、buildView 采集)依赖
  * 真实 DOM,靠浏览器实测验收;这里只锁定可纯化的 foldTimestampRun(连续播放时间戳折叠判定)。
  */
 import { test } from 'node:test';

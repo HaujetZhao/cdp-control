@@ -1,10 +1,10 @@
 /**
  * find.test.ts — recoverRef 判定逻辑(classifyRef)单测(Node 内置 node:test,零依赖)。
- * recoverRef 自身依赖 DOM(buildTree),其判定分支抽成 classifyRef(纯,在 find-root.ts)可单测:
+ * recoverRef 自身依赖 DOM(buildView),其判定分支抽成 classifyRef(纯,在 find-root.ts)可单测:
  *   - 无登记表 → 'none'(无可恢复)
  *   - 越界 / 槽空 → 'never'(打错号,不走跳表自愈)
  *   - 已登记 → 'live'(走跳表,DOM 部分靠浏览器实测)
- * 自愈成功(命中 isConnected=true 触发 buildTree)、整链 detached 失败(null)属 DOM 行为,不在此单测。
+ * 自愈成功(命中 isConnected=true 触发 buildView)、整链 detached 失败(null)属 DOM 行为,不在此单测。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
