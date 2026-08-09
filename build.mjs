@@ -67,16 +67,12 @@ async function main() {
   }
 
   // —— 拷贝 fold 规则模板(src/folds.csv → dist/folds.csv)——
-  // 仅当目标不存在时拷贝:dist/ 下的是用户可编辑的规则文件,已存在则不覆盖保留编辑。
+  // 每次构建都强制覆盖:src/folds.csv 是唯一权威副本,dist 只是产物。
   const foldTpl = join(src, 'folds.csv');
   const foldOut = join(dist, 'folds.csv');
   if (existsSync(foldTpl)) {
-    if (!existsSync(foldOut)) {
-      copyFileSync(foldTpl, foldOut);
-      console.log('▶ fold 规则模板 → dist/folds.csv(首次生成)');
-    } else {
-      console.log('▶ fold 规则:dist/folds.csv 已存在,跳过拷贝(保留你的编辑)');
-    }
+    copyFileSync(foldTpl, foldOut);
+    console.log('▶ fold 规则模板 → dist/folds.csv(覆盖)');
   }
 
   console.log('✅ build 完成 → dist/');

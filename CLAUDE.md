@@ -18,7 +18,7 @@ npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
 dist/cdp.js          入口 bundle(commander+全部 src,自包含,拷走 dist 即可运行)
 dist/*.js            其余 Node 侧(api/transport/monitor/browser/inject-loader/keys)
 dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 IIFE)
-dist/folds.csv       fold 规则运行时唯一权威副本(见「fold 折叠规则」)
+dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建覆盖,见「fold 折叠规则」)
 ```
 
 ## 源码结构(两层分离)
@@ -71,7 +71,7 @@ dist/folds.csv       fold 规则运行时唯一权威副本(见「fold 折叠规
 
 ### fold 折叠规则(取代已删 stash)
 - Node `src/folds.ts` 读写 `dist/folds.csv`(与 cdp.js 同级,`__dirname` 定位;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
-- **改 folds.csv 优先改 `dist/folds.csv`**:构建只在 dist 首次生成时从 src 拷贝一次,dist 已存在则跳过拷贝——src 只是模板,改了不生效。
+- **改 fold 规则改 `src/folds.csv`**:每次构建强制覆盖到 dist,`src/folds.csv` 是唯一权威副本,dist 只是产物。
 - 五列:`<id>\t<域名>\t<path>\t<selector>\t<备注>`;id 单调递增不重排;域名通配对齐 uBlock(精确/`*.suffix`/`suffix.*`);path 为 glob(`*` 含 `/`,空=不限,修同域名跨页错位)。`parseRules` 只认首列为数字的行,旧格式跳过。
 - `loadFolds/addFold/removeFold/matchFolds(hostOf/pathOf/domainMatch/pathMatch)` 纯函数+落盘;`api.view` 按 hostOf+pathOf 过滤注入 `__CDP_ARG__.folds`。
 - 会话临时折叠存页面全局 `__cdpFolds`(`lib/fold.ts`),刷新清空。注入入口 `inject/fold.ts`(临时折叠/list/clear);`--save` 落盘由 Node `api.fold` 调 `locateExpr`。
