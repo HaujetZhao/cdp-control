@@ -10,6 +10,7 @@ import { inject, treeExpr, locateExpr, lineageExpr, foldExpr, findExpr } from '.
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
+import { normArg, type TargetArg } from './target-arg';
 
 /**
  * 统一执行注入脚本并解包结果契约:
@@ -130,8 +131,8 @@ export async function fold(target: Target, opts: FoldOpts = {}): Promise<any> {
   return invoke(target, foldExpr({ ref: opts.ref, ancestor: opts.ancestor, note: opts.note }));
 }
 
-/** 操作目标:selector 字符串,或 {ref:n, ancestor?} 用 tree 登记的引用序号(穿透 shadow,可选爬父)。 */
-export type TargetArg = string | { ref: number; ancestor?: number };
+/** 操作目标类型 TargetArg 与归一化函数 normArg(含 {ref:N} 误用防呆)抽在 src/target-arg.ts,纯函数零依赖可单测。 */
+export type { TargetArg } from './target-arg';
 
 // —— 操作后自动反馈(opts + tab diff)——
 
@@ -178,11 +179,6 @@ async function runWithFeedback<T>(target: Target, doAction: () => Promise<T>, op
     try { await invoke(target, inject('feedback-collect')); } catch {}
     throw err;
   }
-}
-
-/** 归一化操作目标为注入侧参数:字符串→{sel},对象→{ref}。 */
-function normArg(a: TargetArg): { sel?: string; ref?: number } {
-  return typeof a === 'string' ? { sel: a } : a;
 }
 
 /** 点击 target 页面上匹配 selector 或 ref 的元素(默认带操作后反馈)。 */
