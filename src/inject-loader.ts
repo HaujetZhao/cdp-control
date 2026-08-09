@@ -39,13 +39,14 @@ export function inject(name: string, args?: unknown): string {
  * scrollTo 先滚到该 selector 元素(B站评论区容器)。 */
 export function viewExpr(
   selector?: string, visibleOnly?: boolean, ref?: number, ancestor?: number,
-  scrollToLoad?: boolean, folds?: unknown, scrollPages?: number, scrollTo?: string,
+  scrollToLoad?: boolean, folds?: unknown, scrollPages?: number, scrollTo?: string, scrollWait?: number,
 ): string {
   return inject('view', {
     selector, visibleOnly: visibleOnly || undefined, ref, ancestor,
     scrollToLoad: scrollToLoad || undefined,
     scrollPages: scrollPages != null ? scrollPages : undefined,
     scrollTo: scrollTo || undefined,
+    scrollWait: scrollWait != null ? scrollWait : undefined,
     folds,
   });
 }
