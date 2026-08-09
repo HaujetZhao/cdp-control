@@ -3,7 +3,7 @@
  */
 import { setResult } from './lib/result';
 import { findTarget, notFoundResult } from './lib/find';
-import { genSel } from './lib/genSel';
+import { actionSelector } from './lib/find-root';
 import type { FindArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FindArgs;
@@ -14,5 +14,6 @@ declare const __CDP_ARG__: FindArgs;
   el.scrollIntoView({ block: 'center', behavior: 'instant' });
   el.click();
   // 附唯一 selector:后续对该元素操作优先用 selector 而非 ref,避免 ref 重渲染失效。
-  return setResult({ ok: true, tag: el.tagName.toLowerCase(), selector: genSel(el) });
+  // shadow 内元素不回废 selector(querySelector 查不到),标 shadow:true。
+  return setResult({ ok: true, tag: el.tagName.toLowerCase(), ...actionSelector(el) });
 })();

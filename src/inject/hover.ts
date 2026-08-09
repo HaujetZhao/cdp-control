@@ -4,7 +4,7 @@
  */
 import { setResult } from './lib/result';
 import { findTarget, notFoundResult } from './lib/find';
-import { genSel } from './lib/genSel';
+import { actionSelector } from './lib/find-root';
 import type { FindArgs } from './lib/arg';
 
 declare const __CDP_ARG__: FindArgs;
@@ -18,6 +18,6 @@ declare const __CDP_ARG__: FindArgs;
     ok: true,
     x: Math.round(r.x + r.width / 2),
     y: Math.round(r.y + r.height / 2),
-    selector: genSel(el),
+    ...actionSelector(el),
   });
 })();

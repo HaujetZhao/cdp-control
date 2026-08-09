@@ -120,7 +120,15 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是�
     const r = await api.locate(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
     if (printRefInvalid(r)) return; // ref 失效(含从未存在):打印自愈提示,不打印 selector
     console.log(`[${r.tag}] "${r.text || ''}"`);
-    console.log(`  selector: ${r.selector || '(无)'}`);
+    if (r.shadow) {
+      // shadow 内元素:标准 selector 在 document 上查不到(querySelector 返 null),不能用。
+      // 给 shadowChain(hostSel >>> innerSel >>> ...)——tree --selector-file 能解析它穿透。
+      console.log(`  ⚠ 该元素在 shadow DOM 内,标准 CSS selector 无法穿透(上面 selector 仅指向最外层 host)。`);
+      console.log(`  shadow 链(可写入 selector-file 复用): ${r.shadowChain || '(生成失败)'}`);
+      console.log(`  或直接用 ref=${n} 操作(操作命令穿透 shadow)。`);
+    } else {
+      console.log(`  selector: ${r.selector || '(无)'}`);
+    }
   });
 
 targetCmd('lineage', '列目标元素(爬 ancestor 后)从 html 到自身的祖先链:每层 tag/id/class/语义 data-* /aria/role。挑稳定锚点写 fold add 这种 uBlock 式短规则(如 #biliMainHeader)')
@@ -238,10 +246,17 @@ function printRefInvalid(r: any): boolean {
 }
 
 /** 操作结果行 + 附唯一 selector(同一行,逗号分隔)。后续对该元素操作优先用此 selector,避免 ref 失效。
+ * selector 超长截断(位置链常很长);shadow 内元素不返回 selector,提示用 ref 操作。
  * ref 失效自愈:打印"最近存活容器 + 局部 tree",提示 agent 用里面的新 ref 重试(不打印"已操作")。 */
 function printAction(line: string, r: any): void {
   if (printRefInvalid(r)) return;
-  console.log(line + (r?.selector ? ` ，该元素的 selector 为: ${r.selector}` : ''));
+  if (r?.shadow) {
+    console.log(line + ' （该元素在 shadow 内,继续用 --ref 操作)');
+  } else {
+    const sel = r?.selector;
+    const shown = sel ? (sel.length > 80 ? sel.slice(0, 80) + '…' : sel) : '';
+    console.log(line + (shown ? ` ，该元素的 selector 为: ${shown}` : ''));
+  }
 }
 
 /** 打印操作反馈:新增内容 / 文本变化 / tab 变化分块,内容 2 空格缩进。fb 为 null(--no-feedback)时无输出。 */
