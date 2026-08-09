@@ -187,7 +187,7 @@ test('formatView: 含交互子代的纯包装节点不可内联,交互叶各自�
 test('formatView: 空壳 shadow host(带 ref)输出占位行,不展开其 shadow 子树(bili-comments 场景)', () => {
   // 复现 B站视频页:整页 view 看不到评论区。bili-comments 是 custom element,自身非交互、无 light 文本,
   // 首屏 shadowRoot 还是空壳。旧逻辑下 host 不登记 ref + productive 过滤后整块消失。
-  // 修法:带 ref 的 shadow host 在整页 view 里输出占位行,agent 据此用 view --ref N 展开。
+  // 修法:带 ref 的 shadow host 在整页 view 里输出占位行,agent 据此用 view <ref> 展开。
   const shadowKid = mk({ tag: 'div', isContent: true, text: 'shadow 内部不应出现', size: 1 });
   const comments = mk({ tag: 'bili-comments', isContent: true, text: '', inter: false, shadow: true, ref: 9, size: 2, kids: [shadowKid] });
   const root = mk({ tag: 'body', isContent: false, size: 3, kids: [comments] });
@@ -197,7 +197,7 @@ test('formatView: 空壳 shadow host(带 ref)输出占位行,不展开其 shadow
 });
 
 test('formatView: 有 light 文本的 shadow host 也只占位(整页 view 不深入 shadow)', () => {
-  // 即便 host 有 light 文本或 shadow 子树有内容,整页 view 仍只占位——深入用 view --ref N。
+  // 即便 host 有 light 文本或 shadow 子树有内容,整页 view 仍只占位——深入用 view <ref>。
   const inner = mk({ tag: 'span', isContent: true, text: '评论条目', size: 1 });
   const host = mk({ tag: 'x-list', isContent: true, text: '评论区', inter: false, shadow: true, ref: 4, size: 2, kids: [inner] });
   const root = mk({ tag: 'div', isContent: false, size: 3, kids: [host] });
@@ -214,8 +214,8 @@ test('formatView: shadow host 命中 fold 规则时走 fold 占位(fold 优先�
   assert.deepEqual(formatView(root), ['div', '  ▸ [ref=2] 折叠区[shadow]']);
 });
 
-test('formatView: 根是 shadow host 时不占位(view --ref N 展开场景,正常输出子树)', () => {
-  // view --ref N 把 shadow host 当根(depth=0),应正常展开其 shadow 子树,不走占位 return。
+test('formatView: 根是 shadow host 时不占位(view <ref> 展开场景,正常输出子树)', () => {
+  // view <ref> 把 shadow host 当根(depth=0),应正常展开其 shadow 子树,不走占位 return。
   const inner = mk({ tag: 'span', isContent: true, text: '评论 1', size: 1, ref: 1 });
   const root = mk({ tag: 'bili-comments', isContent: true, shadow: true, ref: 0, size: 2, kids: [inner] });
   markText(root);

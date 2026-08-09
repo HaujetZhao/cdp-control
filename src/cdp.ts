@@ -112,15 +112,13 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
     console.log(r.lines.join('\n'));
   });
 
-// ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。
-function refOrSel(sel: string | undefined, opts: any): string | { ref: number; ancestor?: number } {
-  if (opts.ref != null) return { ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined };
-  if (sel) return sel;
-  throw new Error('需提供 selector 或 --ref');
+// 操作目标:位置参数 <target> 全数字→ref(配 --ancestor),否则视为 selector。见 api.TargetArg。
+function normTarget(t: string, ancestor: number | undefined): string | { ref: number; ancestor?: number } {
+  if (/^\d+$/.test(t)) return { ref: Number(t), ancestor: ancestor != null ? Number(ancestor) : undefined };
+  return t;
 }
-const refOpt = (c: any) => c
-  .option('--ref <n>', '按 view 输出的 ref 序号操作(穿透 shadow,与 selector 二选一)')
-  .option('--ancestor <n>', '按 --ref 定位后向上爬 N 层父级再操作(默认 0;把内容叶子抬到区域容器)');
+const targetOpt = (c: any) => c
+  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再操作(默认 0;把内容叶子抬到区域容器;仅对数字 ref 生效)');
 
 /** 操作后自动反馈 option(click/fill/focus/hover/press-key 共用)。默认开启,等 feedbackDelay 后回报新增内容 + tab 变化。 */
 const feedbackOpt = (c: any) => c
@@ -161,7 +159,7 @@ function printRefInvalid(r: any): boolean {
 function printAction(line: string, r: any): void {
   if (printRefInvalid(r)) return;
   if (r?.shadow) {
-    console.log(line + ' （该元素在 shadow 内,继续用 --ref 操作)');
+    console.log(line + ' （该元素在 shadow 内,继续用 ref 操作)');
   } else {
     const sel = r?.selector;
     const shown = sel ? (sel.length > 80 ? sel.slice(0, 80) + '…' : sel) : '';
@@ -215,14 +213,14 @@ function printInfoChain(r: any): void {
   if (r.suggested) console.log(`建议 selector: ${r.suggested}`);
 }
 
-feedbackOpt(refOpt(targetCmd('click', '点击元素'))).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.click(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已点击: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
+feedbackOpt(targetOpt(targetCmd('click', '点击元素'))).argument('<target>', 'ref 序号或 selector(全数字=ref)')
+  .action(async (t: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.click(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已点击: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
 
-feedbackOpt(refOpt(targetCmd('fill', '填输入框并触发 input/change'))).argument('[selector]', 'selector 或 --ref').argument('<value>', '值')
-  .action(async (sel: string, val: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.fill(await needTarget(opts.target), arg, val, feedbackCfg(opts)); printAction(`已填入: ${argLabel(arg)} ← ${val}`, r); printFeedback(r.feedback); });
+feedbackOpt(targetOpt(targetCmd('fill', '填输入框并触发 input/change'))).argument('<target>', 'ref 序号或 selector(全数字=ref)').argument('<value>', '值')
+  .action(async (t: string, val: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.fill(await needTarget(opts.target), arg, val, feedbackCfg(opts)); printAction(`已填入: ${argLabel(arg)} ← ${val}`, r); printFeedback(r.feedback); });
 
-feedbackOpt(refOpt(targetCmd('focus', '聚焦元素'))).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.focus(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已聚焦: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
+feedbackOpt(targetOpt(targetCmd('focus', '聚焦元素'))).argument('<target>', 'ref 序号或 selector(全数字=ref)')
+  .action(async (t: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.focus(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已聚焦: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
 
 targetCmd('get-focus', '查看当前焦点元素在哪')
   .action(async (opts) => { const f = await api.getFocus(await needTarget(opts.target)); if (!f) { console.log('(当前无焦点元素)'); return; } console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`); });
@@ -238,8 +236,8 @@ targetCmd('info', '列目标元素祖先链(tag/id/class/语义 data-*/aria/role
 feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab')).argument('<key>', '按键')
   .action(async (key: string, opts: any) => { const r = await api.pressKey(await needTarget(opts.target), key, feedbackCfg(opts)); console.log(`已按键: ${key}`); printFeedback(r?.feedback); });
 
-feedbackOpt(refOpt(targetCmd('hover', '鼠标移到元素上'))).argument('[selector]', 'selector 或 --ref')
-  .action(async (sel: string, opts: any) => { const arg = refOrSel(sel, opts); const r = await api.hover(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已悬停: ${argLabel(arg)}`, r); printFeedback(r?.feedback); });
+feedbackOpt(targetOpt(targetCmd('hover', '鼠标移到元素上'))).argument('<target>', 'ref 序号或 selector(全数字=ref)')
+  .action(async (t: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.hover(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已悬停: ${argLabel(arg)}`, r); printFeedback(r?.feedback); });
 
 targetCmd('shot', '截图').option('-f, --file <file>', '输出文件')
   .action(async (opts) => { const file = await api.shot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });

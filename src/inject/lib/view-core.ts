@@ -92,7 +92,7 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
   function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): ViewNode | null {
     const isEl = el instanceof Element;
     // 折叠(非根元素命中 fold 规则):登记 ref(可展开)、设 fold=备注、不递归子树。
-    // 根不折叠:view --ref i 展开折叠容器时,根本身(=该容器)不该再被折叠,否则永远展不开。
+    // 根不折叠:view <ref> 展开折叠容器时,根本身(=该容器)不该再被折叠,否则永远展不开。
     if (isEl && depth > 0) {
       const note = foldNote(el as Element);
       if (note !== null) {

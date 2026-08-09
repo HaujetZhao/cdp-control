@@ -84,7 +84,7 @@ dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建�
 `inject/find-entry.ts`(类 uBlock `:has-text()`)解决"view 严禁 grep、ref 易失效"——按文本/selector 找元素登记新 ref,不必整页重 tree。`--text` 整页 DFS(`childrenOf` 穿透 shadow + `ownElText` 取**自身直接文本**)搜关键词,深度上限 `MAX_DEPTH=14`,命中即止。**为何用自身文本而非 subtreeText**:子树文本让最外层容器先命中(body 几乎含所有文本)。命中元素追加进 `__cdpRefs`(`{el,parentRef:null}`),`buildView(el,{viewport:true})` 取根行标 ref。`--ancestor` 爬父;`--all` 收集全部。`FindCmdArgs{text?,selector?,ancestor?,all?}`。
 
 ### target-arg
-`src/target-arg.ts`(纯函数零依赖)`normArg(a)` 把 click/fill/focus/hover 目标(selector 字符串或 `{ref,ancestor?}` 对象)归一化为 `{sel?}/{ref?}`。**抽独立模块**:api.ts 顶部 import 一堆运行时模块,直接 import 做单测会拽出整条依赖链且无扩展名 import 在 `--experimental-strip-types` 下解析失败。**防呆**:字符串 `/^\{[\s\S]*ref[\s\S]*\}$/`(对象字面量当 selector 误用)抛"CLI 用 `--ref N`,脚本 API 才用 `{ref:N}`"。
+`src/target-arg.ts`(纯函数零依赖)`normArg(a)` 把 click/fill/focus/hover 目标(selector 字符串或 `{ref,ancestor?}` 对象)归一化为 `{sel?}/{ref?}`。**抽独立模块**:api.ts 顶部 import 一堆运行时模块,直接 import 做单测会拽出整条依赖链且无扩展名 import 在 `--experimental-strip-types` 下解析失败。**防呆**:字符串 `/^\{[\s\S]*ref[\s\S]*\}$/`(对象字面量当 selector 误用)抛"CLI 直接传数字,脚本 API 才用 `{ref:N}`"。
 
 ## 返回契约(api.ts 的 `invoke`)
 

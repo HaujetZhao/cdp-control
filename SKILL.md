@@ -56,7 +56,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 
 **操作(ref)**:
 - 整页 view 里 `[shadow]` 占位行(如 `bili-comments[shadow] [ref=N]`)是 Web Component 容器,内容在 shadow DOM,整页只占位不深入。**看内容用 `view N`**;首屏空壳则 `view N --scroll-to-load`。CSS 穿不透 shadow,操作一律用 ref。
-- 操作优先 `[ref=i]`(`click --ref i`,零 selector,shadow 内也能定位)。
+- 操作优先 `[ref=i]`(`click i`,零 selector,shadow 内也能定位;目标全数字即 ref)。
 - ref 是会话句柄,页面刷新失效、每次 view 重建。**每回合先 view 拿 ref 再操作**。
 
 **区域定位(想 view 一块"语义区域")**:
@@ -102,13 +102,13 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 | `navigate <url>` | 导航 |
 | `eval "<js>"` | 执行 JS,返回 returnByValue 值 |
 | `view [<ref>] [...]` | 整页文本+结构紧凑树。首次必须完整 view(禁 --visible-only/截断)。参数见上表(锚点互斥:位置 ref 优先、其次 --selector-file、缺省 body)。命中 fold 规则输出 `▸ [ref=i] <备注>`;视区标 `[ref=i·屏]`;INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]` |
-| `click <sel> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>]` | 点击(selector 或 `--ref i`,穿透 shadow)。默认带反馈 |
-| `fill <sel> <值> [--ref <n>] [--ancestor <k>] [...]` | 填输入框并派发 input/change。默认带反馈 |
-| `focus <sel> [--ref <n>] [--ancestor <k>] [...]` | 聚焦元素。默认带反馈 |
+| `click <target> [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>]` | 点击(target 全数字=ref 否则 selector,穿透 shadow)。默认带反馈 |
+| `fill <target> <值> [--ancestor <k>] [...]` | 填输入框并派发 input/change。默认带反馈 |
+| `focus <target> [--ancestor <k>] [...]` | 聚焦元素。默认带反馈 |
 | `get-focus` | 查看当前焦点元素在哪 |
 | `info <n> [--ancestor <k>]` | 列元素祖先链(tag/id/class/语义 data-*/aria/role 逐层)+ 建议 selector,看清稳定锚点自己写 fold 规则 |
 | `press-key <键> [...]` | 真实按键/组合键,如 Enter/Tab/Ctrl+Shift+A(含滚动如 PageDown)。默认带反馈 |
-| `hover <sel> [--ref <n>] [--ancestor <k>] [...]` | 鼠标移到元素(触发 mouseover/mouseenter)。默认带反馈 |
+| `hover <target> [--ancestor <k>] [...]` | 鼠标移到元素(触发 mouseover/mouseenter)。默认带反馈 |
 | `shot [--file out.png]` | 截图 |
 | `logs [--level error,warn] [--since <ms>] [--json]` | 读控制台日志 |
 | `run <脚本文件>` | 执行自动化脚本(全局 `cdp` API,可顶层 await) |
@@ -117,14 +117,14 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 
 ## 命令示例(真实流程)
 
-> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→核对落点/结果";CLI 用 `--ref n`,脚本 API 才用 `{ref:n}`。
+> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→核对落点/结果";CLI 直接传数字 ref,脚本 API 才用 `{ref:n}`。
 
 ```bash
 cdp open "https://www.zhihu.com/"                 # 开页
 cdp view --target zhihu                           # 看整页拿 ref
 cdp view 53 --ancestor 4 --target zhihu     # 从叶子 ref 爬到区域容器
-cdp click --ref 44 --target zhihu                 # 点卡片/链接;反馈报"新开 tab"落点
-cdp click --ref 36 --target "BV1..."              # 点赞;反馈回文本变化(42→43)
+cdp click 44 --target zhihu                       # 点卡片/链接;反馈报"新开 tab"落点
+cdp click 36 --target "BV1..."                    # 点赞;反馈回文本变化(42→43)
 ```
 
 ## 读控制台日志
