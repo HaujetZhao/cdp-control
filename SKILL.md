@@ -106,6 +106,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 | `fill <sel> <值> [--ref <n>] [--ancestor <k>] [...]` | 填输入框并派发 input/change。默认带反馈 |
 | `focus <sel> [--ref <n>] [--ancestor <k>] [...]` | 聚焦元素。默认带反馈 |
 | `get-focus` | 查看当前焦点元素在哪 |
+| `info --ref <n> [--ancestor <k>]` | 列元素祖先链(tag/id/class/语义 data-*/aria/role 逐层)+ 建议 selector,看清稳定锚点自己写 fold 规则(别名 `lineage`) |
 | `press-key <键> [...]` | 真实按键/组合键,如 Enter/Tab/Ctrl+Shift+A(含滚动如 PageDown)。默认带反馈 |
 | `hover <sel> [--ref <n>] [--ancestor <k>] [...]` | 鼠标移到元素(触发 mouseover/mouseenter)。默认带反馈 |
 | `shot [--file out.png]` | 截图 |

@@ -85,7 +85,7 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
 - 自由执行
   - `eval` 在页面内执行任意 JS,回传 JSON 值
 - 指认
-  - `info` 给目标元素的父链(tag/id/class/语义属性逐层),并附该 DOM 的 selector
+  - `info --ref <n> [--ancestor <k>]` 给目标元素的父链(tag/id/class/语义属性逐层),并附该 DOM 的 selector(已实现,别名 `lineage`,接 `api.lineage`)
 - 操作（目标均为 ref）
   - `click` 点击元素
   - `fill` 往输入框填值并触发 input/change
