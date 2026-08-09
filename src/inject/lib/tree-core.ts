@@ -106,9 +106,12 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     let text = isEl ? ownText(el as Element) : '';
     // visible-only 下只登记视口内可见内容节点的 ref,序号连续、输出的 [ref=i] 都指向真实可操作元素。
     const inView = visibleOnly && isEl ? isInView(el as Element) : true;
+    // 带 shadowRoot 的 host(如 bili-comments)无条件登记 ref:它们常无 light 文本、首屏还是空壳,
+    // 不强制登记就会在整页 tree 里静默消失,agent 无从知道页面有评论区。登记后 formatTree 输出占位行。
+    const hasShadow = isEl && inView && !!(el as Element).shadowRoot;
     let ref: number | undefined;
     let view: boolean | undefined;
-    if (isEl && inView && (inter || !!text)) {
+    if (isEl && inView && (inter || !!text || hasShadow)) {
       ref = (globalThis as any).__cdpRefs.length;
       // 登记表存 {el, parentRef}:parentRef = 最近的已登记祖先 ref 号(跳表),供 ref 失效自愈向上找存活容器。
       (globalThis as any).__cdpRefs.push({ el: el as Element, parentRef });
@@ -117,7 +120,9 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     }
     const node: TreeNode = {
       tag,
-      isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
+      // shadow host 强制 isContent:空壳 host(无文本、shadow 子树也未加载)也要被 walk 到、输出占位,
+      // 否则会被 productive 过滤掉,agent 在整页 tree 里看不到它存在。
+      isContent: !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow,
       text, inter, ref, inView, view,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
       // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 ref 定位
@@ -136,7 +141,7 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     // 交互/图片元素自身无直接文本时,用 grabText 聚合后代文本(空格分隔,穿透 shadow;替代 innerText——后者会把 inline 数字连排成 "822.2万904906:02")。
     if (!text && (inter || (isEl && el.tagName === 'IMG'))) { text = strip(grabText(el, 0)).slice(0, 80); node.agg = true; }
     node.text = text;
-    node.isContent = !!text || (isEl && el.tagName === 'IMG') || inter;
+    node.isContent = !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow;
     node.size = 1 + node.kids.reduce((a, k) => a + k.size, 0);
     if (!text && title && !node.kids.some(k => k.text) && node.size <= 8 && (el as Element).tagName !== 'SVG' && (el as Element).tagName !== 'path' && (el as Element).tagName !== 'USE') {
       node.leafValue = strip(title).slice(0, 40);
