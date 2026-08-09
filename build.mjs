@@ -66,16 +66,16 @@ async function main() {
     console.log('▶ 注入页侧:(暂无 src/inject/*.ts,跳过)');
   }
 
-  // —— 拷贝 fold 规则模板(src/folds.txt → dist/folds.txt)——
+  // —— 拷贝 fold 规则模板(src/folds.csv → dist/folds.csv)——
   // 仅当目标不存在时拷贝:dist/ 下的是用户可编辑的规则文件,已存在则不覆盖保留编辑。
-  const foldTpl = join(src, 'folds.txt');
-  const foldOut = join(dist, 'folds.txt');
+  const foldTpl = join(src, 'folds.csv');
+  const foldOut = join(dist, 'folds.csv');
   if (existsSync(foldTpl)) {
     if (!existsSync(foldOut)) {
       copyFileSync(foldTpl, foldOut);
-      console.log('▶ fold 规则模板 → dist/folds.txt(首次生成)');
+      console.log('▶ fold 规则模板 → dist/folds.csv(首次生成)');
     } else {
-      console.log('▶ fold 规则:dist/folds.txt 已存在,跳过拷贝(保留你的编辑)');
+      console.log('▶ fold 规则:dist/folds.csv 已存在,跳过拷贝(保留你的编辑)');
     }
   }
 

@@ -1,5 +1,5 @@
 # fold 折叠规则(手动编辑,行首 # 为注释,列间用 tab 分隔,固定 5 列)。
-# 首次 build 时此模板被拷贝到 dist/folds.txt;已在 dist/ 存在则不会被覆盖(保留你的编辑)。
+# 首次 build 时此模板被拷贝到 dist/folds.csv;已在 dist/ 存在则不会被覆盖(保留你的编辑)。
 # 格式:<id>\t<域名>\t<path>\t<selector>\t<备注>
 #   <id>     单调递增,不重排
 #   <域名>   精确(www.bilibili.com)、*.suffix 子域通配(*.zhihu.com 匹配自身+任意子域)、suffix.* entity(zhihu.* 匹配任意 TLD)
@@ -7,3 +7,4 @@
 #   <selector>  折叠区域的 CSS selector(tree 命中时整块折叠成一行 ▸)
 #   <备注>   折叠行的显示文本
 # 示例: 5	*.zhihu.com	*	.AppHeader	顶栏
+    

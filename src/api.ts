@@ -75,7 +75,7 @@ export interface TreeOpts {
 /** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
  * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先滚动触发懒加载再建树
  *   (默认 ±1 屏回弹;scrollPages 改为循环滚 N 屏;scrollTo 先滚到该 selector 元素,如 B站评论区)。
- * 折叠:Node 侧按 target 页 hostname+pathname 读 folds.txt 命中规则(path glob 限定同域名下页面路径),
+ * 折叠:Node 侧按 target 页 hostname+pathname 读 folds.csv 命中规则(path glob 限定同域名下页面路径),
  * 传入注入侧 buildTree 折叠成一行(跨会话持久)。 */
 export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
   const folds = matchFolds(hostOf(target.url), pathOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
@@ -107,7 +107,7 @@ export async function find(target: Target, opts: FindOpts = {}): Promise<any> {
   return invoke(target, findExpr(opts));
 }
 /** 折叠规则管理(取代 stash):
- *  - add {domain, path, selector, note}:加持久规则(folds.txt)
+ *  - add {domain, path, selector, note}:加持久规则(folds.csv)
  *  - rm <id>:删持久规则(其它规则 id 不重排)
  *  - list:列持久 + 会话级临时
  *  - ref + save:从 ref 反查 selector + 当前 hostname,落盘持久规则

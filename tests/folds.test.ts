@@ -12,11 +12,11 @@ import {
   parseRules, domainMatch, pathMatch, hostOf, pathOf, matchFolds, loadFolds, addFold, removeFold,
 } from '../src/folds.ts';
 
-// 每个需要落盘的测试用独立临时 folds 文件,避免互相污染 / 污染真实 dist/folds.txt。
+// 每个需要落盘的测试用独立临时 folds 文件,避免互相污染 / 污染真实 dist/folds.csv。
 function withTmpDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-folds-'));
   const prev = process.env.CDP_FOLD_FILE;
-  process.env.CDP_FOLD_FILE = join(dir, 'folds.txt');
+  process.env.CDP_FOLD_FILE = join(dir, 'folds.csv');
   try { return fn(dir); }
   finally {
     process.env.CDP_FOLD_FILE = prev;
@@ -116,7 +116,7 @@ test('pathOf: 正常 url 取 pathname;无路径返回 /;非法返回空串', () 
 test('matchFolds: 空 path 规则只看域名', () => {
   const txt = '1\twww.bilibili.com\t\t#hdr\t顶栏\n';
   withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.txt'), txt, 'utf8');
+    writeFileSync(join(dir, 'folds.csv'), txt, 'utf8');
     const m = matchFolds('www.bilibili.com', '/video/BV1');
     assert.equal(m.length, 1);
     assert.equal(m[0].selector, '#hdr');
@@ -127,7 +127,7 @@ test('matchFolds: path glob 规则同域名跨页区分', () => {
   // 同域名两条不同 path 规则:视频页 vs 账户页,验证跨页不互相命中
   const txt = '1\twww.bilibili.com\t/video/*\t#videoHdr\t视频页顶栏\n2\twww.bilibili.com\t/account/*\t#accountHdr\t账户页顶栏\n';
   withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.txt'), txt, 'utf8');
+    writeFileSync(join(dir, 'folds.csv'), txt, 'utf8');
     // 视频页只命中 /video/* 规则(/account/* 不命中)
     let m = matchFolds('www.bilibili.com', '/video/BV1');
     assert.equal(m.length, 1);
@@ -145,7 +145,7 @@ test('matchFolds: path glob 规则同域名跨页区分', () => {
 test('matchFolds: entity 域名 + glob path 组合', () => {
   const txt = '1\tzhihu.*\t/question/*\t.QnA\t问题页\n';
   withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.txt'), txt, 'utf8');
+    writeFileSync(join(dir, 'folds.csv'), txt, 'utf8');
     assert.equal(matchFolds('www.zhihu.com', '/question/123').length, 1);
     assert.equal(matchFolds('zhihu.com', '/question/123').length, 1);
     assert.equal(matchFolds('zhihu.cn', '/question/123').length, 1);
@@ -157,7 +157,7 @@ test('matchFolds: entity 域名 + glob path 组合', () => {
 test('matchFolds: path 规则在 pathname 为空(非法 url)时不命中', () => {
   const txt = '1\twww.bilibili.com\t/video/*\t#videoHdr\t顶栏\n';
   withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.txt'), txt, 'utf8');
+    writeFileSync(join(dir, 'folds.csv'), txt, 'utf8');
     assert.equal(matchFolds('www.bilibili.com', '').length, 0);
   });
 });
@@ -170,19 +170,19 @@ test('loadFolds: 文件不存在返回空数组', () => {
 
 test('addFold: id 单调递增(max+1),不按行号重排,落盘为 5 列', () => {
   withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.txt'), '5\ta.com\t*\t.a\tA\n8\tb.com\t*\t.b\tB\n', 'utf8');
+    writeFileSync(join(dir, 'folds.csv'), '5\ta.com\t*\t.a\tA\n8\tb.com\t*\t.b\tB\n', 'utf8');
     const r = addFold('c.com', '/x/*', '.c', 'C');
     assert.equal(r.id, 9); // max(5,8)+1
     const all = loadFolds();
     assert.deepEqual(all.map(x => x.id), [5, 8, 9]);
-    const txt = readFileSync(join(dir, 'folds.txt'), 'utf8');
+    const txt = readFileSync(join(dir, 'folds.csv'), 'utf8');
     assert.ok(txt.includes('9\tc.com\t/x/*\t.c\tC\n'));
   });
 });
 
 test('removeFold: 按 id 删,其它规则保留原 id(连续 rm 不漏删)', () => {
   withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.txt'), '5\ta.com\t*\t.a\tA\n8\tb.com\t*\t.b\tB\n9\tc.com\t*\t.c\tC\n', 'utf8');
+    writeFileSync(join(dir, 'folds.csv'), '5\ta.com\t*\t.a\tA\n8\tb.com\t*\t.b\tB\n9\tc.com\t*\t.c\tC\n', 'utf8');
     // 模拟 agent 连续删两条:先删 5,再删 8(B8 bug 场景:行号重排会导致第二次删错)
     assert.equal(removeFold(5), true);
     let all = loadFolds();
@@ -195,7 +195,7 @@ test('removeFold: 按 id 删,其它规则保留原 id(连续 rm 不漏删)', () 
 
 test('removeFold: 删不存在的 id 返回 false,文件不变', () => {
   withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.txt'), '5\ta.com\t*\t.a\tA\n', 'utf8');
+    writeFileSync(join(dir, 'folds.csv'), '5\ta.com\t*\t.a\tA\n', 'utf8');
     assert.equal(removeFold(99), false);
     assert.equal(loadFolds().length, 1);
   });
