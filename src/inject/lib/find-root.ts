@@ -64,6 +64,26 @@ export function findRoot(selector?: string): Element | null {
 }
 
 /**
+ * 全部命中版:querySelectorAll,逐个返回。供 find --selector --all 用。
+ * shadow 链语义同 findRoot:首段 document,之后每段在上段 host 的 shadowRoot 上 querySelectorAll。
+ * 链尾用 querySelectorAll 收集全部;非链直接 document.querySelectorAll。
+ * 任一段未命中 / host 无 shadowRoot → 返回空数组。
+ */
+export function findRootAll(selector: string): Element[] {
+  if (!selector) return [];
+  const parts = selector.split('>>>').map(s => s.trim());
+  if (parts.length === 1) return Array.from(document.querySelectorAll(parts[0]));
+  // shadow 链:前 n-1 段逐段穿透(每段取首个 host),末段 querySelectorAll 收全部
+  let node: any = document.querySelector(parts[0]);
+  for (let i = 1; i < parts.length - 1; i++) {
+    if (!node || !node.shadowRoot) return [];
+    node = node.shadowRoot.querySelector(parts[i]);
+  }
+  if (!node || !node.shadowRoot) return [];
+  return Array.from(node.shadowRoot.querySelectorAll(parts[parts.length - 1]));
+}
+
+/**
  * 按 tree 输出的 ref 序号取真实元素(ref 存于 window.__cdpRefs,会话句柄)。
  * 页面刷新后 __cdpRefs 随 document 重建而清空,此时返回 null(ref 失效)。
  * tree / locate 共用同一解析:先取 ref 元素,再 climbAncestors 爬到目标容器。
