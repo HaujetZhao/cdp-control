@@ -84,7 +84,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 - `eval` 里 `(() => ({...}))()` 会返回空对象——箭头+对象字面量需显式 `return` 或写 `(function(){ return {...}; })()`。
 
 **操作(ref)**:
-- tree 里标 `[shadow]` 的块(如 `bili-comments[shadow]`)CSS 定位不到 → 操作改用 ref(shadow 内 ref 仍有效)。
+- 整页 tree 里 `[shadow]` 占位行(如 `bili-comments[shadow] [ref=N]`)是 Web Component 容器——内容在 shadow DOM,整页 tree 只占位不深入。**看它的内容用 `tree --ref N`**(展开 shadow 子树);首屏没加载(评论区空壳)则 `tree --ref N --scroll-to-load` 滚动触发。CSS 穿不透 shadow,操作这类块一律用 ref。
 - 操作优先 `[ref=i]`(`click --ref i`,零 selector,shadow 内也能定位)。
 - ref 是会话句柄:存 `window.__cdpRefs`,页面刷新失效,每次 tree 重建。**每回合先 tree 拿 ref 再操作**,刷新/动态加载后序号漂移是预期。
 
