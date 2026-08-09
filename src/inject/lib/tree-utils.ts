@@ -19,9 +19,13 @@ export function inlineable(n: { text?: string; imgAlt?: string; leafValue?: stri
   return l > 0 && l <= 24;
 }
 
-/** 取节点可视文本(自身或首个有文本后代)。 */
-export function leafText(n: { text?: string; kids?: any[] }): string {
+/** 取节点可视文本(自身或首个有文本后代)。
+ *
+ * fold 节点(text=''、kids=[])视作有文本——返回其 fold 备注。这让包装 fold 的中间容器
+ * 不被 isTrivialLeaf 误判为琐碎叶(否则 productive filter 会滤掉它,fold 节点永远走不到 walk)。 */
+export function leafText(n: { text?: string; imgAlt?: string; fold?: string; kids?: any[] }): string {
   if (n.text) return n.text;
+  if (n.fold) return n.fold;
   for (const k of n.kids ?? []) { const t = leafText(k); if (t) return t; }
   return '';
 }
