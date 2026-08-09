@@ -44,7 +44,7 @@ setResult((async () => {
   }
   if (__CDP_ARG__.scrollToLoad) await scrollToLoad();
   const visibleOnly = !!__CDP_ARG__.visibleOnly;
-  const tree = buildTree(root, { visibleOnly, viewport: true });
+  const tree = buildTree(root, { visibleOnly, viewport: true, folds: __CDP_ARG__.folds });
   markText(tree);
   return setResult({ ok: true, lines: formatTree(tree) });
 })());

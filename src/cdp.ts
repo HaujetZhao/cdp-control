@@ -115,37 +115,43 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是�
     console.log(`  selector: ${r.selector || '(无)'}`);
   });
 
-targetCmd('stash', '类比 git stash:按 ref 把整页 tree 的某区域暂存藏起(之后的整页 tree 不再输出,可 pop 恢复)。用法:stash <refs...> [--ancestor] 暂存;stash list 列出;stash pop [i] 恢复第 i 个(默认最新);stash clear 清空')
-  .argument('[args...]', '暂存:tree 的 ref 序号(可逗号/空格分隔);或子命令 list / pop [i] / clear')
-  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再暂存(默认 0;把内容叶子抬到要藏的区域容器)')
+targetCmd('fold', '折叠规则(类 uBlock Origin:域名+selector+备注,tree 时命中区域折叠成一行 ▸,跨会话持久)。子命令:add/list/rm;或 --ref [--save] 折叠')
+  .argument('[args...]', 'add <域名> <selector> <备注> | list | rm <id>;或省略走 --ref 模式')
+  .option('--ref <n>', '按 ref 折叠其区域(可选 --ancestor 爬父到容器)')
+  .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再折叠(默认 0;把内容叶子抬到区域容器)')
+  .option('--note <备注>', '折叠备注(tree 里 ▸ 后显示)')
+  .option('--save', '落盘为持久规则(默认仅会话级临时折叠,刷新失效)')
+  .option('--domain <d>', '持久规则的域名(默认当前页 hostname;支持 *.suffix 通配)')
   .action(async (args, opts) => {
     const t = await needTarget(opts.target);
     const [cmd, ...rest] = args || [];
     if (cmd === 'list') {
-      const r = await api.stash(t, {});
-      if (!r.stashed?.length) { console.log('无暂存区域(用 stash <ref> 暂存,之后的整页 tree 不再输出该区域)'); return; }
-      r.stashed.forEach((e: any) => console.log(`  [${e.i}] ${e.summary}`));
+      const r = await api.fold(t, { list: true });
+      if (!r.persist?.length && !r.tmp?.length) { console.log('无折叠规则(用 fold add 或 fold --ref --save 添加)'); return; }
+      if (r.persist?.length) { console.log('持久规则(folds.txt):'); r.persist.forEach((f: any) => console.log(`  [${f.id}] ${f.domain}  ${f.selector}  # ${f.note}`)); }
+      if (r.tmp?.length) { console.log('会话级临时(刷新失效):'); r.tmp.forEach((f: any, i: number) => console.log(`  [t${i}] ${f.selector}  # ${f.note}`)); }
       return;
     }
-    if (cmd === 'clear') {
-      await api.stash(t, { clear: true });
-      console.log('已清空暂存区域');
+    if (cmd === 'rm') {
+      const id = Number(rest[0]);
+      const r = await api.fold(t, { rm: id });
+      console.log(r.ok ? `已删除规则 [${id}]` : `未找到规则 [${id}]`);
       return;
     }
-    if (cmd === 'pop') {
-      const i = rest.length ? Number(rest[0]) : undefined;
-      const r = await api.stash(t, { pop: i != null && !Number.isNaN(i) ? i : -1 });
-      if (r.popped) console.log(`已恢复(pop): ${r.popped}`);
-      else console.log('无可恢复的暂存区域');
+    if (cmd === 'add') {
+      const [domain, selector, ...noteParts] = rest;
+      if (!domain || !selector) throw new Error('用法: fold add <域名> <selector> <备注>');
+      const r = await api.fold(t, { add: { domain, selector, note: noteParts.join(' ') } });
+      console.log(`已添加持久规则 [${r.rule.id}]: ${domain}  ${selector}  # ${r.rule.note}`);
       return;
     }
-    // 否则视为 refs 暂存
-    const numRefs = (args || []).flatMap((s: string) => s.split(',')).filter((s: string) => s !== '').map(Number);
-    const r = await api.stash(t, { refs: numRefs, ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined });
-    if (!r.stashed?.length && !r.skipped) { console.log('未指定有效 ref(用 stash <ref> 暂存,或 stash list/pop/clear)'); return; }
-    if (r.stashed?.length) console.log(`已暂存 ${r.stashed.length} 个区域:`);
-    (r.stashed || []).forEach((s: string) => console.log(`  · ${s}`));
-    if (r.skipped) console.log(`跳过 ${r.skipped} 个无效 ref`);
+    if (opts.ref == null) throw new Error('用法: fold --ref <n> [--note 备注] [--save] [--domain d];或 fold add/list/rm');
+    const r = await api.fold(t, {
+      ref: Number(opts.ref), ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
+      note: opts.note, save: !!opts.save, domain: opts.domain,
+    });
+    if (r.rule) console.log(`已添加持久规则 [${r.rule.id}]: ${r.rule.domain}  ${r.rule.selector}  # ${r.rule.note}`);
+    else console.log(`已临时折叠: ${r.selector}  # ${r.note}`);
   });
 
 // ref 操作目标:--ref 优先,否则用位置参数 selector(见 api.TargetArg)。两者都没给时报错。

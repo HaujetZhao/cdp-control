@@ -7,9 +7,10 @@
  * (tree 入口在整页建树前重置;反馈收集在拼接多个新增块前重置一次,保证跨块 ref 连续)。
  */
 import type { TreeNode } from './tree-format';
-import { stashSet } from './stash.ts';
+import { tmpFolds } from './fold';
+import type { FoldItem } from './arg';
 
-export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean }
+export interface TreeBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[] }
 
 const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
 const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
@@ -74,11 +75,31 @@ function prune(n: TreeNode): boolean {
 export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}): TreeNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;
-  const exclude = stashSet(); // 会话级暂存集合,命中的元素整棵子树跳过
+  // 折叠规则来源:持久(Node 侧 folds.ts 按 hostname 过滤后传入)+ 会话级临时(__cdpFolds)。统一按 selector 匹配。
+  const folds: FoldItem[] = [...(opts.folds || []), ...tmpFolds()];
+  // 折叠判定:元素命中任一 fold selector → 返回备注,否则 null。
+  const foldNote = (el: Element): string | null => {
+    for (const f of folds) { try { if (el.matches(f.selector)) return f.note || f.selector; } catch {} }
+    return null;
+  };
 
   function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): TreeNode | null {
     const isEl = el instanceof Element;
-    if (isEl && exclude && exclude.includes(el as Element)) return null; // 整棵子树消失(不输出、不登记 ref)
+    // 折叠(非根元素命中 fold 规则):登记 ref(可展开)、设 fold=备注、不递归子树。
+    // 根不折叠:tree --ref i 展开折叠容器时,根本身(=该容器)不该再被折叠,否则永远展不开。
+    if (isEl && depth > 0) {
+      const note = foldNote(el as Element);
+      if (note !== null) {
+        const e = el as Element;
+        const ref = (globalThis as any).__cdpRefs.length;
+        (globalThis as any).__cdpRefs.push({ el: e, parentRef });
+        return {
+          tag: e.tagName.toLowerCase(), isContent: true, text: '', inter: false, ref,
+          inView: true, view: viewport ? isInViewport(e) : undefined, imgAlt: '',
+          shadow: !!e.shadowRoot, kids: [], size: 1, hasText: false, agg: false, fold: note,
+        };
+      }
+    }
     const tag = isEl ? el.tagName?.toLowerCase() || 'frag' : 'frag';
     const inter = isEl ? interactive(el as Element) : false;
     const title = isEl ? (el.getAttribute('title') || '') : '';

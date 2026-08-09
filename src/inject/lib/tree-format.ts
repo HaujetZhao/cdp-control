@@ -13,6 +13,7 @@ export interface TreeNode {
   agg?: boolean;   // 显示文本来自 innerText/grabText 兜底(聚合文本)而非直接文本节点
   shadow?: boolean; // 宿主带 shadowRoot:其下子节点来自 shadow DOM,CSS 选择器不能穿透,须用 ref 定位
   ref?: number;    // tree 登记的全局引用序号(见 __cdpRefs),输出标注 [ref=i],agent 用它直接操作真实元素
+  fold?: string;   // 命中折叠规则:输出一行 ▸ [ref=i] <备注>,不展开子树(但保留 ref,tree --ref i 可展开)
   hasInter?: boolean; // 自身或任一后代可交互——含交互子代的包装节点不可内联折叠,否则交互叶的 ref 被整颗吞掉
   inView?: boolean; // visible-only:自身是否落在当前视口内且可见(仅 Element 计算;包装节点不查)
   view?: boolean;   // viewport 标记:带 ref 的节点是否在当前视区内(便宜判定,rect+宽高,不查 computed style)。true → 输出 [ref=i·屏]
@@ -60,6 +61,11 @@ export function formatTree(tree: TreeNode): string[] {
   };
 
   function walk(n: TreeNode, depth: number, path: string[]) {
+    // 折叠节点:输出一行带备注的折叠标识 + ref,不展开子树(子树里的嵌套折叠在 tree --ref i 展开时才显现)。
+    if (n.fold != null) {
+      out.push('  '.repeat(depth) + '▸ [ref=' + n.ref + '] ' + n.fold + (n.shadow ? '[shadow]' : ''));
+      return;
+    }
     if (n.isContent) {
       if (n.leafValue) {
         const val = firstTxt(n.kids);
