@@ -7,13 +7,14 @@
 import { setResult } from './lib/result';
 import { refElement, climbAncestors } from './lib/find-root';
 import { genSel } from './lib/genSel';
+import { notFoundResult, type OperableArg } from './lib/find';
 import type { LocateArgs } from './lib/arg';
 
 declare const __CDP_ARG__: LocateArgs;
 
 (() => {
   const base = refElement(__CDP_ARG__.ref);
-  if (!base) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 无效或已失效(ref 是会话句柄,页面刷新后失效;需先重新 tree 拿到新 ref)` });
+  if (!base) return setResult(notFoundResult({ ref: __CDP_ARG__.ref } as OperableArg));
   const el = climbAncestors(base, __CDP_ARG__.ancestor || 0);
   if (!el) return setResult({ ok: false, err: `ref=${__CDP_ARG__.ref} 向上爬 ${__CDP_ARG__.ancestor || 0} 层后无元素` });
   const text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
