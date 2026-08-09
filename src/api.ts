@@ -160,7 +160,8 @@ export interface FeedbackOpts { feedbackDelay?: number; noFeedback?: boolean }
 /** 反馈结构:内容变化(注入侧)+ tab 变化(Node 侧 /json/list diff)。 */
 export interface FeedbackResult {
   note?: string;                                    // 说明(如"页面已跳转,旧 ref 失效,以下是新页整页视图")
-  blocks?: { lines: string[]; count: number }[];   // 去重折叠后的新增内容块(可空);跳转时为整页视图单块
+  reloaded?: boolean;                               // 注入侧判定:本次是否整页重载(换 document)
+  blocks?: { lines: string[]; count: number }[];   // 去重折叠后的新增内容块(可空);重载时为整页视图单块
   changes?: { before?: string; after: string }[];  // 文本变化(过滤前后相同),如 [{before:'63',after:'64'}]
   tabs?: { opened: Target[]; closed: Target[]; navigated?: { id: string; from: string; to: string }[] };
 }
@@ -182,21 +183,25 @@ async function runWithFeedback<T>(target: Target, doAction: () => Promise<T>, op
     await sleep(opts.feedbackDelay ?? 1000);
     const after = await list();
     const tabs = diffTabs(before, after);
-    // URL 跳转:旧 document/observer 全失效,增量反馈(append ref)无意义且会给 agent 一堆失效 ref;
-    // 改走整页 view(不带 ref/selector → __cdpRefs 从 0 重建),把新页整棵树给 agent,并注明跳转。
+    // 增量反馈先行。是否整页重载(真导航换 document)由注入侧 reloaded 判定,而非仅看 URL 变化:
+    // 锚点/历史跳转(URL 变但同 document)旧 DOM/ref 全有效,仍走增量;整页导航才整页 view 重建。
+    const fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
     const nav = tabs.navigated?.[0];
-    let fb: FeedbackResult;
-    if (nav) {
-      // 用新 URL 过滤 fold 规则:view 按 target.url 算 hostname+pathname,跳转后必须用新地址;
-      // target.id 跳转前后相同,ws 不变,仍连同一页面,只覆盖 url 即可。
+    if (nav && fb.reloaded) {
+      // 整页重载:旧 document/observer 已失效,增量(append ref)只会给 agent 一堆失效 ref;
+      // 改走整页 view(不带 ref/selector → __cdpRefs 从 0 重建),把新页整棵树给 agent 并注明。
+      // 用新 URL 过滤 fold 规则:view 按 target.url 算 hostname+pathname,重载后必须用新地址
+      // (target.id 不变、ws 不变,仍连同一页面,只覆盖 url 即可)。
       const v = await view({ ...target, url: nav.to });
-      fb = {
-        blocks: v.lines?.length ? [{ lines: v.lines, count: 1 }] : [],
-        changes: [],
-        note: `页面已跳转: ${nav.from} → ${nav.to};旧页 DOM/ref 全部失效,以上为新页整页视图(ref 从 0 重建)`,
+      return {
+        ...result,
+        feedback: {
+          blocks: v.lines?.length ? [{ lines: v.lines, count: 1 }] : [],
+          changes: [],
+          note: `页面已跳转: ${nav.from} → ${nav.to};旧页 DOM/ref 全部失效,以上为新页整页视图(ref 从 0 重建)`,
+          tabs,
+        },
       };
-    } else {
-      fb = await invoke<FeedbackResult>(target, inject('feedback-collect'));
     }
     return { ...result, feedback: { ...fb, tabs } };
   } catch (err) {

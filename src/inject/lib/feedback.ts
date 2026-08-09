@@ -18,7 +18,13 @@
 import { buildView } from './view-core.ts';
 import { markText, formatView } from './view-format.ts';
 
-export interface FeedbackResult { blocks: FeedbackBlock[]; changes: FeedbackChange[] }
+export interface FeedbackResult {
+  blocks: FeedbackBlock[];
+  changes: FeedbackChange[];
+  /** 是否发生了整页重载(document 换成新对象)。锚点/历史跳转(URL 变但同 document)为 false;
+   * 整页导航为 true——此时旧 DOM/ref 全失效,增量采集无意义。Node 侧据此决定是否整页 view 重建。 */
+  reloaded: boolean;
+}
 
 /** 一个去重后的新增内容块:lines 为该块 view 行,count 为它在本次出现的次数(重复块折叠)。 */
 export interface FeedbackBlock { lines: string[]; count: number }
@@ -26,7 +32,7 @@ export interface FeedbackBlock { lines: string[]; count: number }
 /** 一次文本变化:before 为旧值(可缺),after 为新值;note 给折叠摘要用(如"播放进度,已折叠 N 条")。 */
 export interface FeedbackChange { before?: string; after: string; note?: string }
 
-interface FeedbackState { added: Node[]; changes: FeedbackChange[] }
+interface FeedbackState { added: Node[]; changes: FeedbackChange[]; document: Document }
 
 /** shadow 递归观察深度上限(防极深 shadow 树导致 observer 爆炸;B站等典型页面 shadow 嵌套 ≤3)。 */
 const MAX_SHADOW_DEPTH = 3;
@@ -61,7 +67,7 @@ function inIgnoredSubtree(node: Node): boolean {
  */
 export function startFeedback(): void {
   if ((globalThis as any).__cdpFeedback) return; // 已启动则复用(防重复装)
-  const st: FeedbackState = { added: [], changes: [] };
+  const st: FeedbackState = { added: [], changes: [], document };
   const mos: MutationObserver[] = [];
   // callback 在所有 observer 间共享:统一推 state,并给新增带 shadowRoot 的节点补装。
   const onMutate = (ms: MutationRecord[]) => {
@@ -142,10 +148,13 @@ export function startFeedback(): void {
 /** 收尾反馈:断开 observer,把本次新增内容去重折叠 + 文本变化过滤,返回结构化结果。 */
 export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResult {
   const fb = (globalThis as any).__cdpFeedback;
-  if (!fb) return { blocks: [], changes: [] };
+  if (!fb) return { blocks: [], changes: [], reloaded: false };
   for (const mo of fb.mos as MutationObserver[]) mo.disconnect();
   (globalThis as any).__cdpFeedback = null;
   const { added, changes } = fb.state as FeedbackState;
+  // 整页重载判定:装 observer 时(document)与采集时(document)是否同一对象。
+  // 锚点/历史跳转 URL 变但 document 不变 → reloaded=false(ref 仍有效);整页导航换 document → true。
+  const reloaded = (fb.state as FeedbackState).document !== document;
   // 顶层新增元素:本次 addedNodes 中、没有元素祖先也在本次新增集合里的节点(去嵌套,避免父容器把整棵子树又算一遍)。
   // 祖先链穿透 shadow:parentElement 在 shadow 边界为 null,改走 composedPath 思路——沿 parentNode/host 上爬。
   const els = added.filter(n => n.nodeType === 1) as Element[];
@@ -178,7 +187,7 @@ export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResu
     deduped.push(c);
   }
   const real = foldTimestampRun(deduped).slice(0, 5);
-  return { blocks, changes: real };
+  return { blocks, changes: real, reloaded };
 }
 
 /** 沿 parentElement 上爬,穿透 shadow 边界(host),判定 el 的祖先是否在 set 内(顶层新增去嵌套用)。 */
