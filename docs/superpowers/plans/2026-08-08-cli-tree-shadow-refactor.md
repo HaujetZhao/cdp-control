@@ -1,46 +1,46 @@
-# CLI commander 重构 + tree 结构忠实度修复 实施计划
+# CLI commander 重构 + view 结构忠实度修复 实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 修复 tree 输出的三个结构忠实度问题(聚合文本标记 / 递归 shadow 穿透 / commander 重构 CLI),同步文档后 merge 回 main。
+**Goal:** 修复 view 输出的三个结构忠实度问题(聚合文本标记 / 递归 shadow 穿透 / commander 重构 CLI),同步文档后 merge 回 main。
 
-**Architecture:** 三块独立、可分阶段回测的改动:(1) `tree.ts`+`tree-format.ts` 给聚合文本加 `~` 标记;(2) `find-root.ts` 递归穿透 shadow;(3) `cdp.ts` 用 commander 重写 CLI、`cdp.js` 改为 dist 自包含 bundle、删除 parseArgs。
+**Architecture:** 三块独立、可分阶段回测的改动:(1) `view.ts`+`view-format.ts` 给聚合文本加 `~` 标记;(2) `find-root.ts` 递归穿透 shadow;(3) `cdp.ts` 用 commander 重写 CLI、`cdp.js` 改为 dist 自包含 bundle、删除 parseArgs。
 
 **Tech Stack:** TypeScript + esbuild + commander(v12)。Node ≥21。测试用 `node --test --experimental-strip-types`(零运行时依赖,直跑 `tests/*.test.ts`)。
 
 **关键约定:**
-- 注入侧 DOM 逻辑(tree 聚合标记、find-root 递归穿透)不写单测,靠**浏览器实测**(CDP 9222,页面 `bili` tab 还开着)。
-- 纯函数(tree-format 聚合标记)写单测;find-root 的 `shadowContexts` 依赖全局 document,按 CLAUDE.md 不单测。
+- 注入侧 DOM 逻辑(view 聚合标记、find-root 递归穿透)不写单测,靠**浏览器实测**(CDP 9222,页面 `bili` tab 还开着)。
+- 纯函数(view-format 聚合标记)写单测;find-root 的 `shadowContexts` 依赖全局 document,按 CLAUDE.md 不单测。
 - commit 不带 `Co-Authored-By` 署名。
 - 每次改完必须 `npm run build` 重建 dist 再回测。
 
 ---
 
-## Task 1: 坑 1 —— tree 聚合文本加 `~` 标记
+## Task 1: 坑 1 —— view 聚合文本加 `~` 标记
 
 **Files:**
-- Modify: `src/tree.ts`(simplify 置 `agg`)
-- Modify: `src/inject/lib/tree-format.ts`(TreeNode 加 `agg`、输出 `~`)
-- Test: `tests/tree-format.test.ts`(新增聚合标记断言)
+- Modify: `src/view.ts`(simplify 置 `agg`)
+- Modify: `src/inject/lib/view-format.ts`(ViewNode 加 `agg`、输出 `~`)
+- Test: `tests/view-format.test.ts`(新增聚合标记断言)
 
-- [ ] **Step 1: TreeNode 接口加 `agg` 可选字段**
+- [ ] **Step 1: ViewNode 接口加 `agg` 可选字段**
 
-`src/inject/lib/tree-format.ts` 第 10-13 行的 `TreeNode` 接口加 `agg?: boolean;`:
+`src/inject/lib/view-format.ts` 第 10-13 行的 `ViewNode` 接口加 `agg?: boolean;`:
 
 ```ts
-export interface TreeNode {
+export interface ViewNode {
   tag: string; isContent: boolean; text: string; inter: boolean; imgAlt: string;
-  kids: TreeNode[]; size: number; hasText: boolean; leafValue?: string;
+  kids: ViewNode[]; size: number; hasText: boolean; leafValue?: string;
   agg?: boolean;   // 新增:显示文本来自 innerText/grabText 兜底(聚合文本)而非直接文本节点
 }
 ```
 
 - [ ] **Step 2: `simplify` 标记聚合文本来源**
 
-`src/tree.ts`:节点构造处(第 58-64 行)补 `agg: false`,并在第 70/71 行两个兜底分支置 `agg: true`。改动后相关段落:
+`src/view.ts`:节点构造处(第 58-64 行)补 `agg: false`,并在第 70/71 行两个兜底分支置 `agg: true`。改动后相关段落:
 
 ```ts
-    const node: TreeNode = {
+    const node: ViewNode = {
       tag, isContent: !!text || (isEl && el.tagName === 'IMG') || inter,
       text, inter, imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
       kids: [], size: 0, hasText: false, agg: false,
@@ -53,16 +53,16 @@ export interface TreeNode {
 
 - [ ] **Step 3: `leafLabel` / `inlineLabel` 输出 `~` 前缀**
 
-`src/inject/lib/tree-format.ts`:两个 label 函数里,凡输出**该节点自身**的引用文本时,若 `n.agg` 则前缀 `~`:
+`src/inject/lib/view-format.ts`:两个 label 函数里,凡输出**该节点自身**的引用文本时,若 `n.agg` 则前缀 `~`:
 
 ```ts
-  const leafLabel = (n: TreeNode) => {
+  const leafLabel = (n: ViewNode) => {
     let l = n.tag;
     if (n.tag === 'img' && n.imgAlt) l += ' "' + n.imgAlt.slice(0, 40) + '"';
     else if (n.text) l += ' "' + (n.agg ? '~' : '') + n.text.slice(0, 60) + '"';
     return l;
   };
-  const inlineLabel = (n: TreeNode) => {
+  const inlineLabel = (n: ViewNode) => {
     if (n.tag === 'img' && n.imgAlt) return 'img "' + n.imgAlt.slice(0, 20) + '"';
     if (n.leafValue) { const v = firstTxt(n.kids); return '"' + n.leafValue + (v ? ' ' + v : '') + '"'; }
     return '"' + (n.agg ? '~' : '') + leafText(n).slice(0, 24) + '"';
@@ -71,15 +71,15 @@ export interface TreeNode {
 
 - [ ] **Step 4: 新增聚合标记单测**
 
-`tests/tree-format.test.ts` 追加一个用例:
+`tests/view-format.test.ts` 追加一个用例:
 
 ```ts
-test('formatTree: 聚合文本节点(agg)输出 ~ 前缀,字面文本不加', () => {
+test('formatView: 聚合文本节点(agg)输出 ~ 前缀,字面文本不加', () => {
   const agg = mk({ tag: 'a', isContent: true, text: '首页', inter: true, agg: true, size: 1 });
   const lit = mk({ tag: 'a', isContent: true, text: '下载', inter: true, size: 1 });
   const root = mk({ tag: 'nav', isContent: false, size: 3, kids: [agg, lit] });
   markText(root);
-  assert.deepEqual(formatTree(root), ['nav', '  a ~"首页"', '  a "下载"']);
+  assert.deepEqual(formatView(root), ['nav', '  a ~"首页"', '  a "下载"']);
 });
 ```
 
@@ -90,14 +90,14 @@ Expected: 全部 PASS(含新增聚合标记用例;现有断言因 `agg` 未设�
 
 - [ ] **Step 6: 重建 + 浏览器回测**
 
-Run: `npm run build` 后,`node dist/cdp.js tree --target bili | grep -n "首页"`
+Run: `npm run build` 后,`node dist/cdp.js view --target bili | grep -n "首页"`
 Expected: 导航 `a ~"首页"`(首页文本在子 span → 聚合 → 应显示 `~`);再 `--xpath "//*[contains(@class,'video-info')]"` 看视频信息区多为字面无 `~`。
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/tree.ts src/inject/lib/tree-format.ts tests/tree-format.test.ts
-git commit -m "feat(tree): 聚合文本(innerText/grabText 兜底)加 ~ 标记,区分字面/聚合文本"
+git add src/view.ts src/inject/lib/view-format.ts tests/view-format.test.ts
+git commit -m "feat(view): 聚合文本(innerText/grabText 兜底)加 ~ 标记,区分字面/聚合文本"
 ```
 
 ---
@@ -134,9 +134,9 @@ export function shadowContexts(): (Document | ShadowRoot)[] {
 - [ ] **Step 2: 重建 + 浏览器回测**
 
 Run: `npm run build`,然后:
-- `node dist/cdp.js tree --target bili --xpath "//bili-comment-renderer" | head -5`
+- `node dist/cdp.js view --target bili --xpath "//bili-comment-renderer" | head -5`
   Expected: 首条为 `a "林韵子墨"`(文档序第一条,不再是最后一条 `bili_15248316234`)。
-- `node dist/cdp.js tree --target bili --xpath "//bili-comments" | head -3` → 命中评论区(树穿透显示全部评论)。
+- `node dist/cdp.js view --target bili --xpath "//bili-comments" | head -3` → 命中评论区(树穿透显示全部评论)。
 - 说明:`//bili-comments//bili-comment-renderer` 这类**跨 shadow 组合路径不可行**(`document.evaluate` 不穿透 shadow 做组合),属 xpath 固有限制,预期未命中;单元素 `//bili-comment-renderer` 已稳定取文档序第一条。
 
 - [ ] **Step 3: Commit**
@@ -201,7 +201,7 @@ git commit -m "build: cdp.js 改为 dist 自包含 bundle(commander 打进单文
 **Files:**
 - Rewrite: `src/cdp.ts`
 
-**关键设计:** `--target` 用 per-command option(每个需要 target 的命令各自 `.option('-t, --target')`),这样既支持既有写法 `tree --target bili`,又能在 action 里读 `opts.target`。`needTarget(opts.target)` 接收 action 里解析出的 target 值。
+**关键设计:** `--target` 用 per-command option(每个需要 target 的命令各自 `.option('-t, --target')`),这样既支持既有写法 `view --target bili`,又能在 action 里读 `opts.target`。`needTarget(opts.target)` 接收 action 里解析出的 target 值。
 
 - [ ] **Step 1: 用 commander 重写整个 `src/cdp.ts`**
 
@@ -306,7 +306,7 @@ targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要
 targetCmd('snapshot', '提取可交互元素清单(标签/文本/选择器/坐标)')
   .action(async (opts) => { const v = await api.snapshot(await needTarget(opts.target)); if (!Array.isArray(v) || !v.length) { console.log('(没有可交互元素)'); return; } console.log(v.map((e: any, i: number) => `${i + 1}. [${e.tag}] "${e.text || e.placeholder || ''}"  ${e.href || ''}  sel=${e.selector}`).join('\n')); });
 
-targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector/--xpath 只建指定区域)')
+targetCmd('view', '结构树:整页 body 的文本+结构紧凑层级树(可选 --selector/--xpath 只建指定区域)')
   .option('--selector <sel>', 'CSS 选择器')
   .option('--selector-file <file>', '从文件读 selector')
   .option('--xpath <xp>', 'XPath(shadow 穿透,任意深度)')
@@ -314,7 +314,7 @@ targetCmd('tree', '结构树:整页 body 的文本+结构紧凑层级树(可选 
   .action(async (opts) => {
     const sel = opts.selector ?? readOptFile(opts['selector-file']);
     const xp = opts.xpath ?? readOptFile(opts['xpath-file']);
-    const r = await api.tree(await needTarget(opts.target), { selector: sel, xpath: xp });
+    const r = await api.view(await needTarget(opts.target), { selector: sel, xpath: xp });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(r.lines.join('\n'));
   });
@@ -374,9 +374,9 @@ Expected: 无 TS 错误(commander 类型解析正常)。
 
 Run: `npm run build`,然后:
 - `node dist/cdp.js help` → 显示用法
-- `node dist/cdp.js tree --help` → 显示 tree 命令帮助(修复坑 3 根源)
+- `node dist/cdp.js view --help` → 显示 view 命令帮助(修复坑 3 根源)
 - `node dist/cdp.js list` → 列出 tab
-- `node dist/cdp.js tree --target bili --xpath "//h1"` → 视频标题
+- `node dist/cdp.js view --target bili --xpath "//h1"` → 视频标题
 - `node dist/cdp.js get-focus --target bili` / `node dist/cdp.js press-key Tab --target bili` → kebab-case 命令可用
 Expected: 全部正常;`--help` 正确显示每命令帮助。
 
@@ -422,7 +422,7 @@ git commit -m "chore: 移除被 commander 取代的 parseArgs 与其单测"
 
 1. 命令名改 kebab-case:`get_focus→get-focus`、`press_key→press-key`(全文,含命令表格与示例)。
 2. `--help`/`-h` 说明:每命令支持 `--help` 看自身用法。
-3. tree 聚合文本标记:引用文本前缀 `~` 表示聚合文本(来自 innerText/grabText 兜底,反查须用 `contains(.,'…')` 而非 `text()`)。
+3. view 聚合文本标记:引用文本前缀 `~` 表示聚合文本(来自 innerText/grabText 兜底,反查须用 `contains(.,'…')` 而非 `text()`)。
 4. xpath 穿透说明:改为「递归穿透任意深度 shadow DOM,深层元素稳定取文档序首个命中」。
 5. 构建交付:注明 `dist/cdp.js` 为自包含 bundle(拷走 dist 即可运行,无需 npm install)。
 
@@ -451,15 +451,15 @@ Expected: 构建通过、全部测试 PASS。
 - [ ] **Step 2: 最终浏览器冒烟(三块修复一起验)**
 
 Run:
-- `node dist/cdp.js tree --target bili | grep "首页"` → 出现 `a ~"首页"`(坑1)
-- `node dist/cdp.js tree --target bili --xpath "//bili-comment-renderer" | head -4` → 首条 `林韵子墨`(坑2)
-- `node dist/cdp.js tree --help` → 显示帮助(坑3)
+- `node dist/cdp.js view --target bili | grep "首页"` → 出现 `a ~"首页"`(坑1)
+- `node dist/cdp.js view --target bili --xpath "//bili-comment-renderer" | head -4` → 首条 `林韵子墨`(坑2)
+- `node dist/cdp.js view --help` → 显示帮助(坑3)
 
 - [ ] **Step 3: merge 回 main**
 
 ```bash
 git checkout main
-git merge refactor/cli-tree-shadow
+git merge refactor/cli-view-shadow
 ```
 
 - [ ] **Step 4: 确认合并干净**

@@ -4,7 +4,7 @@
 #   <id>     单调递增,不重排
 #   <域名>   精确(www.bilibili.com)、*.suffix 子域通配(*.zhihu.com 匹配自身+任意子域)、suffix.* entity(zhihu.* 匹配任意 TLD)
 #   <path>   glob 通配(* 匹配任意字符含 /,如 /video/*、/question/*),空 = 不限路径
-#   <selector>  折叠区域的 CSS selector(tree 命中时整块折叠成一行 ▸)
+#   <selector>  折叠区域的 CSS selector(view 命中时整块折叠成一行 ▸)
 #   <备注>   折叠行的显示文本
 # 知乎顶栏(www.zhihu.com##.css-s8xum0)
 1	www.zhihu.com		.css-s8xum0	顶栏

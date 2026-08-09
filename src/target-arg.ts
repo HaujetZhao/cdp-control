@@ -9,7 +9,7 @@
  * 下解析失败)。抽成独立模块让单测零依赖、聚焦防呆正则。
  */
 
-/** 操作目标:selector 字符串,或 {ref:n, ancestor?} 用 tree 登记的引用序号(穿透 shadow,可选爬父)。 */
+/** 操作目标:selector 字符串,或 {ref:n, ancestor?} 用 view 登记的引用序号(穿透 shadow,可选爬父)。 */
 export type TargetArg = string | { ref: number; ancestor?: number };
 
 /** 字符串形态的 \"{ref:N}\" 防呆正则:CLI 误用对象字面量当 selector(querySelector 会抛原生 CSS 异常)。 */

@@ -2,11 +2,11 @@
  * feedback.ts — 操作后自动反馈(注入侧):MutationObserver 采集本次操作产生的 DOM 变化。
  * 分为两段,跨两次 Runtime.evaluate 调用协作,observer 状态暂存于全局 __cdpFeedback:
  *   startFeedback()   — 装 observer,记录 childList 新增 + 文本变化(前后值)。
- *   collectFeedback() — 断开 observer,取"顶层新增元素"逐块建树拼接,产摘要。
+ *   collectFeedback() — 断开 observer,取"顶层新增元素"逐块建视图拼接,产摘要。
  * 等待时长由 Node 侧(sleep)控制,不在此注入侧;node 侧在两次调用之间等待 delayMs。
  *
  * ref 语义:collect **不重置 __cdpRefs,只追加**——反馈新增的 ref 从现有长度递增,不顶掉整页旧 ref
- * (整页 tree 才重置)。agent 用反馈树的增量 ref 操作新增内容,同时原 ref 依旧有效。
+ * (整页 view 才重置)。agent 用反馈树的增量 ref 操作新增内容,同时原 ref 依旧有效。
  *
  * shadow 穿透:MutationObserver 默认只观察调用 observe 的那棵树,**不进 shadowRoot**——B站点赞数、
  * 弹幕等多在 shadow 内,变化压根不进反馈。startFeedback 对 document + 所有 shadowRoot(限深度 ≤3)
@@ -15,12 +15,12 @@
  * 噪声过滤:video/audio/canvas 子树(弹幕/播放进度/缓冲在 video 或其 shadow 内)整体跳过;
  * 连续播放时间戳(01:55→01:56…)折叠为一条。点赞数等纯数字真变化不折叠,保留为真信号。
  */
-import { buildTree } from './tree-core.ts';
-import { markText, formatTree } from './tree-format.ts';
+import { buildView } from './view-core.ts';
+import { markText, formatView } from './view-format.ts';
 
 export interface FeedbackResult { blocks: FeedbackBlock[]; changes: FeedbackChange[] }
 
-/** 一个去重后的新增内容块:lines 为该块 tree 行,count 为它在本次出现的次数(重复块折叠)。 */
+/** 一个去重后的新增内容块:lines 为该块 view 行,count 为它在本次出现的次数(重复块折叠)。 */
 export interface FeedbackBlock { lines: string[]; count: number }
 
 /** 一次文本变化:before 为旧值(可缺),after 为新值;note 给折叠摘要用(如"播放进度,已折叠 N 条")。 */
@@ -152,13 +152,13 @@ export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResu
   const set = new Set(els);
   const roots = els.filter(el => !hasAncestorInSet(el, set));
   // 不重置 __cdpRefs:反馈新增 ref 从现有长度递增,顶掉旧 ref 会丢整页句柄(曾踩坑)。
-  // 逐块建树,按整块 lines 去重折叠(同内容多次出现,如广告,只留一条 + 计数)。
+  // 逐块建视图,按整块 lines 去重折叠(同内容多次出现,如广告,只留一条 + 计数)。
   const seen = new Map<string, FeedbackBlock>();
   const order: string[] = [];
   for (const el of roots) {
-    const t = buildTree(el, { viewport: opts.viewport });
+    const t = buildView(el, { viewport: opts.viewport });
     markText(t);
-    const blines = formatTree(t);
+    const blines = formatView(t);
     if (!blines.length) continue;
     // 折叠签名去掉 ref 号(内容相同但 ref 不同的重复块应视为同一条,如重复广告)。
     const sig = blines.join('\n').replace(/\[ref=\d+(, visible)?\]/g, '');

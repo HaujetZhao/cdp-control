@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 给 agent 一个会话级「按 ref 删减整页 tree 区域」的 `prune` 命令：看过整页后删掉噪声区域，之后的整页 `tree` 不再输出它们。
+**Goal:** 给 agent 一个会话级「按 ref 删减整页 view 区域」的 `prune` 命令：看过整页后删掉噪声区域，之后的整页 `view` 不再输出它们。
 
-**Architecture:** 排除区域以「真实 DOM 元素」存进页面全局 `window.__cdpPrune`（`Set`），`buildTree` 在建树时遇到集合内元素即整棵子树跳过（返回 null、不登记 ref）。Node 侧新增 `prune` 命令走注入入口 `src/inject/prune.ts`，复用 `lib/find-root.ts` 的 `refElement` 把 ref 解析成元素。会话级、页面刷新清空，与 `__cdpRefs` 同生命周期。
+**Architecture:** 排除区域以「真实 DOM 元素」存进页面全局 `window.__cdpPrune`（`Set`），`buildView` 在建树时遇到集合内元素即整棵子树跳过（返回 null、不登记 ref）。Node 侧新增 `prune` 命令走注入入口 `src/inject/prune.ts`，复用 `lib/find-root.ts` 的 `refElement` 把 ref 解析成元素。会话级、页面刷新清空，与 `__cdpRefs` 同生命周期。
 
 **Tech Stack:** TypeScript / esbuild（注入脚本 IIFE）/ commander CLI / node:test 零依赖单测。
 
@@ -103,16 +103,16 @@ Expected: FAIL，报「Cannot find module '../src/inject/lib/prune'」或函数�
 
 ```ts
 /**
- * prune.ts — 会话级排除区域集合(按 ref 删减整页 tree 区域)。
+ * prune.ts — 会话级排除区域集合(按 ref 删减整页 view 区域)。
  * 把 agent 不想要的长页区域(导航/推荐/广告)的「真实 DOM 元素」存进页面全局 __cdpPrune(Set)。
- * buildTree 遇到集合内元素即整棵子树跳过 → 之后的整页 tree 不再输出,无需筛选。
+ * buildView 遇到集合内元素即整棵子树跳过 → 之后的整页 view 不再输出,无需筛选。
  * 生命周期:与 __cdpRefs 一致,页面刷新(新 document)自动清空。
  */
 import { refElement } from './find-root';
 
 export interface PruneEntry { el: Element; summary: string }
 
-/** 排除区域集合(不存在返回 null)。buildTree 读取用。 */
+/** 排除区域集合(不存在返回 null)。buildView 读取用。 */
 export function pruneSet(): Set<Element> | null {
   return (globalThis as any).__cdpPrune ?? null;
 }
@@ -168,25 +168,25 @@ git commit -m "feat(prune): 会话级排除区域集合 lib/prune.ts(register/cl
 
 ---
 
-### Task 2: `buildTree` 跳过被排除子树
+### Task 2: `buildView` 跳过被排除子树
 
 **Files:**
-- Modify: `src/inject/lib/tree-core.ts`
+- Modify: `src/inject/lib/view-core.ts`
 - Test: 无单测（依赖真实 DOM，走浏览器实测 Task 7）。本任务只改代码。
 
 - [ ] **Step 1: 改造 `simplify` 支持排除跳过**
 
-把 `simplify` 返回值改为 `TreeNode | null`，在建树开始时读一次排除集合，元素命中即返回 null（整棵子树消失、不再下探、不登记 ref）；子节点循环跳过 null；顶层处理 null 根。
+把 `simplify` 返回值改为 `ViewNode | null`，在建树开始时读一次排除集合，元素命中即返回 null（整棵子树消失、不再下探、不登记 ref）；子节点循环跳过 null；顶层处理 null 根。
 
-在 `src/inject/lib/tree-core.ts` 中，`import` 增加 `import { pruneSet } from './prune';`，并把 `buildTree` 内改动如下：
+在 `src/inject/lib/view-core.ts` 中，`import` 增加 `import { pruneSet } from './prune';`，并把 `buildView` 内改动如下：
 
 ```ts
-export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}): TreeNode {
+export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}): ViewNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;
   const exclude = pruneSet(); // 会话级排除集合,命中的元素整棵子树跳过
 
-  function simplify(el: Element | ShadowRoot, depth: number): TreeNode | null {
+  function simplify(el: Element | ShadowRoot, depth: number): ViewNode | null {
     const isEl = el instanceof Element;
     if (isEl && exclude && exclude.has(el as Element)) return null; // 整棵子树消失(不输出、不登记 ref)
     const tag = isEl ? el.tagName?.toLowerCase() || 'frag' : 'frag';
@@ -201,10 +201,10 @@ export function buildTree(root: Element | ShadowRoot, opts: TreeBuildOpts = {}):
     return node;
   }
 
-  let tree = simplify(root, 0);
-  if (!tree) tree = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
-  if (visibleOnly) { tree.kids = tree.kids.filter(k => prune(k)); }
-  return tree;
+  let v = simplify(root, 0);
+  if (!v) v = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
+  if (visibleOnly) { v.kids = v.kids.filter(k => prune(k)); }
+  return v;
 }
 ```
 
@@ -218,8 +218,8 @@ Expected: tsc --noEmit 无错误，esbuild 打包成功。
 - [ ] **Step 3: 提交**
 
 ```bash
-git add src/inject/lib/tree-core.ts
-git commit -m "feat(prune): buildTree 遇到被排除元素整棵子树跳过"
+git add src/inject/lib/view-core.ts
+git commit -m "feat(prune): buildView 遇到被排除元素整棵子树跳过"
 ```
 
 ---
@@ -243,8 +243,8 @@ export interface PruneArgs { refs?: number[]; clear?: boolean; list?: boolean }
 
 ```ts
 /**
- * prune.ts — prune 注入入口(按 ref 删减整页 tree 区域)。
- * 把 agent 不要的区域的 ref 解析成元素登记进 __cdpPrune;之后的整页 tree 不再输出。
+ * prune.ts — prune 注入入口(按 ref 删减整页 view 区域)。
+ * 把 agent 不要的区域的 ref 解析成元素登记进 __cdpPrune;之后的整页 view 不再输出。
  * 契约:读取 __CDP_ARG__(refs 数组 / clear / list),结果写 setResult。
  * 同步入口,footer await 原样通过。
  */
@@ -300,11 +300,11 @@ export function pruneExpr(refs: number[] | undefined, clear: boolean, list: bool
 
 - [ ] **Step 2: `api.ts` 加 `prune` 方法**
 
-在 `src/api.ts` 的 `import { inject, treeExpr, locateExpr } from './inject-loader';` 改为 `import { inject, treeExpr, locateExpr, pruneExpr } from './inject-loader';`，并在 `tree`/`locate` 方法附近追加：
+在 `src/api.ts` 的 `import { inject, viewExpr, locateExpr } from './inject-loader';` 改为 `import { inject, viewExpr, locateExpr, pruneExpr } from './inject-loader';`，并在 `view`/`locate` 方法附近追加：
 
 ```ts
 export interface PruneOpts { refs?: number[]; clear?: boolean }
-/** 会话级排除区域:把 ref 解析成元素登记,之后的整页 tree 不再输出这些元素子树。
+/** 会话级排除区域:把 ref 解析成元素登记,之后的整页 view 不再输出这些元素子树。
  * 无 refs 且非 clear 时列出已排除区域。 */
 export async function prune(target: Target, opts: PruneOpts = {}): Promise<any> {
   const list = !opts.refs?.length && !opts.clear;
@@ -336,15 +336,15 @@ git commit -m "feat(prune): Node 侧 pruneExpr + api.prune"
 在 `src/cdp.ts` 的 `locate` 命令定义之后追加：
 
 ```ts
-targetCmd('prune', '按 ref 登记排除区域,之后的整页 tree 不再输出这些元素子树(会话级);无参列出已排除,--clear 清空')
-  .argument('[refs...]', 'tree 输出的 ref 序号(可逗号/空格分隔多个)')
+targetCmd('prune', '按 ref 登记排除区域,之后的整页 view 不再输出这些元素子树(会话级);无参列出已排除,--clear 清空')
+  .argument('[refs...]', 'view 输出的 ref 序号(可逗号/空格分隔多个)')
   .option('--clear', '清空排除集合')
   .action(async (refs, opts) => {
     const t = await needTarget(opts.target);
     const numRefs = (refs || []).flatMap((s: string) => s.split(',')).filter((s: string) => s !== '').map(Number);
     const r = await api.prune(t, { refs: numRefs, clear: !!opts.clear });
     if (r.clear) { console.log('已清空排除集合'); return; }
-    if (!r.pruned?.length && !r.skipped) { console.log('当前未排除任何区域(用 prune <ref> 登记,之后整页 tree 不再输出)'); return; }
+    if (!r.pruned?.length && !r.skipped) { console.log('当前未排除任何区域(用 prune <ref> 登记,之后整页 view 不再输出)'); return; }
     if (r.pruned?.length) console.log(`已排除 ${r.pruned.length} 个区域:`);
     (r.pruned || []).forEach((s: string) => console.log(`  · ${s}`));
     if (r.skipped) console.log(`跳过 ${r.skipped} 个无效 ref`);
@@ -391,15 +391,15 @@ Expected: tsc 无错；`tests/*.test.ts` 全绿（含新增 prune.test.ts）。
 用 CDP（端口 9222，已开）。在一个长内容 tab（如之前的知乎问题页 `D246E49E72EA69F0DB203B2BF6D17C8A`，若已关则重新 `open`）上：
 
 ```bash
-node ".../dist/cdp.js" tree --target <tab>               # 整页,拿到导航头等噪声区域 ref
+node ".../dist/cdp.js" view --target <tab>               # 整页,拿到导航头等噪声区域 ref
 node ".../dist/cdp.js" prune <导航头ref> --target <tab>   # 登记排除
-node ".../dist/cdp.js" tree --target <tab>                # 整页,确认噪声区域不再出现
+node ".../dist/cdp.js" view --target <tab>                # 整页,确认噪声区域不再出现
 node ".../dist/cdp.js" prune --target <tab>               # 列出已排除区域
 node ".../dist/cdp.js" prune --clear --target <tab>       # 清空
-node ".../dist/cdp.js" tree --target <tab>                # 确认排除区域恢复出现
+node ".../dist/cdp.js" view --target <tab>                # 确认排除区域恢复出现
 ```
 
-Expected: 登记排除后整页 tree 不再含该区域；`--clear` 后恢复；`prune` 无参正确列出摘要。
+Expected: 登记排除后整页 view 不再含该区域；`--clear` 后恢复；`prune` 无参正确列出摘要。
 
 - [ ] **Step 2: 记录实测结论**
 
@@ -418,20 +418,20 @@ Expected: 登记排除后整页 tree 不再含该区域；`--clear` 后恢复；
 在 `SKILL.md` 的子命令表 `locate` 行后加：
 
 ```
-| `prune <refs...> [--target] [--clear]` | 按 ref 登记排除区域(会话级),之后的整页 tree 不再输出这些元素子树;无参列出已排除,--clear 清空 |
+| `prune <refs...> [--target] [--clear]` | 按 ref 登记排除区域(会话级),之后的整页 view 不再输出这些元素子树;无参列出已排除,--clear 清空 |
 ```
 
-并在「区域定位」小节补一段「整页 tree 去噪」用法：看过整页后，把导航头/推荐/广告等噪声区域的 ref 用 `prune` 删掉，之后整页 tree 即干净，无需再 `--selector-file`/`--ref` 筛选。
+并在「区域定位」小节补一段「整页 view 去噪」用法：看过整页后，把导航头/推荐/广告等噪声区域的 ref 用 `prune` 删掉，之后整页 view 即干净，无需再 `--selector-file`/`--ref` 筛选。
 
 - [ ] **Step 2: `CLAUDE.md` 注入契约加 prune 说明**
 
-在「注入脚本契约」或 ref 登记表小节补：`__cdpPrune` 会话级排除元素集合，与 `__cdpRefs` 同生命周期（刷新清空）；`buildTree` 遇到集合内元素整棵子树跳过、不登记其下 ref；注入入口 `src/inject/prune.ts`。
+在「注入脚本契约」或 ref 登记表小节补：`__cdpPrune` 会话级排除元素集合，与 `__cdpRefs` 同生命周期（刷新清空）；`buildView` 遇到集合内元素整棵子树跳过、不登记其下 ref；注入入口 `src/inject/prune.ts`。
 
 - [ ] **Step 3: 提交**
 
 ```bash
 git add SKILL.md CLAUDE.md
-git commit -m "docs: prune 命令(整页 tree 去噪)接入 SKILL.md + CLAUDE.md"
+git commit -m "docs: prune 命令(整页 view 去噪)接入 SKILL.md + CLAUDE.md"
 ```
 
 ---
@@ -450,7 +450,7 @@ Expected: 全绿。
 
 ```bash
 git checkout main
-git merge --no-ff feat/prune -m "merge(feat): 会话级 prune 按 ref 删减整页 tree 区域"
+git merge --no-ff feat/prune -m "merge(feat): 会话级 prune 按 ref 删减整页 view 区域"
 ```
 
 Expected: main 出现 merge commit，`--no-ff` 保留分叉线。

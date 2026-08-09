@@ -1,10 +1,10 @@
 /**
- * tree-utils.test.ts — 结构树纯函数的单元测试(Node 内置 node:test,零依赖)。
+ * view-utils.test.ts — 结构树纯函数的单元测试(Node 内置 node:test,零依赖)。
  * 覆盖 inlineLen / inlineable / leafText / firstTxt / isTrivialLeaf 的语义,锁定重构前行为。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf } from '../src/inject/lib/tree-utils.ts';
+import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf } from '../src/inject/lib/view-utils.ts';
 
 // —— inlineLen ——
 test('inlineLen: 自身文本长度', () => {

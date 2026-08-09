@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, treeExpr, locateExpr, lineageExpr, foldExpr, findExpr } from './inject-loader';
+import { inject, viewExpr, locateExpr, lineageExpr, foldExpr, findExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
@@ -16,7 +16,7 @@ import { normArg, type TargetArg } from './target-arg';
  * 统一执行注入脚本并解包结果契约:
  * 注入脚本成功返回任意值(可含 {ok:true});失败返回 {ok:false, err}。
  * 这里统一把失败抛成异常,调用方无需各自判 ok。数据类入口(snapshot 等返回裸数组/对象)自然通过。
- * 例外:ref 失效自愈({ok:false, refInvalid:true, recovered})不抛——上层据此打印 recovered tree,不走反馈。
+ * 例外:ref 失效自愈({ok:false, refInvalid:true, recovered})不抛——上层据此打印 recovered view,不走反馈。
  */
 async function invoke<T>(target: Target, expr: string, timeout?: number): Promise<T> {
   const r = await evaluate(target, expr, timeout);
@@ -67,22 +67,22 @@ export async function navigate(target: Target, url: string): Promise<void> {
   });
 }
 
-export interface TreeOpts {
+export interface ViewOpts {
   selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number;
   scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string;
 }
 
-/** 结构树:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
- * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先滚动触发懒加载再建树
+/** 结构视图:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
+ * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先滚动触发懒加载再建视图
  *   (默认 ±1 屏回弹;scrollPages 改为循环滚 N 屏;scrollTo 先滚到该 selector 元素,如 B站评论区)。
  * 折叠:Node 侧按 target 页 hostname+pathname 读 folds.csv 命中规则(path glob 限定同域名下页面路径),
- * 传入注入侧 buildTree 折叠成一行(跨会话持久)。 */
-export async function tree(target: Target, opts: TreeOpts = {}): Promise<any> {
+ * 传入注入侧 buildView 折叠成一行(跨会话持久)。 */
+export async function view(target: Target, opts: ViewOpts = {}): Promise<any> {
   const folds = matchFolds(hostOf(target.url), pathOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
-  return invoke(target, treeExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo), 30000);
+  return invoke(target, viewExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo), 30000);
 }
 
-/** 按 tree 的 ref 序号反查稳定 CSS selector,可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的 selector 复用。 */
+/** 按 view 的 ref 序号反查稳定 CSS selector,可选 ancestor 向上爬 N 层父级。刷新后 ref 失效,可用返回的 selector 复用。 */
 export async function locate(target: Target, ref: number, ancestor?: number): Promise<any> {
   return invoke(target, locateExpr(ref, ancestor));
 }
@@ -101,7 +101,7 @@ export interface FoldOpts {
 /** find:按文本(--text)或 selector(--selector)找元素,登记 ref 返回(追加,不重置)。
  * - text:整页穿透 shadow 搜"自身或后代文本含关键词"的元素;selector:document.querySelector(支持 `>>>` shadow 链)。
  * - ancestor:命中后向上爬 N 层到区域容器。all:收集全部命中而非首个。
- * - 返回 {ok, hits:[{ref, tag, text, line}]}(line 是该元素 formatTree 的一行输出,含 [ref=N])。 */
+ * - 返回 {ok, hits:[{ref, tag, text, line}]}(line 是该元素 formatView 的一行输出,含 [ref=N])。 */
 export interface FindOpts { text?: string; selector?: string; ancestor?: number; all?: boolean }
 export async function find(target: Target, opts: FindOpts = {}): Promise<any> {
   return invoke(target, findExpr(opts));
@@ -274,7 +274,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  tree, locate, lineage, fold, find, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  view, locate, lineage, fold, find, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

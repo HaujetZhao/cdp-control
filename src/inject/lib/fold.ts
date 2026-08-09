@@ -1,7 +1,7 @@
 /**
  * fold.ts — 会话级临时折叠集合(注入侧共享)。
  * agent 一次性折叠某 ref 区域(不落盘)时,把 {selector, note} 存进页面全局 __cdpFolds。
- * buildTree 折叠时与持久规则(Node 侧传入的 folds)合并按 selector 匹配。
+ * buildView 折叠时与持久规则(Node 侧传入的 folds)合并按 selector 匹配。
  * 生命周期:与 __cdpRefs 一致,页面刷新(新 document)清空。
  */
 export interface FoldEntry { selector: string; note: string }
