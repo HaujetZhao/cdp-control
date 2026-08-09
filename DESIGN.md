@@ -81,6 +81,7 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
   - `navigate` 让当前 tab 导航到指定 url
 - 感知
   - `view` 把页面压成带结构、带信息的紧凑树
+  - `fetch <url>` 临时打开页面，用 `view` 抓取内容后，关闭页面，替代 web fetch MCP
 - 自由执行
   - `eval` 在页面内执行任意 JS,回传 JSON 值
 - 指认
