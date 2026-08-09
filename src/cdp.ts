@@ -202,6 +202,7 @@ function printInfoChain(r: any): void {
   if (!r?.chain?.length) { console.log('(空链)'); return; }
   for (const l of r.chain) {
     const parts: string[] = [`depth ${l.depth}: ${l.tag}`];
+    if (l.ref != null) parts.push('[ref=' + l.ref + ']');
     if (l.id) parts.push('#' + l.id);
     if (l.classes) parts.push('.' + (Array.isArray(l.classes) ? l.classes.join('.') : String(l.classes)));
     if (l.dataAttrs) for (const [k, v] of Object.entries(l.dataAttrs)) parts.push(`[${k}="${v}"]`);

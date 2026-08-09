@@ -74,9 +74,31 @@ function describe(el: Element): {
   }
 
   const depthStart = 0; // html = depth 0
+  // 反查元素在 __cdpRefs 的 ref 号;未登记返回 -1。
+  const refOf = (e: Element): number => {
+    const refs = (globalThis as any).__cdpRefs;
+    if (!Array.isArray(refs)) return -1;
+    for (let i = 0; i < refs.length; i++) {
+      const entry = refs[i];
+      if (entry && (entry.el ?? entry) === e) return i;
+    }
+    return -1;
+  };
+  // 逐层补 ref(根→叶):已登记的复用(view 建树时登记的隐藏容器 ref);未登记的(局部 view 的祖先缺登记)
+  // 按"最近已登记祖先"为 parentRef 现场追加,保证 info 列出的每层都有可用 [ref=N]。
+  let lastRef: number | null = null;
+  const chainRef = chain.map((e, i) => {
+    let r = refOf(e);
+    if (r < 0) {
+      r = (globalThis as any).__cdpRefs.length;
+      (globalThis as any).__cdpRefs.push({ el: e, parentRef: lastRef });
+    }
+    lastRef = r;
+    return { depth: depthStart + i, ref: r, ...describe(e) };
+  });
   const result = {
     ok: true,
-    chain: chain.map((e, i) => ({ depth: depthStart + i, ...describe(e) })),
+    chain: chainRef,
     targetDepth: chain.length - 1,
     suggested: genSel(el),
   };
