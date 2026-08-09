@@ -56,9 +56,9 @@ export function locateExpr(ref: number, ancestor?: number): string {
   return inject('ref', { ref, ancestor });
 }
 
-/** lineage:列目标元素(爬 ancestor 后)从 html 到自身的祖先链,供 agent 挑稳定锚点写 fold 规则。 */
-export function lineageExpr(ref: number, ancestor?: number): string {
-  return inject('lineage', { ref, ancestor });
+/** info:列目标元素(爬 ancestor 后)从 html 到自身的祖先链,供 agent 挑稳定锚点写 fold 规则。 */
+export function infoExpr(ref: number, ancestor?: number): string {
+  return inject('info', { ref, ancestor });
 }
 
 /** 读控制台日志入口。 */

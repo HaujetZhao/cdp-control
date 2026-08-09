@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, viewExpr, locateExpr, lineageExpr, foldExpr, findExpr } from './inject-loader';
+import { inject, viewExpr, locateExpr, infoExpr, foldExpr, findExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
@@ -104,10 +104,10 @@ export async function locate(target: Target, ref: number, ancestor?: number): Pr
   return invoke(target, locateExpr(ref, ancestor));
 }
 
-/** lineage:列目标元素(爬 ancestor 后)从 html 到自身的祖先链,每层 tag/id/class/语义 data-* /aria/role + 建议 selector。
+/** info:列目标元素(爬 ancestor 后)从 html 到自身的祖先链,每层 tag/id/class/语义 data-* /aria/role + 建议 selector。
  * 供 agent 挑稳定锚点自己写 fold add 这种 uBlock 式短规则(如 #biliMainHeader),而非只靠 genSel 猜一个。 */
-export async function lineage(target: Target, ref: number, ancestor?: number): Promise<any> {
-  return invoke(target, lineageExpr(ref, ancestor));
+export async function info(target: Target, ref: number, ancestor?: number): Promise<any> {
+  return invoke(target, infoExpr(ref, ancestor));
 }
 
 export interface FoldOpts {
@@ -291,7 +291,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  view, locate, lineage, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  view, locate, info, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };
