@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄),selector 是后台匹配(刷新后兜底)。** `tree --ref <n> --ancestor <k>` 查看局部;`locate <ref>` 从 ref 反查 selector 用作刷新后定位。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**任何用 ref 的命令(click/fill/focus/hover/locate/fold)ref 失效都自动自愈**——沿祖先链 tree 最近存活容器给你新 ref;打错号(从未存在)直接报、不误导成"页面刷新";整链失效才提示重新 tree。长页噪声用 `fold`(类 uBlock 的持久折叠规则:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
+description: 需要控制本地浏览器时使用——列出 tab、打开/关闭/导航页面、提取页面元素、点击、填表、执行 JS、截图,**读页面控制台日志(含嵌套对象与调用链,支持过滤)**。做自动化时,优先把整个操作写成脚本文件用 `run` 一次执行,避免分步调用。**核心模型:tree 感知页面(整页 body 的文本+结构紧凑树,生成可操作的 ref),ref 是操作索引(会话句柄),selector 是后台匹配(刷新后兜底)。** `tree --ref <n> --ancestor <k>` 查看局部;`locate <ref>` 从 ref 反查 selector 用作刷新后定位;`find --text "关键词"`(类 uBlock `:has-text()`)按文本找元素登记新 ref,ref 失效后不必整页重 tree。遇到首屏外内容没加载(如评论区),用 `tree --scroll-to-load` 先滚动触发懒加载再建树。**任何用 ref 的命令(click/fill/focus/hover/locate/fold)ref 失效都自动自愈**——沿祖先链 tree 最近存活容器给你新 ref;打错号(从未存在)直接报、不误导成"页面刷新";整链失效才提示重新 tree。长页噪声用 `fold`(类 uBlock 的持久折叠规则:域名+selector+备注)把顶栏/导航等折叠成一行,跨会话生效。
 ---
 
 # CDP 浏览器控制 (cdp-browser-control)
@@ -12,7 +12,7 @@ description: 需要控制本地浏览器时使用——列出 tab、打开/关�
 ## 核心模型(三件事)
 
 1. **tree = 感知**:整页 body 建为紧凑树(文本+结构),给每个可操作元素标 `[ref=i]`。**首次看页面必须完整 `tree`**(别 `| head` 截断,别 `--visible-only`)。
-2. **ref = 操作索引**:会话句柄,存 `window.__cdpRefs`,刷新失效、每次 tree 重排。操作一律优先 `--ref i`(穿透 shadow)。**ref 失效自动自愈**(任何 ref 命令,见下)。
+2. **ref = 操作索引**:会话句柄,存 `window.__cdpRefs`,刷新失效、每次 tree 重排。操作一律优先 `--ref i`(穿透 shadow)。**ref 失效自动自愈**(任何 ref 命令,见下);ref 失效后按文本重定位用 `find --text`(类 uBlock `:has-text()`,见下)。
 3. **selector = 后台匹配**:刷新后 ref 失效,用 `locate <ref>` 把 ref 翻译成 selector 喂回 `tree --selector-file` 复用。
 
 重要原则:
@@ -100,6 +100,15 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/项目里的脚本.js
 - **shadow DOM 元素的 locate**:目标在 shadow 内时,标准 CSS selector 在 document 上查不到(`querySelector` 返 null)。locate 会检测到并改输出 `shadow 链:hostSel >>> innerSel >>> ...`(`>>>` 是本工具自定义的 shadow 穿透符),把这条链写进 selector-file,`tree --selector-file` 能分段穿透 shadowRoot 命中。操作(点击/填值)则继续用 `--ref`(操作命令穿透 shadow)。
 - **多块布局**(如知乎 Q&A 是"问题块 + 回答列"两个兄弟块、**没有共同容器**):别找"能一网打尽的容器"(不存在)——分块各做一次 ref+ancestor,或各自 `locate`,再并列看。别因此绕回 JS 探查。
 
+**按文本/selector 重定位元素(`find`,类 uBlock `:has-text()`)**:ref 失效或肉眼找元素费劲时,直接按文本关键词搜元素拿新 ref,不必整页重 tree + 肉眼找:
+```
+cdp find --text "28 条评论" --target ...     # 整页穿透 shadow 搜"自身或后代文本含关键词"元素,返回 [ref=N] <一行 tree>
+cdp find --text "登录" --all --target ...    # --all 收集全部命中(默认首个)
+cdp find --selector "#biliMainHeader" --target ...   # 或直接按 selector 命中(支持 >>> shadow 链)
+cdp find --text "评论" --ancestor 2 --target ...     # 命中后爬父到区域容器(与 tree/locate 一致)
+```
+命中**追加**进 `__cdpRefs`(不顶旧 ref,原整页 ref 依旧有效)。`--text` 是主战场:页面重渲染后某个按钮的 ref 失效,`find --text <按钮文字>` 直接拿新 ref 接着操作,省去整页重 tree。深度上限 + 文本截断防深层 shadow 卡死;命中即止(不深入其子,避免父子重复占满结果)。
+
 **整页 tree 去噪(`lineage` 透视 + `fold` 持久规则,类 uBlock Origin)**:长页(知乎问题页、评论区)整页 tree 常混入导航头/推荐/广告等大量噪声 ref。用 `fold` 把这些区域**折叠成一行**(输出 `▸ [ref=i] <备注>`,不展开子树但保留 ref),跨会话持久——下次打开同站点自动折叠。
 
 **主路径:lineage 看祖先链挑稳定锚点 → fold add 写 uBlock 式短规则**。`fold --ref --save` 让工具用 genSel 猜一个 selector,但有时你想要更短更稳的语义锚点(如 `#biliMainHeader` 而非某个 `data-v-xxx`)。`lineage` 把目标元素从 `<html>` 到自身的祖先链摊开,每层紧凑列出 tag/id/class/语义 data-*/aria/role,你一眼挑出最稳的层手写规则:
@@ -153,8 +162,9 @@ cdp fold rm <id> --target ...               # 6. 删持久规则(按 id,其它 i
 | `close <target>` | 关闭 tab |
 | `navigate <url> [--target]` | 导航 |
 | `eval "<js>" [--target]` | 执行 JS,返回 returnByValue 的值 |
-| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 滚动触发懒加载再建树(默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]` |
+| `tree [--target] [--ref <n>] [--ancestor <k>] [--selector-file <file>] [--visible-only] [--scroll-to-load [--scroll-pages <n>] [--scroll-to <selector>]]` | 整页 body 的文本+结构紧凑层级树。**首次感知必须用完整 tree(无 --visible-only/不截断),否则视口外的回答/评论区被整段漏掉**。锚点互斥:--ref 优先,其次 --selector-file,缺省 body;--ancestor 统一向上爬 k 层;--scroll-to-load 滚动触发懒加载再建树(默认下+上各一屏回弹;--scroll-pages 改为循环滚 N 屏带增长检测;--scroll-to 先滚到指定 selector 元素如 `#bili-comments`,命中不到降级)。命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>`。带 ref 节点在视区标 `[ref=i·屏]`,否则 `[ref=i]`。**INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]`**(空值省略),看得到表单内容不必 eval |
 | `locate <n> [--ancestor <k>] [--target]` | 从 tree 的 ref 序号**反查稳定 CSS selector**。ref 是会话句柄,刷新后失效;locate 把它翻译成刷新后仍可用的 selector,供 `tree --selector-file` 复用(可选 --ancestor 把叶子抬到区域容器)。目标在 **shadow DOM** 内时改输出 `hostSel >>> innerSel >>> ...` 穿透链(标准 CSS 穿不透 shadow),写进 selector-file 仍可复用 |
+| `find --text "<关键词>" [--ancestor <k>] [--all] [--target]` / `find --selector "<css>" [--ancestor <k>] [--target]` | **按文本或 selector 找元素,登记新 ref 返回(类 uBlock `:has-text()`)**。ref 失效后不必整页重 tree:`find --text "28 条评论"` 直接拿新 ref。`--text` 整页穿透 shadow 搜"自身或后代文本含关键词"元素;`--selector` 走 `document.querySelector`(支持 `>>>` shadow 链);`--ancestor` 命中后爬父到区域容器;`--all` 收集全部命中(默认首个)。命中追加进 `__cdpRefs`(**不顶旧 ref**),输出 `[ref=N] <该元素的一行 tree 输出>` |
 | `lineage <n> [--ancestor <k>] [--target]` | 列目标元素(爬 ancestor 后)从 html 到自身的**祖先链**:每层 tag/id/class/语义 data-* /aria/role,末尾附 genSel 建议 selector。挑稳定锚点手写 `fold add` 这种 uBlock 式短规则(如 `#biliMainHeader`),比 `fold --ref --save` 让工具猜更可控 |
 | `fold add <域名> <selector> <备注> [--path <前缀>]` / `fold list` / `fold rm <id>` / `fold --ref <n> [备注] [--ancestor <k>] [--save] [--domain <d>] [--path <前缀>] [--target]` | **类 uBlock 折叠规则**:持久规则存 `$CDP_USER_DATA/folds.txt`(五列:id/域名/selector/备注/pathPrefix),tree 时命中区域折叠成一行 ▸,跨会话自动生效。`add`/`--ref --save` 落盘;`--path` 限定页面 pathname 前缀(修同域名跨页错位);`rm <id>` 按 id 删(其它 id 不重排,连续 rm 不漏删);`list` 列持久+临时。展开用 `tree --ref <折叠容器 ref>` |
 | `click <selector> [--ref <n>] [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>] [--target]` | 点击元素(selector 或 `--ref i`,穿透 shadow;--ancestor 定位后爬父)。默认带操作后反馈 |
@@ -171,7 +181,7 @@ cdp fold rm <id> --target ...               # 6. 删持久规则(按 id,其它 i
 
 ## 命令示例(真实流程)
 
-> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→**核对落点/结果**"走。**别把 `tree` 输出丢给 `head`/`sed`/`grep` 过滤**,看局部只能用 `tree --ref/--ancestor/--selector-file/--visible-only`。**CLI 用 `--ref n`,脚本 API 才用 `{ref:n}`**——`cdp click "{ref:44}"` 会报"不是合法 selector"。
+> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→**核对落点/结果**"走。**别把 `tree` 输出丢给 `head`/`sed`/`grep` 过滤**,看局部只能用 `tree --ref/--ancestor/--selector-file/--visible-only` 或 `find --text`。**CLI 用 `--ref n`,脚本 API 才用 `{ref:n}`**——`cdp click "{ref:44}"` 会被自动拦截报友好错误(对象字面量当 selector 误用)。
 
 ### 逛页面 + 定位区域 + 去噪
 ```bash
@@ -183,6 +193,15 @@ cdp tree --target zhihu               # 顶栏折叠成 ▸ 一行,树干净
 cdp tree --ref 53 --ancestor 4 --target zhihu   # 从内容叶子 ref 爬到区域容器,只列问题+回答
 cdp locate 53 --ancestor 4 --target zhihu       # 要刷新后仍可用的 selector
 cdp tree --selector-file ./f --target zhihu     # 用 selector 局部复看
+```
+
+### ref 失效后按文本重定位(find,不必整页重 tree)
+```bash
+cdp tree --target zhihu                         # 先整页 tree 拿 ref
+cdp click --ref 44 --target zhihu               # 操作后页面重渲染,ref 44 失效
+cdp find --text "写回答" --target zhihu         # 直接按文本搜元素拿新 ref(类 uBlock :has-text())
+cdp click --ref <新ref> --target zhihu          # 用新 ref 继续,不必整页重 tree
+cdp find --text "评论" --all --target zhihu     # 多个同名元素:--all 收集全部
 ```
 
 ### 点击可能开新 tab → 反馈自动报落点
@@ -263,6 +282,7 @@ await cdp.close(t);
 | `cdp.tree(target, opts?)` | 对象,`{selector?,ref?,ancestor?}` | 整页 body 文本+结构紧凑树:`{ok, lines}`;锚点互斥:ref 优先,其次 selector,缺省 body;`opts.ancestor` 统一向上爬 k 层;命中 fold 折叠规则的容器输出 `▸ [ref=i] <备注>` |
 | `cdp.locate(target, ref, ancestor?)` | 对象,数字,数字可选 | 从 ref 反查稳定 selector:`{ok, tag, text, selector, shadow?, shadowChain?}`;刷新后仍可用,喂给 `tree` 复用。shadow 元素:selector 退化为最外层 host 锚定,shadowChain 是 `>>>` 穿透链(写进 selector-file 可复用) |
 | `cdp.lineage(target, ref, ancestor?)` | 对象,数字,数字可选 | 列目标元素祖先链:`{ok, chain:[{depth,tag,id?,classes?,dataAttrs?,aria?,role?}], targetDepth, suggested}`;挑稳定锚点手写 fold 规则 |
+| `cdp.find(target, opts?)` | 对象,`{text?,selector?,ancestor?,all?}` | 按文本/selector 找元素登记新 ref:`{ok, hits:[{ref,tag,text,line}]}`;`text` 整页穿透 shadow 搜"自身或后代文本含关键词",`selector` 走 querySelector(支持 `>>>`);命中追加进 __cdpRefs 不顶旧 ref |
 | `cdp.fold(target, opts?)` | 对象,`{ref?,ancestor?,note?,save?,domain?,path?,add?,list?,rm?}` | 折叠规则管理(见 CLI fold);`save:true` 从 ref 落盘持久,否则会话级临时;`path` 限定 pathname 前缀 |
 | `cdp.click(target, selector, opts?)` | 对象,字符串,`{noFeedback?, feedbackDelay?}` | `{ok, tag, feedback?}`;默认带操作后反馈 |
 | `cdp.click(target, {ref: 12})` | 对象,`{ref:n}` | 按 ref 点真实元素(穿透 shadow);ref 失效自动自愈 |

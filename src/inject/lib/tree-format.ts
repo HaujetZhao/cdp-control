@@ -17,10 +17,24 @@ export interface TreeNode {
   hasInter?: boolean; // 自身或任一后代可交互——含交互子代的包装节点不可内联折叠,否则交互叶的 ref 被整颗吞掉
   inView?: boolean; // visible-only:自身是否落在当前视口内且可见(仅 Element 计算;包装节点不查)
   view?: boolean;   // viewport 标记:带 ref 的节点是否在当前视区内(便宜判定,rect+宽高,不查 computed style)。true → 输出 [ref=i·屏]
+  inputInfo?: { type?: string; value?: string; placeholder?: string }; // INPUT/TEXTAREA/SELECT:tree 显示 type/value/placeholder,让 agent 看到表单内容
 }
 
 /** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */
 const tagLabel = (n: TreeNode) => n.tag + (n.shadow ? '[shadow]' : '');
+
+/** 表单元素(INPUT/TEXTAREA/SELECT)的紧凑属性串:type/value/placeholder,空值省略。
+ * 形如 `input[type=text value="搜索" placeholder="输入关键词"]`,让 agent 一眼看到表单内容而不必 eval。 */
+const inputAttr = (n: TreeNode): string => {
+  const i = n.inputInfo;
+  if (!i) return '';
+  const parts: string[] = [];
+  // INPUT 才显式标 type(默认 text 可省略;textarea/select 的 tag 已表明类型,type 无意义)
+  if (n.tag === 'input' && i.type && i.type !== 'text') parts.push('type=' + i.type);
+  if (i.value) parts.push('value="' + i.value + '"');
+  if (i.placeholder) parts.push('placeholder="' + i.placeholder + '"');
+  return parts.length ? '[' + parts.join(' ') + ']' : '';
+};
 
 /** 可操作标注:节点登记过 ref 时追加 [ref=i],agent 据此直接操作真实元素;n.view 为 true 时追加 ·屏(在当前视区)。 */
 const refTag = (n: TreeNode) => (n.ref != null ? ' [ref=' + n.ref + (n.view ? '·屏' : '') + ']' : '');
@@ -44,7 +58,7 @@ export function formatTree(tree: TreeNode): string[] {
   const out: string[] = [];
   const leafish = (n: TreeNode) => n.inter || n.tag === 'img';
   const leafLabel = (n: TreeNode) => {
-    let l = tagLabel(n);
+    let l = tagLabel(n) + inputAttr(n);
     if (n.tag === 'img' && n.imgAlt) l += ' "' + n.imgAlt.slice(0, 40) + '"';
     else if (n.text) l += (n.agg ? ' ~' : ' ') + '"' + n.text.slice(0, 60) + '"';
     return l + refTag(n);

@@ -27,6 +27,10 @@ export interface TreeArgs {
 /** locate:按 tree 的 ref 序号反查稳定 CSS selector,可选 --ancestor 向上爬 N 层。 */
 export interface LocateArgs { ref: number; ancestor?: number }
 
+/** find 命令:按文本或 selector 找元素,登记 ref 返回。text/selector 二选一;
+ * ancestor 命中后爬父到容器;all 返回全部命中而非首个。 */
+export interface FindCmdArgs { text?: string; selector?: string; ancestor?: number; all?: boolean }
+
 /** lineage:列目标元素(爬 ancestor 后)从 html 到自身的祖先链,每层紧凑显示 tag/id/class/语义 data-* /aria/role。
  * 供 agent 挑稳定锚点自己写 fold add 这种 uBlock 式短规则(如 #biliMainHeader)。 */
 export interface LineageArgs { ref: number; ancestor?: number }

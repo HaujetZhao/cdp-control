@@ -69,3 +69,9 @@ export function readExpr(levelSet: string[] | null, since: number): string {
 export function foldExpr(args: { ref?: number; ancestor?: number; note?: string; list?: boolean; clear?: boolean }): string {
   return inject('fold', args);
 }
+
+/** find:按文本(--text)或 selector(--selector)找元素,登记 ref 返回。text/selector 二选一;
+ * ancestor 命中后爬父;all 收集全部命中而非首个。注入入口 src/inject/find-entry.ts。 */
+export function findExpr(args: { text?: string; selector?: string; ancestor?: number; all?: boolean }): string {
+  return inject('find-entry', args);
+}

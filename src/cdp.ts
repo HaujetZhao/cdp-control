@@ -131,6 +131,25 @@ targetCmd('locate', '从 tree 的 ref 序号反查稳定 CSS selector。ref 是�
     }
   });
 
+targetCmd('find', '按文本或 selector 找元素,登记新 ref 返回(类 uBlock :has-text())。ref 失效后不必整页 tree,直接 find --text "关键词" 拿新 ref')
+  .option('--text <关键词>', '在整页(穿透 shadow)搜文本含该关键词的元素(自身或后代文本)')
+  .option('--selector <css>', '按 CSS selector 命中(支持 `>>>` shadow 链)')
+  .option('--ancestor <n>', '命中后向上爬 N 层父级到区域容器(默认 0)')
+  .option('--all', '返回全部命中并各自登记 ref(默认仅首个)')
+  .action(async (opts) => {
+    if (!opts.text && !opts.selector) throw new Error('需提供 --text 或 --selector');
+    if (opts.text && opts.selector) throw new Error('--text 与 --selector 只能选其一');
+    const r = await api.find(await needTarget(opts.target), {
+      text: opts.text, selector: opts.selector,
+      ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
+      all: !!opts.all,
+    });
+    if (!r.hits?.length) { console.log(r.err || '未找到'); return; }
+    for (const h of r.hits) {
+      console.log(`[ref=${h.ref}] ${h.line}`);
+    }
+  });
+
 targetCmd('lineage', '列目标元素(爬 ancestor 后)从 html 到自身的祖先链:每层 tag/id/class/语义 data-* /aria/role。挑稳定锚点写 fold add 这种 uBlock 式短规则(如 #biliMainHeader)')
   .argument('<n>', 'tree 输出的 ref 序号')
   .option('--ancestor <n>', '向上爬 N 层父级再列祖先链(默认 0;把内容叶子抬升到语义区域容器)')
