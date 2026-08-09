@@ -90,8 +90,8 @@ export async function fetchPage(url: string): Promise<string[]> {
   let t: Target | undefined;
   try {
     t = await resolve(tid);
-    // 等页面离开 loading(至少 interactive),避免抓到首帧空树;加载慢/超时按现状 view(拿空树,优雅降级)。
-    try { await waitForFn(t, `document.readyState!=='loading'`, { timeout: 20000, interval: 300 }); } catch {}
+    // 等页面渲染出实质内容(body 有非空文本),避免 SPA 懒加载首帧只有空 body 就抓;加载慢/超时按现状 view(拿空树,优雅降级)。
+    try { await waitForFn(t, `document.body && document.body.innerText.trim().length > 0`, { timeout: 20000, interval: 300 }); } catch {}
     const r = await view(t);
     return r.lines ?? [];
   } finally {

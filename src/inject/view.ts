@@ -76,7 +76,15 @@ setResult((async () => {
       window.scrollTo(0, start); await new Promise(r => setTimeout(r, pause));
     }
   }
-  if (__CDP_ARG__.scrollToLoad) await scrollToLoad();
+  // 默认滚动加载:整页完整 view(无 ref/selector/visibleOnly、未显式给任何滚动参数)时,
+  // 页面首次整页感知自动 scroll-to-load 触发懒加载(评论区等首屏外内容),抓全再建树——fetch 也走这里。
+  // 页面级标志 __cdpFullViewDone:同页面刷新前只滚一次,后续整页 view 不再默认滚(除非显式 --scroll-to-load)。
+  const isFullView = __CDP_ARG__.ref == null && !__CDP_ARG__.selector && !__CDP_ARG__.visibleOnly;
+  const hasExplicitScroll = __CDP_ARG__.scrollToLoad || __CDP_ARG__.scrollPages != null || !!__CDP_ARG__.scrollTo;
+  if (__CDP_ARG__.scrollToLoad || (isFullView && !hasExplicitScroll && !(globalThis as any).__cdpFullViewDone)) {
+    if (isFullView && !hasExplicitScroll) (globalThis as any).__cdpFullViewDone = true; // 先置位防并发重滚
+    await scrollToLoad();
+  }
   const visibleOnly = !!__CDP_ARG__.visibleOnly;
   const v = buildView(root, { visibleOnly, viewport: true, folds: __CDP_ARG__.folds });
   markText(v);
