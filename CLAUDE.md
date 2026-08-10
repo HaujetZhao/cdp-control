@@ -18,7 +18,8 @@ npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
 dist/cdp.js          入口 bundle(commander+全部 src,自包含,拷走 dist 即可运行)
 dist/*.js            其余 Node 侧(api/transport/monitor/browser/inject-loader/keys)
 dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 IIFE)
-dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建覆盖,见「fold 折叠规则」)
+dist/fold-selectors.csv  fold 规则运行时副本(由 src/fold-selectors.csv 每次构建覆盖,见「fold 折叠规则」)
+dist/ignore-links.csv    ignore-links 黑名单运行时副本(由 src/ignore-links.csv 每次构建覆盖,见「ignore-links」)
 ```
 
 ## 源码结构(两层分离)
@@ -74,8 +75,8 @@ dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建�
 - **shadow locate/复用闭环**:`inShadow` 检测;shadow 内 selector 退化最外层 host 锚定,另生成 `shadowChain`(`hostSel >>> seg1 >>> seg2`);`findRoot` 按 `>>>` 分段逐层 `shadowRoot.querySelector` 穿透——locate 输出 → selector-file 复用。
 
 ### fold 折叠规则(取代已删 stash)
-- Node `src/folds.ts` 读写 `dist/folds.csv`(与 cdp.js 同级,`__dirname` 定位;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
-- **改 fold 规则改 `src/folds.csv`**:每次构建强制覆盖到 dist,`src/folds.csv` 是唯一权威副本,dist 只是产物。
+- Node `src/folds.ts` 读写 `dist/fold-selectors.csv`(与 cdp.js 同级,`__dirname` 定位;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
+- **改 fold 规则改 `src/fold-selectors.csv`**:每次构建强制覆盖到 dist,`src/fold-selectors.csv` 是唯一权威副本,dist 只是产物。
 - 五列:`<id>\t<域名>\t<path>\t<selector>\t<备注>`;id 单调递增不重排;域名通配对齐 uBlock(精确/`*.suffix`/`suffix.*`);path 为 glob(`*` 含 `/`,空=不限,修同域名跨页错位)。`parseRules` 只认首列为数字的行,旧格式跳过。
 - `loadFolds/addFold/removeFold/matchFolds(hostOf/pathOf/domainMatch/pathMatch)` 纯函数+落盘;`api.view` 按 hostOf+pathOf 过滤注入 `__CDP_ARG__.folds`。
 - 会话临时折叠存页面全局 `__cdpFolds`(`lib/fold.ts`),刷新清空。注入入口 `inject/fold.ts`(临时折叠/list/clear);`--save` 落盘由 Node `api.fold` 调 `locateExpr`。
@@ -85,9 +86,13 @@ dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建�
 `inject/info.ts` 列目标从 `<html>` 到自身的祖先链,每层紧凑描述 `tag/id/class/语义 data-*/aria-label/role` + `genSel` 建议。设计意图:genSel 有时挑的锚点不是 agent 要的语义锚点,info 把整条链摊开**决策权交还 agent**(看清 `#biliMainHeader` 在第 N 层直接写 fold 规则)。与 locate 差别:locate 回一个 genSel(工具帮我定);info 回祖先链全貌(我自己挑)。**CLI 命令 `info <n> [--ancestor <k>]`(对应 DESIGN.md 的 info 条目),`api.info(target, ref, ancestor?)` 供脚本用**;`cdp.ts` `printInfoChain` 负责格式化输出。
 
 ### article
-`inject/article.ts` 以 ref 为根提取**格式友好的 Markdown 文章**。**不用 buildView**:其 simplify 把内联子元素(<a>/<b>)拆成独立子节点、丢失句子内顺序,对文章致命。故**专用保序 DOM 遍历**——沿 `childNodes` 逐节点(Text 节点 + 元素)发 Markdown:标题 `#`、段落空行分隔、链接 `[文本](href)`、粗斜 `**`/`*`、代码 `\`\`\``、列表 `-`/`1.`、引用 `>`、图片 `![alt](src)`;无文本交互元素降级 `[label]`(复用 `elLabel`);`BLOCK_TAGS` 遇块即停交 `walkEl` 单独成块。**不截断**:直接读完整文本。`ArticleArgs{ref,ancestor?,linkBlacklist?}`。注:仅遍历 light childNodes,shadow 文章暂不穿透(知乎/B站正文为 light DOM,够用)。
+`inject/article.ts` 以 ref 为根提取**格式友好的 Markdown 文章**。**不用 buildView**:其 simplify 把内联子元素(<a>/<b>)拆成独立子节点、丢失句子内顺序,对文章致命。故**专用保序 DOM 遍历**——沿 `childNodes` 逐节点(Text 节点 + 元素)发 Markdown:标题 `#`、段落空行分隔、链接 `[文本](href)`、粗斜 `**`/`*`、代码 `\`\`\``、列表 `-`/`1.`、引用 `>`、图片 `![alt](src)`;无文本交互元素降级 `[label]`(复用 `elLabel`);`BLOCK_TAGS` 遇块即停交 `walkEl` 单独成块。**不截断**:直接读完整文本。`ArticleArgs{ref,ancestor?,ignoreLinks?}`。注:仅遍历 light childNodes,shadow 文章暂不穿透(知乎/B站正文为 light DOM,够用)。
 
-**链接黑名单(`article-links.ts` + `article-link` CLI)**:命中模式的链接只留文本、去 URL(如知乎 `zhida.zhihu.com/search*` 词汇释义内部链接,URL 是超长 search 串)。Node `src/article-links.ts` 持久化到 `dist/article-links.csv`(3 列 `id\tpattern\tnote`,pattern 为 glob 匹配 `hrefForMatch`=hostname+pathname,与 folds 同构),`api.article` 读入经 `__CDP_ARG__.linkBlacklist` 传入,`article.ts` 的 `linkBlacklisted` 命中即 `inlineSeg` 只回文本。`src/article-links.csv` 是权威副本,构建覆盖到 dist。纯函数(`hrefForMatch`/`globToRegExp`/`linkRuleMatch`/`matchLinkBlacklist`/`parseLinkRules`/`addLinkRule`/`removeLinkRule`)有单测 `tests/article-links.test.ts`。
+**ignore-links 链接黑名单(`ignore-links.ts` + `ignore-link` CLI)**:命中模式的链接只留文本、去 URL(如知乎 `zhida.zhihu.com/search*` 词汇释义内部链接,URL 是超长 search 串)。**view 与 article 共用**。
+- Node `src/ignore-links.ts` 持久化到 `dist/ignore-links.csv`(3 列 `id\tpattern\tnote`,pattern 为 glob 匹配 `hrefForMatch`=hostname+pathname,与 folds 同构)。`src/ignore-links.csv` 是权威副本,构建覆盖到 dist。纯函数(`hrefForMatch`/`globToRegExp`/`linkRuleMatch`/`matchLinkBlacklist`/`parseLinkRules`/`addLinkRule`/`removeLinkRule`)有单测 `tests/ignore-links.test.ts`。
+- **注入侧匹配**:`src/inject/lib/ignore-links.ts` 的 `linkIgnored(patterns, href)`(浏览器,view+article 共用)。`api.view`/`api.article` 读 `loadLinkRules()` 的 pattern 数组,经 `__CDP_ARG__.ignoreLinks` 传入。
+- **view 内联合并**(view-core):命中黑名单的 `<a>`(含 `span>a` 包装)内联成纯文本并与相邻文本段合并成一句,取**末段文本的 el(ref)**。两种 DOM 编码:① 兄弟 span(`<p><span>文</span><span><a>链</a></span><span>文</span></p>`),由 `mergeTextRuns` + `inlineTextOf`(穿透单子节点 span 包装)合并;② 父自身文本(`<p>前文 <span><a>链</a></span> 后文</p>`,文本是父的直接文本节点),由 `ordered` 保序 childNodes 组装成片段再合并。粗斜(b/strong)里的 ignore 链接只去 URL、不一定整句合并(边缘)。
+- **article**:`article.ts` 命中 `linkIgnored` 即 `inlineSeg` 只回文本。
 
 ### find
 `inject/find-entry.ts`(类 uBlock `:has-text()`)解决"view 严禁 grep、ref 易失效"——按文本/selector 找元素登记新 ref,不必整页重 tree。`--text` 整页 DFS(`childrenOf` 穿透 shadow + `ownElText` 取**自身直接文本**)搜关键词,深度上限 `MAX_DEPTH=14`,命中即止。**为何用自身文本而非 subtreeText**:子树文本让最外层容器先命中(body 几乎含所有文本)。命中元素追加进 `__cdpRefs`(`{el,parentRef:null}`),`buildView(el,{viewport:true})` 取根行标 ref。`--ancestor` 爬父;`--all` 收集全部。`FindCmdArgs{text?,selector?,ancestor?,all?}`。
@@ -102,7 +107,7 @@ Node 侧统一 `invoke(target, expr)` 执行注入脚本并解包:成功返回�
 ## 测试
 
 - `tests/*.test.ts` 用 Node 内置 `node:test`+`node:assert/strict`,零运行时依赖。
-- 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/addFold/removeFold,临时 CDP_FOLD_FILE 验证落盘往返)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
+- 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/addFold/removeFold,临时 CDP_FOLD_FILE 验证落盘往返)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/matchLinkBlacklist/parseLinkRules + 落盘 + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
 - 注入侧 DOM 相关(buildView/fold/inputInfo、find-entry 穿透 shadow、feedback observer/子树黑名单、recoverRef live 分支)依赖真实 DOM,靠浏览器实测(见 SKILL.md),不写单测。纯函数分支(`formatView` 的 `·屏`/shadow 占位/fold 优先/`inputAttr`、`feedback` 的 `foldTimestampRun`)有单测。
 
 ## 文档分工

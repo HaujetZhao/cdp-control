@@ -66,20 +66,20 @@ async function main() {
     console.log('▶ 注入页侧:(暂无 src/inject/*.ts,跳过)');
   }
 
-  // —— 拷贝 fold 规则模板(src/folds.csv → dist/folds.csv)——
-  // 每次构建都强制覆盖:src/folds.csv 是唯一权威副本,dist 只是产物。
-  const foldTpl = join(src, 'folds.csv');
-  const foldOut = join(dist, 'folds.csv');
+  // —— 拷贝 fold 规则模板(src/fold-selectors.csv → dist/fold-selectors.csv)——
+  // 每次构建都强制覆盖:src/fold-selectors.csv 是唯一权威副本,dist 只是产物。
+  const foldTpl = join(src, 'fold-selectors.csv');
+  const foldOut = join(dist, 'fold-selectors.csv');
   if (existsSync(foldTpl)) {
     copyFileSync(foldTpl, foldOut);
-    console.log('▶ fold 规则模板 → dist/folds.csv(覆盖)');
+    console.log('▶ fold 规则模板 → dist/fold-selectors.csv(覆盖)');
   }
-  // —— 拷贝 article 链接黑名单模板(src/article-links.csv → dist/article-links.csv)——
-  const linkTpl = join(src, 'article-links.csv');
-  const linkOut = join(dist, 'article-links.csv');
+  // —— 拷贝 ignore-links 黑名单模板(src/ignore-links.csv → dist/ignore-links.csv)——
+  const linkTpl = join(src, 'ignore-links.csv');
+  const linkOut = join(dist, 'ignore-links.csv');
   if (existsSync(linkTpl)) {
     copyFileSync(linkTpl, linkOut);
-    console.log('▶ article 链接黑名单模板 → dist/article-links.csv(覆盖)');
+    console.log('▶ ignore-links 黑名单模板 → dist/ignore-links.csv(覆盖)');
   }
 
   console.log('✅ build 完成 → dist/');

@@ -1,6 +1,7 @@
 /**
- * article-links.test.ts — article 链接黑名单的纯函数单测(hrefForMatch/globToRegExp/linkRuleMatch/
- * matchLinkBlacklist/parseLinkRules)。文件读写(addLinkRule/removeLinkRule)用临时文件验证落盘往返。
+ * ignore-links.test.ts — 链接黑名单纯函数单测:Node 侧(src/ignore-links.ts)的
+ * hrefForMatch/globToRegExp/linkRuleMatch/matchLinkBlacklist/parseLinkRules + 落盘往返;
+ * 浏览器侧(src/inject/lib/ignore-links.ts)的 linkIgnored(view/article 共用)。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,15 +11,16 @@ import { join } from 'node:path';
 import {
   hrefForMatch, globToRegExp, linkRuleMatch, matchLinkBlacklist, parseLinkRules,
   loadLinkRules, addLinkRule, removeLinkRule,
-} from '../src/article-links.ts';
+} from '../src/ignore-links.ts';
+import { linkIgnored } from '../src/inject/lib/ignore-links.ts';
 
 function withTmpDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-links-'));
-  const prev = process.env.CDP_ARTICLE_LINKS_FILE;
-  process.env.CDP_ARTICLE_LINKS_FILE = join(dir, 'article-links.csv');
+  const prev = process.env.CDP_IGNORE_LINKS_FILE;
+  process.env.CDP_IGNORE_LINKS_FILE = join(dir, 'ignore-links.csv');
   try { return fn(dir); }
   finally {
-    process.env.CDP_ARTICLE_LINKS_FILE = prev;
+    process.env.CDP_IGNORE_LINKS_FILE = prev;
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -72,3 +74,12 @@ test('addLinkRule/removeLinkRule: 落盘往返 + id 单调 + 删除不重排', (
   assert.equal(left.length, 1);
   assert.equal(left[0].id, 2); // 删除 1 后 2 不重排
 }));
+
+test('linkIgnored(浏览器侧):空模式数组不命中;glob 匹配 hostname+pathname', () => {
+  assert.equal(linkIgnored(undefined, 'https://a.com/x'), false);
+  assert.equal(linkIgnored([], 'https://a.com/x'), false);
+  assert.equal(linkIgnored(['zhida.zhihu.com/search*'], 'https://zhida.zhihu.com/search?content_id=1&q=词'), true);
+  assert.equal(linkIgnored(['zhida.zhihu.com/search*'], 'https://www.baidu.com/x'), false);
+  assert.equal(linkIgnored(['*.zhihu.com/*'], 'https://www.zhihu.com/question/1'), true);
+  assert.equal(linkIgnored([''], 'https://anything.com'), true); // 空 pattern = 全命中
+});

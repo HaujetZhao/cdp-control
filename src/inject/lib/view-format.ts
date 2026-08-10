@@ -22,6 +22,7 @@ export interface ViewNode {
   el?: Element;       // 建树时暂存真实 DOM 元素(两遍先序的遍二登记 ref 用);格式化忽略
   wantRef?: boolean;  // 遍一标记:内容/交互/折叠/shadow 宿主,遍二分配并打印 [ref=N]
   wantHidden?: boolean; // 遍一标记:纯包装含内容,遍二分配但不打印(隐藏容器,info 反查可用)
+  mergeable?: boolean; // 纯文本段或命中 ignore-links 的 <a>:可与相邻文本段合并(取最后段的 ref),见 view-core
 }
 
 /** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */

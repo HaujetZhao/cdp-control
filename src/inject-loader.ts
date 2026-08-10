@@ -40,6 +40,7 @@ export function inject(name: string, args?: unknown): string {
 export function viewExpr(
   selector?: string, visibleOnly?: boolean, ref?: number, ancestor?: number,
   scrollToLoad?: boolean, folds?: unknown, scrollPages?: number, scrollTo?: string, scrollWait?: number,
+  ignoreLinks?: string[],
 ): string {
   return inject('view', {
     selector, visibleOnly: visibleOnly || undefined, ref, ancestor,
@@ -47,7 +48,7 @@ export function viewExpr(
     scrollPages: scrollPages != null ? scrollPages : undefined,
     scrollTo: scrollTo || undefined,
     scrollWait: scrollWait != null ? scrollWait : undefined,
-    folds,
+    folds, ignoreLinks,
   });
 }
 
@@ -62,9 +63,9 @@ export function infoExpr(ref: number, ancestor?: number): string {
 }
 
 /** article:按 ref 提取子树为格式友好的 Markdown 文章(保序、不截断)。
- * linkBlacklist:链接黑名单模式数组,命中只留文本、去 URL(见 src/article-links.ts)。 */
-export function articleExpr(ref: number, ancestor?: number, linkBlacklist?: string[]): string {
-  return inject('article', { ref, ancestor, linkBlacklist });
+ * ignoreLinks:链接黑名单模式数组,命中只留文本、去 URL(见 src/ignore-links.ts)。 */
+export function articleExpr(ref: number, ancestor?: number, ignoreLinks?: string[]): string {
+  return inject('article', { ref, ancestor, ignoreLinks });
 }
 
 /** 读控制台日志入口。 */

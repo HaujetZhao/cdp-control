@@ -10,6 +10,7 @@ import { setResult } from './lib/result';
 import { refElement, climbAncestors } from './lib/find-root';
 import { notFoundResult, type OperableArg } from './lib/find';
 import { elLabel, ownElText } from './lib/view-core';
+import { linkIgnored } from './lib/ignore-links';
 import type { ArticleArgs } from './lib/arg';
 
 declare const __CDP_ARG__: ArticleArgs;
@@ -17,21 +18,8 @@ declare const __CDP_ARG__: ArticleArgs;
 /** 跳过不进入文章内容的标签。 */
 const NOISE = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'USE', 'SOURCE', 'PICTURE', 'IFRAME']);
 
-/** 链接黑名单模式数组(Node 侧 article-links.ts 读入后经 __CDP_ARG__ 传入)。 */
-const linkBlacklist: string[] = __CDP_ARG__.linkBlacklist || [];
-
-/** 链接是否命中黑名单:匹配 href 的 hostname+pathname(去协议/query)。模式为空 = 全命中。 */
-function linkBlacklisted(href: string): boolean {
-  if (!href) return false;
-  let target = href;
-  try { const u = new URL(href); target = u.hostname + u.pathname; } catch {}
-  for (const pat of linkBlacklist) {
-    if (!pat) return true;
-    const esc = pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp('^' + esc.replace(/\*/g, '.*') + '$').test(target)) return true;
-  }
-  return false;
-}
+/** 链接黑名单模式数组(Node 侧 ignore-links.ts 读入后经 __CDP_ARG__ 传入)。 */
+const ignoreLinks: string[] = __CDP_ARG__.ignoreLinks || [];
 /** 块元素:walkEl 单独成块,inlineContent 遇到即停(不内联拉平)。 */
 const BLOCK_TAGS = new Set(['P', 'UL', 'OL', 'LI', 'BLOCKQUOTE', 'PRE', 'HR', 'TABLE']);
 /** 交互元素:降级为 [label] 行内标注。 */
@@ -62,7 +50,7 @@ const INTERACTIVE = new Set(['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA']);
       const t = ownText(e) || inlineContent(e, depth + 1);
       const h = e.getAttribute('href') || '';
       // 命中链接黑名单(如知乎词汇释义内部链接):只留文本、去 URL。
-      return h && !linkBlacklisted(h) ? `[${t}](${h})` : t;
+      return h && !linkIgnored(ignoreLinks, h) ? `[${t}](${h})` : t;
     }
     if (tag === 'IMG') {
       const a = e.getAttribute('alt') || '';

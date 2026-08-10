@@ -9,8 +9,9 @@
 import type { ViewNode } from './view-format.ts';
 import { tmpFolds } from './fold.ts';
 import type { FoldItem } from './arg.ts';
+import { linkIgnored } from './ignore-links.ts';
 
-export interface ViewBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[] }
+export interface ViewBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[]; ignoreLinks?: string[] }
 
 const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
 /** 压空白 + 零宽字符、首尾 trim 的归一化(供文本采集/比对统一用)。 */
@@ -105,6 +106,82 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
   };
   // 子树是否含"内容"节点(自身 isContent 或任一后代):判断纯容器是否在叶子路径上(有内容可包裹才登记隐藏 ref)。
   const subtreeHasContent = (n: ViewNode): boolean => n.isContent || n.kids.some(subtreeHasContent);
+  // 链接黑名单(Node 侧 ignore-links.ts 读入后传入):命中黑名单的 <a> 内联成纯文本,与相邻文本段合并。
+  const ignoreLinks: string[] = opts.ignoreLinks || [];
+
+  // 判断节点是否为可内联合并的"行内文本段":直接 mergeable(span 直接文本 / 命中黑名单的 a),
+  // 或**单子节点纯包装 span**(如 <span><a>漕</a></span>,文本藏在内层)穿透递归视为同段。
+  // 返回该段文本 + 末段 el(ref)。非行内文本返回 null。
+  const inlineTextOf = (n: ViewNode | undefined): { text: string; el?: Element } | null => {
+    if (!n) return null;
+    if (n.mergeable) return { text: n.text || '', el: n.el };
+    // 纯包装 span(无自身文本/交互/shadow/表单)且恰含一个可内联子节点 → 透传其文本/el
+    if (n.tag === 'span' && !n.inter && !n.shadow && !n.inputInfo && !n.text && n.kids.length === 1) {
+      const inner = inlineTextOf(n.kids[0]);
+      if (inner) return inner;
+    }
+    return null;
+  };
+
+  // 判断元素是否直接命中 ignore-links(自身是 <a> 且 href 命中)。
+  const isIgnoredAEl = (k: Element): boolean => {
+    const h = k.getAttribute('href') || '';
+    return k.tagName === 'A' && !!h && ignoreLinks.length > 0 && linkIgnored(ignoreLinks, h);
+  };
+  // 父元素是否有直接文本子节点(非空)。
+  const hasDirectText = (el: Element): boolean => {
+    for (const n of Array.from(el.childNodes)) if (n.nodeType === 3 && (n.nodeValue || '').trim()) return true;
+    return false;
+  };
+  // 父元素是否有紧邻的 ignore 链接子元素(直接 <a> 或单层 <span><a>):这些链接周围是父的文本片段。
+  const hasImmediateIgnoredA = (el: Element): boolean => {
+    for (const k of Array.from(el.children)) {
+      if (isIgnoredAEl(k)) return true;
+      if (k.tagName === 'SPAN' && k.children.length === 1 && isIgnoredAEl(k.children[0])) return true;
+    }
+    return false;
+  };
+  // 直接文本片段(无 el,无独立 ref):并入保序片段,供 mergeTextRuns 与相邻 ignore 链接合并。
+  const textSegment = (v: string): ViewNode => ({
+    tag: 'span', isContent: true, text: v, inter: false, ref: undefined,
+    mergeable: true, wantRef: false, el: undefined, inView: true, view: false,
+    imgAlt: '', inputInfo: undefined, shadow: false, kids: [], size: 1, hasText: true, agg: false,
+  });
+
+  // 合并相邻行内文本段(span 文本 / 命中 ignore-links 的 a):折成一个文本段,取**最后一段**的 el(ref)。
+  // 如 p 下 [span"设立", span>a"漕", span"，这世上"] 命中黑名单 → 合并为 "设立漕，这世上",el 取最后 span。
+  function mergeTextRuns(kids: ViewNode[]): ViewNode[] {
+    const out: ViewNode[] = [];
+    let i = 0;
+    while (i < kids.length) {
+      const k = kids[i];
+      const seg = inlineTextOf(k);
+      if (seg && inlineTextOf(kids[i + 1])) {
+        let text = '';
+        let lastEl: Element | undefined;
+        let lastView: boolean | undefined;
+        let lastInView: boolean | undefined;
+        let j = i;
+        while (j < kids.length) {
+          const s = inlineTextOf(kids[j]);
+          if (!s) break;
+          text += s.text;
+          if (s.el) { lastEl = s.el; lastView = kids[j].view; lastInView = kids[j].inView; }
+          j++;
+        }
+        out.push({
+          tag: 'span', isContent: true, text, inter: false, ref: undefined,
+          wantRef: true, el: lastEl, inView: lastInView, view: lastView,
+          imgAlt: '', inputInfo: undefined, shadow: false, kids: [], size: 1,
+          hasText: true, agg: false,
+        });
+        i = j;
+      } else {
+        out.push(k); i++;
+      }
+    }
+    return out;
+  }
 
   // —— 遍一:建树 + 打标记 + 暂存 el。不登记 __cdpRefs ——
   function simplify(el: Element | ShadowRoot, depth: number): ViewNode | null {
@@ -131,13 +208,24 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
     // 带 shadowRoot 的 host(如 bili-comments)无条件标 wantRef:它们常无 light 文本、首屏还是空壳,
     // 不强制登记就会在整页 view 里静默消失,agent 无从知道页面有评论区。登记后 formatView 输出占位行。
     const hasShadow = isEl && inView && !!(el as Element).shadowRoot;
+    // 命中链接黑名单的 <a>:内联成纯文本(inter 降为 false),与相邻文本段合并(view 里不单独成链接行)。
+    const ignoredA = isEl && tag === 'a' && ignoreLinks.length
+      ? linkIgnored(ignoreLinks, ((el as Element).getAttribute('href') || '')) : false;
+    const effInter = ignoredA ? false : inter;
+    // 模式 B:父元素既有直接文本、又有紧邻的 ignore 链接(直接 <a> 或 span>a)→ 用保序 childNodes 组装,
+    // 让文本片段与链接文本按原序成段(兄弟 span 模式 A 由 mergeTextRuns 处理,不走此分支)。
+    const ordered = isEl && !ignoredA && ignoreLinks.length > 0
+      && hasDirectText(el as Element) && hasImmediateIgnoredA(el as Element);
+    if (ordered) text = ''; // 直接文本改由保序片段承载,不再合成到自身 text
     const node: ViewNode = {
       tag,
       // shadow host 强制 isContent:空壳 host(无文本、shadow 子树也未加载)也要被 walk 到、输出占位,
       // 否则会被 productive 过滤掉,agent 在整页 view 里看不到它存在。
-      isContent: !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow,
-      text, inter, ref: undefined, inView, view: viewport ? isInViewport(el as Element) : undefined,
-      wantRef: isEl && inView && (inter || !!text || hasShadow) ? true : undefined,
+      isContent: !!text || (isEl && el.tagName === 'IMG') || effInter || hasShadow,
+      text, inter: effInter, ref: undefined, inView, view: viewport ? isInViewport(el as Element) : undefined,
+      wantRef: isEl && inView && (effInter || !!text || hasShadow) ? true : undefined,
+      // 纯文本段(span 直接文本)或命中黑名单的 a → 可与相邻文本段合并
+      mergeable: (ignoredA || (tag === 'span' && !!text && !effInter && !hasShadow)) ? true : undefined,
       el: isEl ? el as Element : undefined,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
       // 表单元素采集 type/value/placeholder(view 显示),让 agent 看到搜索框内容、不必 eval。
@@ -153,24 +241,43 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
       shadow: hasShadow,
       kids: [], size: 0, hasText: false, agg: false,
     };
-    for (const k of childrenOf(el as Element)) {
-      const kt = k instanceof Element ? k.tagName.toUpperCase() : '';
-      if (DROP.has(kt)) continue;
-      const kn = simplify(k, depth + 1);
-      if (kn) node.kids.push(kn); // 跳过被排除的 null
+    if (ordered) {
+      // 保序组装:直接文本节点 → mergeable 片段;元素子节点 → 正常 simplify。顺序与 DOM 一致。
+      for (const n of Array.from((el as Element).childNodes)) {
+        if (n.nodeType === 3) {
+          const v = (n.nodeValue || '').trim();
+          if (v) node.kids.push(textSegment(v));
+        } else if (n.nodeType === 1) {
+          const kt = (n as Element).tagName.toUpperCase();
+          if (DROP.has(kt)) continue;
+          const kn = simplify(n as Element, depth + 1);
+          if (kn) node.kids.push(kn);
+        }
+      }
+    } else {
+      for (const k of childrenOf(el as Element)) {
+        const kt = k instanceof Element ? k.tagName.toUpperCase() : '';
+        if (DROP.has(kt)) continue;
+        const kn = simplify(k, depth + 1);
+        if (kn) node.kids.push(kn); // 跳过被排除的 null
+      }
     }
+    // ignore-links:相邻纯文本段(span / 命中黑名单的 a)合并成一段,取最后段 el(ref)。
+    node.kids = mergeTextRuns(node.kids);
     if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
     // 交互/图片元素自身无直接文本时,先试语义标签(aria/title),再 grabText 聚合后代文本
     // (空格分隔,穿透 shadow;替代 innerText——后者会把 inline 数字连排成 "822.2万904906:02")。
-    if (!text && inter) {
+    if (!text && effInter) {
       const label = elLabel(el as Element);
       if (label) { text = strip(label); node.agg = true; }
       else { text = strip(grabText(el, 0)).slice(0, 80); node.agg = true; }
+    } else if (!text && ignoredA) {
+      text = strip(grabText(el as Element, 0)).slice(0, 80); node.agg = true;
     } else if (!text && isEl && el.tagName === 'IMG') {
       text = strip(grabText(el, 0)).slice(0, 80); node.agg = true;
     }
     node.text = text;
-    node.isContent = !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow;
+    node.isContent = !!text || (isEl && el.tagName === 'IMG') || effInter || hasShadow;
     node.size = 1 + node.kids.reduce((a, k) => a + k.size, 0);
     if (!text && title && !node.kids.some(k => k.text) && node.size <= 8 && (el as Element).tagName !== 'SVG' && (el as Element).tagName !== 'path' && (el as Element).tagName !== 'USE') {
       node.leafValue = strip(title).slice(0, 40);
@@ -179,7 +286,7 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
     // 隐藏容器:纯包装元素(无自身文本/交互/shadow/表单),但子树含内容(叶子路径上的祖父 div)。
     // 标 wantHidden(遍二登记进 __cdpRefs,可被 view <ref>/fold/locate/info 定位),**不设 node.ref** ——
     // formatView 不输出其 [ref=N],view 默认不显示、内联折叠行为不变。parentRef 由遍二用最近已登记祖先填。
-    if (isEl && inView && !inter && !text && !hasShadow && !node.inputInfo
+    if (isEl && inView && !effInter && !text && !hasShadow && !node.inputInfo
         && node.kids.length > 0 && subtreeHasContent(node)) {
       node.wantHidden = true;
       node.hidden = true;
