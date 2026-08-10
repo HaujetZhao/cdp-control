@@ -9,6 +9,7 @@ import { resolve as pathResolve } from 'node:path';
 import { coreApi } from './api';
 import { logs, cmdListen } from './monitor';
 import { ensureBrowser } from './browser';
+import { runScript } from './run-script';
 
 const api = { ...coreApi, logs, ensure: ensureBrowser };
 
@@ -69,14 +70,12 @@ program.command('fetch').argument('<url>', '要抓取的网址').description('�
 program.command('__daemon', { hidden: true }).description('(内部)控制台监听注入守护')
   .action(async () => { await cmdListen(); });
 
-program.command('run').argument('<file>', '脚本文件').description('执行自动化脚本(脚本里用全局 cdp API,可顶层 await)')
+program.command('run').argument('<file>', '脚本文件').description('执行自动化脚本(脚本里用全局 cdp API,可顶层 await;返回非 undefined 则打印)')
   .action(async (file) => {
     const abs = pathResolve(file); const code = readFileSync(abs, 'utf8');
     (globalThis as any).cdp = api;
-    const BUILTIN_ALLOW = new Set(['os', 'path', 'fs', 'child_process', 'crypto', 'util', 'stream', 'url']);
-    const safeRequire = (id: string): any => { if (BUILTIN_ALLOW.has(id)) return require(id); throw new Error(`脚本不可 require '${id}',仅允许 Node 内建: ${[...BUILTIN_ALLOW].join('/')}`); };
-    const fn = new Function('cdp', 'require', `return (async () => {\n${code}\n})();`);
-    await fn(api, safeRequire);
+    const r = await runScript(code, api);
+    if (r !== undefined) console.log(typeof r === 'string' ? r : JSON.stringify(r, null, 2));
   });
 
 // —— 需要 target 的命令(每个挂 --target option,action 末参为 opts,含 opts.target) ——
