@@ -21,6 +21,7 @@ const SEMANTIC_DATA = [
   'data-testid', 'data-test', 'data-cy', 'data-qa',
   'data-role', 'data-type', 'data-component', 'data-name',
   'data-za-extra-module', 'data-za-module', // 知乎/通用埋点模块名
+  'data-tooltip', // 知乎/B站等把按钮提示放这(如 "解释这篇内容"),无 aria/title 时是唯一语义来源
 ];
 
 /** class 列表截断阈值(太长的 utility class 列表对挑锚点无信息量)。 */
@@ -29,7 +30,7 @@ const MAX_CLASS_LEN = 80;
 /** 提取一层的紧凑描述(纯 DOM 读,无副作用)。 */
 function describe(el: Element): {
   tag: string; id?: string; classes?: string[]; dataAttrs?: Record<string, string>;
-  aria?: string; role?: string;
+  aria?: string; role?: string; title?: string;
 } {
   const tag = el.tagName.toLowerCase();
   const out: any = { tag };
@@ -54,6 +55,8 @@ function describe(el: Element): {
   if (aria) out.aria = aria;
   const role = el.getAttribute('role');
   if (role) out.role = role;
+  const title = el.getAttribute('title');
+  if (title) out.title = title;
   return out;
 }
 

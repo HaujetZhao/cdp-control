@@ -247,6 +247,7 @@ function printInfoChain(r: any): void {
     if (l.dataAttrs) for (const [k, v] of Object.entries(l.dataAttrs)) parts.push(`[${k}="${v}"]`);
     if (l.aria) parts.push(`[aria="${l.aria}"]`);
     if (l.role) parts.push(`[role="${l.role}"]`);
+    if (l.title) parts.push(`[title="${l.title}"]`);
     console.log(parts.join(' '));
   }
   if (r.targetDepth != null) console.log(`→ 目标在第 ${r.targetDepth} 层`);
