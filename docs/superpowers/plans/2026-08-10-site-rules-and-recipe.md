@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 新增**抽取配方 recipe**(URL 命中的过程式站点摘要,文本+内嵌 ref),`view` 命令默认跑 recipe、未命中回落树、`--tree` 强制树;规则存储统一进 `rules/`(修 clobber + 迁移旧 dist 规则);抽共享 `globToRegExp` 消重复;`run` 引擎抽共享并捕获返回值供 recipe 复用。
+**Goal:** 新增**抽取配方 recipe**(URL 命中的过程式站点摘要,文本+内嵌 ref),`view` 命令默认跑 recipe、未命中回落树、`--tree` 强制树;规则存储统一进 `rules/`(修 clobber);抽共享 `globToRegExp` 消重复;`run` 引擎抽共享并捕获返回值供 recipe 复用。
 
-**Architecture:** 三个独立改动,不共享抽象伞:①`src/url-scope.ts` 共享纯函数工具;②规则存储统一 `src/rules/`(默认)+ `rules/`(实时,gitignore)+ seed-once 迁移;③recipe = URL 作用域 Node 模块(复用 run 引擎、返回 `{lines}`),CLI `view` action 顶层分发,`api.view` 保持纯结构。详见 spec。
+**Architecture:** 三个独立改动,不共享抽象伞:①`src/url-scope.ts` 共享纯函数工具;②规则存储统一 `src/rules/`(默认)+ `rules/`(实时,gitignore)+ seed-once;③recipe = URL 作用域 Node 模块(复用 run 引擎、返回 `{lines}`),CLI `view` action 顶层分发,`api.view` 保持纯结构。详见 spec。
 
 **Tech Stack:** TypeScript / esbuild(注入 IIFE)/ commander CLI / node:test 零依赖单测。
 
@@ -20,7 +20,7 @@
 - 纯函数(url-scope、rules seed 迁移)写单测,`CDP_RULES_DIR` 覆盖临时目录。
 - commit 不带 `Co-Authored-By`。
 - 每阶段改完 `npm run build` 重建再回测。
-- **零兼容**:旧 dist csv 由 seed 迁移一次,不写 migration/fallback。
+- **零兼容**:旧 dist csv 不迁移,seed 只从 src/rules/ 拷默认,不写 migration/fallback。
 
 ---
 
@@ -39,7 +39,7 @@
 - [ ] **Step 3: 单测 `tests/url-scope.test.ts`**
 globToRegExp 通配、hostOf/pathOf、urlMatches(含 `*.suffix`/`suffix.*`/空 path)。
 
-## Task 2: 规则存储统一 `src/rules/` + `rules/`(修 clobber + 迁移)
+## Task 2: 规则存储统一 `src/rules/` + `rules/`(修 clobber)
 
 **Files:**
 - Modify: `build.mjs`(不再 build 时把 fold/ignore csv 覆盖到 dist;dist 变纯代码)
@@ -51,9 +51,9 @@ globToRegExp 通配、hostOf/pathOf、urlMatches(含 `*.suffix`/`suffix.*`/空 p
 - [ ] **Step 1: 建 `src/rules/` 默认源;`build.mjs` 不再覆盖 dist csv**
 迁移 fold.csv/ignore-links.csv 到 `src/rules/`;build.mjs 删掉 copyFileSync 覆盖 dist 的步骤(规则不再进 dist)。
 - [ ] **Step 2: 读路径改 `rules/`,seed-once**
-`join(__dirname,'../rules/...')`;首跑缺文件 → 旧 `dist/<name>.csv` 存在则迁移(best-effort),否则从 `src/rules/` 拷;二次 build 不覆盖。
+`join(__dirname,'../rules/...')`;首跑缺文件 → 从 `src/rules/` 拷默认;二次 build 不覆盖(不迁旧 dist)。
 - [ ] **Step 3: `.gitignore` 加 `rules/`;单测 seed 往返**
-`CDP_RULES_DIR` 临时目录:首跑 seed、旧 dist 迁移、二次不覆盖、运行时 `fold add` 写 `rules/` 持久。
+`CDP_RULES_DIR` 临时目录:首跑 seed、二次不覆盖、运行时 `fold add` 写 `rules/` 持久。
 - [ ] **Step 4: 同步删旧"随 dist 拷贝走"承诺**
 `CLAUDE.md` 构建节、`folds.ts:3/26` 注释里"规则随 dist 拷贝走"的说法改为"规则在 `rules/`(数据非代码)",避免注释变过期谎言。
 
