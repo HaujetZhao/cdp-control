@@ -129,7 +129,12 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 
 环境变量:`CDP_HOST`/`CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(daemon,默认 9333)、`CDP_USER_DATA`(默认 `~/.cdp-browser`)、`CDP_RULES_DIR`(实时规则目录,默认 skill 根 `rules/`)、`CDP_FOLD_FILE`/`CDP_IGNORE_LINKS_FILE`(单文件路径覆盖,测试用)。
 
-**recipe 编写**:`rules/recipes/<site>.js` 一文件一站点,导出**规则数组** `module.exports = [{ name, scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }, …]`。`scope` 可为字符串或数组(一抽取服务多 URL 形态);同文件多元素=同站点多布局。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.eval` 按站点 selector 抓结构)。共享工具在 `rules/recipes/_lib.js`(`clean`/`refstr`/`opHint`);`refOf` 只查已建树、未命中返回 `null`(绝不按需注册)。参考 `src/rules/recipes/zhihu.js`(问题页 + 专栏两条规则)。
+**recipe 编写**:`src/rules/recipes/<site>.js`(作者代码直接住 git,单一来源)一文件一站点,导出**规则数组** `module.exports = [{ name, scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }, …]`。`scope` 可为字符串或数组(一抽取服务多 URL 形态);同文件多元素=同站点多布局。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.read` 展开再读、`cdp.eval` 按站点 selector 抓结构)。**三个引擎原语替你接管可复用/易错部分**:
+- **只读探针 `window.__cdpProbe`**(view 建树后自动注入):eval 里 `const { refOf, text } = window.__cdpProbe`,`refOf(el)` 反查已建树 ref(未命中 `null`,绝不按需注册)。不再手抄 refOf 样板。
+- **`cdp.read(target, {container, expand?, wait?})`**:按 `container` selector 取正文容器**完整 Markdown**(不截断)。`expand` 给折叠按钮(ref/selector)则先点击展开再取全文——容器每次重查、免疫展开重渲染 ref 漂移。折叠判定(哪个按钮=展开)由你按站点语义决定。读正文优先用它,替代手写"click 展开→重读→article"状态机。
+- **`_lib` 呈现**:`clean`/`refstr`/`opHint` + `abridge(text,n=160)`(预览摘要)+ `entry({label,value,ref})`(labeled 数据点→文本)。站点特有整形(剥 label/剥「已」)留在 recipe 调用处、不下沉。
+
+参考 `src/rules/recipes/zhihu.js`(问题页首答全文 + 专栏文章全文,共用这些原语)。
 
 ## 命令示例(真实流程)
 
@@ -182,6 +187,7 @@ await cdp.close(t);
 | `navigate(target, url)` | — |
 | `eval(target, js, timeout?)` | returnByValue 值 |
 | `view(target, {selector?,ref?,ancestor?})` | `{ok, lines}`(锚点互斥,折叠输出 `▸ [ref=i] <备注>`) |
+| `read(target, {container, expand?, wait?})` | 展开再读(recipe 用):按容器 selector 取**完整 Markdown**;expand 先展开再取全文。返回 `{ok, markdown, lines}` |
 | `click(target, selector \| {ref:12}, {noFeedback?,feedbackDelay?})` | `{ok, tag, feedback?}`;ref 失效自动自愈 |
 | `fill(target, selector \| {ref:12}, value, opts?)` | `{ok, tag, feedback?}` |
 | `waitFor(target, selector, {timeout,interval})` | 布尔(超时抛错) |

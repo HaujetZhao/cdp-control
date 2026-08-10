@@ -19,4 +19,22 @@ function opHint(expr, ref) {
   return ref != null && ref >= 0 ? `(用 ${expr} ${ref} 展开)` : '';
 }
 
-module.exports = { clean, refstr, opHint };
+/**
+ * 摘要:归一化后按 maxLen 截断(缺省 160),超长补「…」。语义化封装,与 view 管线的 cut 同语义。
+ * 让"预览摘要"成为意图名,而非每处手写 slice。
+ */
+function abridge(text, n = 160) {
+  const t = clean(text);
+  return t.length <= n ? t : t.slice(0, n) + '…';
+}
+
+/**
+ * 一个 labeled 数据点 → 文本:`[label ]clean(value)refstr(ref)`。
+ * 最小原语(label + clean + ref),只封装「数据点 → 文本」;站点特有整形(剥 label 前缀、剥「已」「收藏」字样)
+ * 必须留在 recipe 调用处,不得下沉进此通用层(否则被单一站点污染)。
+ */
+function entry({ label, value, ref }) {
+  return (label || '') + clean(value) + refstr(ref);
+}
+
+module.exports = { clean, refstr, opHint, abridge, entry };

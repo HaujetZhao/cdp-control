@@ -6,7 +6,7 @@
 import { writeFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target } from './transport';
-import { inject, viewExpr, locateExpr, infoExpr, foldExpr, findExpr, articleExpr } from './inject-loader';
+import { inject, viewExpr, locateExpr, infoExpr, foldExpr, findExpr, articleExpr, readContentExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
@@ -119,6 +119,24 @@ export async function info(target: Target, ref: number, ancestor?: number): Prom
 export async function article(target: Target, ref: number, ancestor?: number): Promise<any> {
   const ignore = loadLinkRules().map(r => r.pattern);
   return invoke(target, articleExpr(ref, ancestor, ignore.length ? ignore : undefined));
+}
+
+/**
+ * 展开再读(recipe 用,杀 P2/P3):按稳定 `container` selector 取正文容器的完整 Markdown。
+ * 可选 `expand`(展开按钮的 ref `{ref:N}` / selector / 数字)先点击展开、Node 侧等待重渲染,
+ * 再重查容器取全文。三步分开各同步:点击(同步 eval 立即返回,避免同 eval 内 await 卡死)→
+ * Node sleep → read-content 重查容器(展开重渲染替换元素则末尾追加)。容器以 selector 每次重查为锚,
+ * 免疫 ref 漂移;article 保持纯读不动。折叠判定(要不要展开)仍由 recipe 按站点语义决定。
+ */
+export interface ReadOpts { container: string; expand?: TargetArg; wait?: number }
+export async function read(target: Target, opts: ReadOpts): Promise<any> {
+  if (opts.expand != null) {
+    await click(target, opts.expand, { noFeedback: true });
+    await sleep(opts.wait ?? 1000);
+  }
+  const rc = await invoke<{ ok: boolean; ref: number | null; err?: string }>(target, readContentExpr({ container: opts.container }));
+  if (!rc?.ok || rc.ref == null) throw new Error(rc?.err || `read: 容器未建树/未命中: ${opts.container}(需先 view 建树)`);
+  return article(target, rc.ref);
 }
 
 /** ignore-links 黑名单管理(add/rm/list)。pattern 为链接通配符(glob,匹配 hostname+pathname)。
@@ -322,7 +340,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  view, locate, info, article, ignoreLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  view, locate, info, article, read, ignoreLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

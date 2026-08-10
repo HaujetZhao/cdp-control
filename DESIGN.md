@@ -51,9 +51,10 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
         - 聚焦规则持久化保存，用 uBlock Origin 的语法
       - 局部感知可指定区域
       - 站点聚焦 recipe (已知站点按规则输出重点信息)
-        - 每文件可存多份规则，应对同一站点的不同路径，保存在 `rules/`
+        - 每文件可存多份规则，应对同一站点的不同路径；作者代码直接住 git `src/rules/recipes/`(单一来源)
         - URL 作用域(hostname+pathname glob)匹配，`view`/`fetch` 默认启用、未命中回落树
-        - 过程式规则，recipe 是 Node 模块，复用已有 API
+        - 过程式规则，recipe 是 Node 模块，复用已有 API，写"站点语义"不重造引擎感知器
+        - 引擎原语接管可复用/易错/有状态部分：只读探针(refOf 只查不注册)、展开再读(cdp.read，article 保持纯读)、呈现(_lib.entry/abridge)
   - 指认
     - ref 指向一个结构，有 DOM、父链
       - 可通过 ref 直接操作 DOM

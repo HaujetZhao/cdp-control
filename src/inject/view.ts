@@ -11,12 +11,16 @@ import { setResult } from './lib/result';
 import { markText, formatView } from './lib/view-format';
 import { buildView } from './lib/view-core';
 import { findRoot, refElement, climbAncestors } from './lib/find-root';
+import { installProbe } from './lib/probe';
 import type { ViewArgs } from './lib/arg';
 
 declare const __CDP_ARG__: ViewArgs;
 
 // 整段包成 async(通过 setResult 传 promise,footer await):支持 --scroll-to-load 先异步滚动再建视图。
 setResult((async () => {
+  // 装只读探针 __cdpProbe(refOf/refOfSelector/text):recipe 约定先 view 建树再 eval,故随 view
+  // 注入即保证可用;探针只查已建树 __cdpRefs、绝不注册。幂等(页面全局已存在则跳过)。
+  installProbe();
   // 锚点互斥:ref 优先(读上一次 view 登记的 __cdpRefs,须在下方清空表之前解析),
   // 其次 selector,缺省 body。--ancestor 为统一爬父修饰符,对任一锚点生效。
   let root: Element | null;

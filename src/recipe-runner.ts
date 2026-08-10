@@ -1,7 +1,8 @@
 /**
  * recipe-runner.ts — 站点抽取配方的加载与匹配(Node 侧)。
  *
- * recipe 是 URL 作用域的 Node 模块(CJS),放 `rules/recipes/<site>.js`。命中时 `view`/`fetch`
+ * recipe 是 URL 作用域的 Node 模块(CJS),放 **git 权威** `src/rules/recipes/<site>.js`
+ * (作者代码,不做 gitignored 镜像,见 rules-store)。命中时 `view`/`fetch`
  * (CLI action 顶层分发)跑它,得到 `{lines}`(文本+内嵌 [ref=N])。
  *
  * **文件形态(L0 站点聚合)**:一文件 = 一站点,文件名只是聚合标签;文件导出**规则数组**:
@@ -16,7 +17,7 @@ import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { urlMatches } from './url-scope.ts';
-import { rulesDir } from './rules-store.ts';
+import { srcRecipesDir } from './rules-store.ts';
 
 interface RecipeRule {
   name: string;
@@ -37,9 +38,9 @@ async function loadRules(dir: string, f: string): Promise<RecipeRule[] | null> {
   } catch { return null; }
 }
 
-/** 列出 rules/recipes/*.js,读取每条规则(加载失败/无 rules 数组的跳过)。 */
+/** 列出 src/rules/recipes/*.js(recipe 是作者代码,直接读 git 权威),读取每条规则(加载失败/无 rules 数组的跳过)。 */
 async function listRuleFiles(): Promise<RuleFile[]> {
-  const dir = join(rulesDir(), 'recipes');
+  const dir = srcRecipesDir();
   if (!existsSync(dir)) return [];
   const files: RuleFile[] = [];
   for (const f of readdirSync(dir)) {

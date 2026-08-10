@@ -14,17 +14,19 @@ import { matchRecipe } from '../src/recipe-runner.ts';
 
 const require = createRequire(import.meta.url);
 
-/** 在临时 rules/recipes 下写入若干 recipe 文件,跑完清理。 */
+/** 在临时 src/rules/recipes 下写入若干 recipe 文件,跑完清理。
+ * P-4 后 recipe 直接读 git 权威 src/rules/recipes/(经 CDP_RULES_DEFAULT_DIR 覆盖指向临时目录),
+ * 故用 CDP_RULES_DEFAULT_DIR 指到临时目录、recipe 落 <dir>/recipes。 */
 async function withRecipes(files: Record<string, string>, fn: () => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-recipe-'));
-  const prev = process.env.CDP_RULES_DIR;
-  process.env.CDP_RULES_DIR = dir;
+  const prev = process.env.CDP_RULES_DEFAULT_DIR;
+  process.env.CDP_RULES_DEFAULT_DIR = dir;
   const recipesDir = join(dir, 'recipes');
   mkdirSync(recipesDir, { recursive: true });
   for (const [name, body] of Object.entries(files)) writeFileSync(join(recipesDir, name), body);
   try { await fn(); }
   finally {
-    process.env.CDP_RULES_DIR = prev;
+    process.env.CDP_RULES_DEFAULT_DIR = prev;
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -105,4 +107,20 @@ test('_lib refstr/opHint:null 与负数均返回空串,有效 ref 才上标', ()
   assert.equal(refstr(74), ' [ref=74]');
   assert.equal(opHint('view', null), '');
   assert.equal(opHint('view', 74), '(用 view 74 展开)');
+});
+
+test('_lib abridge:归一化 + 截断 + 补省略号;不足不截', () => {
+  const { abridge } = require('../src/rules/recipes/_lib.js');
+  assert.equal(abridge('  a\n b  c '), 'a b c'); // 短文本:只归一化,不截
+  const long = 'x'.repeat(200);
+  assert.equal(abridge(long, 160).length, 160 + 1); // 超长截 160 + '…'
+  assert.equal(abridge(long, 160).endsWith('…'), true);
+  assert.equal(abridge('a​b', 160), 'ab'); // 剥零宽
+});
+
+test('_lib entry:label + clean(value) + refstr(ref);站点整形不下沉', () => {
+  const { entry } = require('../src/rules/recipes/_lib.js');
+  assert.equal(entry({ value: '  赞同 1.5 万​ ', ref: 7 }), '赞同 1.5 万 [ref=7]');
+  assert.equal(entry({ label: '作者:', value: '柳下风来', ref: 3 }), '作者:柳下风来 [ref=3]');
+  assert.equal(entry({ value: '裸数字', ref: null }), '裸数字'); // 无 label 无 ref
 });
