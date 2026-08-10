@@ -129,7 +129,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 
 环境变量:`CDP_HOST`/`CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(daemon,默认 9333)、`CDP_USER_DATA`(默认 `~/.cdp-browser`)、`CDP_RULES_DIR`(实时规则目录,默认 skill 根 `rules/`)、`CDP_FOLD_FILE`/`CDP_IGNORE_LINKS_FILE`(单文件路径覆盖,测试用)。
 
-**recipe 编写**:`rules/recipes/<site>.js` = `module.exports = { scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }`。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.eval` 按站点 selector 抓结构)。
+**recipe 编写**:`rules/recipes/<site>.js` 一文件一站点,导出**规则数组** `module.exports = [{ name, scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }, …]`。`scope` 可为字符串或数组(一抽取服务多 URL 形态);同文件多元素=同站点多布局。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.eval` 按站点 selector 抓结构)。共享工具在 `rules/recipes/_lib.js`(`clean`/`refstr`/`opHint`);`refOf` 只查已建树、未命中返回 `null`(绝不按需注册)。参考 `src/rules/recipes/zhihu.js`(问题页 + 专栏两条规则)。
 
 ## 命令示例(真实流程)
 

@@ -95,10 +95,13 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 
 ### recipe(站点抽取配方)
 **聚焦站点摘要**:URL 命中的过程式摘要(文本 + 内嵌 `[ref=N]`),供 agent 聚焦读已知站点(如知乎问题页:标题/被浏览/逐回答/更多回答 ref),其余噪声隐去。
-- **执行模型**:recipe = `rules/recipes/<site>.js`(CJS `module.exports={scope, extract}`,**纯 JS 不接 build**),`extract(cdp, ctx)` 复用完整 `cdp` api(view/article/find/locate/eval/click)编排,返回 `{lines}`。信任边界:作者信任的本地代码(等同 run 脚本),非沙箱。
+- **文件形态(L0 站点聚合)**:`rules/recipes/<site>.js`(**纯 JS 不接 build**)导出**规则数组** `module.exports = [{name, scope: string|string[], extract}, ...]`。`scope` 数组=一抽取逻辑服务多 URL 形态(同布局多地址);数组元素=同站点多布局(不同 extract)。文件名只是聚合标签、与 scope 正交——加「专栏」不再纠结文件名撞车。
+- **执行模型**:`extract(cdp, ctx)` 复用完整 `cdp` api(view/article/find/locate/eval/click)编排,返回 `{lines}`。信任边界:作者信任的本地代码(等同 run 脚本),非沙箱。
+- **抽取/呈现分层(L1)**:eval 字符串只做 DOM 读(返回 raw 文本 + ref),归一化与 ref 呈现归 Node 侧共享 `rules/recipes/_lib.js`(`clean`/`refstr`/`opHint`,纯函数可单测)。**不要**在 eval 里手抄 clean/refstr、不要硬编码操作提示。
+- **refOf(L2)**:只查已建树节点、**绝不按需注册**(否则平移 ref 全局号、断 parentRef 自愈链),未命中返回 `null` 而非 `-1`(语义「断言未建树」)。
 - **分发**:`view`/`fetch`(CLI action 顶层)调共享 `dispatchView`:无建树意图且命中 recipe → 输出摘要(带 RECIPE_LEGEND);未命中或**建树意图**(`--tree`/位置 ref/`--selector-file`/`--visible-only`/`--scroll-*`)→ 纯结构树。`api.view` 保持纯结构(fetchPage/操作反馈内部照旧,无递归)。run 脚本显式要摘要调 `cdp.recipe`。
-- **多 recipe 命中**:通配最少 → scope 更长 → 声明顺序。异常/返回 null → 安全回落树。
-- **示例**:`src/rules/recipes/zhihu.js`(scope `www.zhihu.com/question/*`,从 view 树行解析标题/被浏览/查看全部回答 ref;完整逐回答抽取用 `cdp.eval` 按站点 selector)。
+- **多规则命中**:匹配在跨文件×跨规则上做全序(每条规则取其与 URL 最匹配的 scope:通配最少 → 更长 → 声明顺序)。异常/返回 null → 安全回落树。
+- **示例**:`src/rules/recipes/zhihu.js`(同文件两条规则:`问题/回答页` scope `www.zhihu.com/question/*`、`专栏文章` scope `zhuanlan.zhihu.com/p/*`,共享 `_lib.js`)。
 
 ### article
 **Markdown 文章**:`inject/article.ts` 以 ref 为根提取格式友好的 Markdown。**专用保序 DOM 遍历**(不用 buildView),沿 `childNodes` 逐节点(Text 节点 + 元素)。
