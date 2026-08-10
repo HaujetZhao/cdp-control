@@ -12,7 +12,7 @@ import {
   parseRules, domainMatch, pathMatch, hostOf, pathOf, matchFolds, loadFolds, addFold, removeFold,
 } from '../src/folds.ts';
 
-// 每个需要落盘的测试用独立临时 folds 文件,避免互相污染 / 污染真实 dist/folds.csv。
+// 每个需要落盘的测试用独立临时 folds 文件,避免互相污染 / 污染真实 dist/fold-selectors.csv。
 function withTmpDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-folds-'));
   const prev = process.env.CDP_FOLD_FILE;

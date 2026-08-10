@@ -10,7 +10,7 @@ import { inject, viewExpr, locateExpr, infoExpr, foldExpr, findExpr, articleExpr
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
-import { loadLinkRules, addLinkRule, removeLinkRule } from './article-links';
+import { loadLinkRules, addLinkRule, removeLinkRule } from './ignore-links';
 import { normArg, type TargetArg } from './target-arg';
 import { diffTabs } from './tab-diff';
 
@@ -77,11 +77,12 @@ export interface ViewOpts {
 /** 结构视图:把 target 页面建为紧凑简化 HTML 树(文本 + 结构)。锚点互斥:ref 优先,其次 selector,缺省 body;
  * ancestor 为统一爬父修饰符(对任一锚点生效);visibleOnly 只输出视口内可见元素;scrollToLoad 先滚动触发懒加载再建视图
  *   (默认 ±1 屏回弹;scrollPages 改为循环滚 N 屏;scrollTo 先滚到该 selector 元素,如 B站评论区)。
- * 折叠:Node 侧按 target 页 hostname+pathname 读 folds.csv 命中规则(path glob 限定同域名下页面路径),
+ * 折叠:Node 侧按 target 页 hostname+pathname 读 fold-selectors.csv 命中规则(path glob 限定同域名下页面路径),
  * 传入注入侧 buildView 折叠成一行(跨会话持久)。 */
 export async function view(target: Target, opts: ViewOpts = {}): Promise<any> {
   const folds = matchFolds(hostOf(target.url), pathOf(target.url)).map(r => ({ selector: r.selector, note: r.note }));
-  return invoke(target, viewExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo, opts.scrollWait), 30000);
+  const ignore = loadLinkRules().map(r => r.pattern);
+  return invoke(target, viewExpr(opts.selector, opts.visibleOnly, opts.ref, opts.ancestor, opts.scrollToLoad, folds, opts.scrollPages, opts.scrollTo, opts.scrollWait, ignore.length ? ignore : undefined), 30000);
 }
 
 /** 一次性抓取页面:临时 open 新 tab 打开 url → 等页面加载(至少 interactive)→ view 建树 → 关闭 tab,
@@ -113,14 +114,15 @@ export async function info(target: Target, ref: number, ancestor?: number): Prom
 }
 
 /** article:按 view 的 ref 提取子树为格式友好的 Markdown 文章(保序、不截断)。ancestor 可选向上爬父。
- * 链接黑名单(article-links.ts 读入的持久规则)命中只留文本、去 URL。 */
+ * 链接黑名单(ignore-links.ts 读入的持久规则)命中只留文本、去 URL。 */
 export async function article(target: Target, ref: number, ancestor?: number): Promise<any> {
-  const blacklist = loadLinkRules().map(r => r.pattern);
-  return invoke(target, articleExpr(ref, ancestor, blacklist.length ? blacklist : undefined));
+  const ignore = loadLinkRules().map(r => r.pattern);
+  return invoke(target, articleExpr(ref, ancestor, ignore.length ? ignore : undefined));
 }
 
-/** article 链接黑名单管理(add/rm/list)。pattern 为链接通配符(glob,匹配 hostname+pathname)。 */
-export async function articleLink(action: 'add' | 'rm' | 'list', pattern?: string, note?: string, id?: number): Promise<any> {
+/** ignore-links 黑名单管理(add/rm/list)。pattern 为链接通配符(glob,匹配 hostname+pathname)。
+ * view 与 article 共用:命中只留文本(article 去 URL;view 内联文本并与相邻段合并)。 */
+export async function ignoreLink(action: 'add' | 'rm' | 'list', pattern?: string, note?: string, id?: number): Promise<any> {
   if (action === 'add') return { ok: true, rule: addLinkRule(pattern || '', note || '') };
   if (action === 'rm') return { ok: removeLinkRule(id!), removed: id };
   return { ok: true, rules: loadLinkRules() };
@@ -140,7 +142,7 @@ export async function find(target: Target, opts: FindOpts = {}): Promise<any> {
   return invoke(target, findExpr(opts));
 }
 /** 折叠规则管理(取代 stash):
- *  - add {domain, path, selector, note}:加持久规则(folds.csv)
+ *  - add {domain, path, selector, note}:加持久规则(fold-selectors.csv)
  *  - rm <id>:删持久规则(其它规则 id 不重排)
  *  - list:列持久 + 会话级临时
  *  - ref + save:从 ref 反查 selector + 当前 hostname,落盘持久规则
@@ -319,7 +321,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  view, locate, info, article, articleLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  view, locate, info, article, ignoreLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

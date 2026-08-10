@@ -1,6 +1,6 @@
 /**
  * folds.ts — fold 折叠规则的持久化(Node 侧)。
- * 规则文件放在 dist/cdp.js 同级(dist/folds.csv),便于手动编辑,随 dist 拷贝走。
+ * 规则文件放在 dist/cdp.js 同级(dist/fold-selectors.csv),便于手动编辑,随 dist 拷贝走。
  *
  * 文件格式(csv,tab 分隔,固定 5 列,因 selector 可能含空格——genSel 生成后代选择器):
  *   <id>\t<domain>\t<path>\t<selector>\t<note>
@@ -23,9 +23,9 @@ export interface FoldRule {
 }
 
 /** 规则文件路径:与 cdp.js 同级(dist/ 下),便于手动编辑;随 dist 拷贝走、跨会话持久。
- * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 dist/folds.csv。 */
+ * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 dist/fold-selectors.csv。 */
 function foldsPath(): string {
-  return process.env.CDP_FOLD_FILE || join(__dirname, 'folds.csv');
+  return process.env.CDP_FOLD_FILE || join(__dirname, 'fold-selectors.csv');
 }
 
 /** 从 url 提取 hostname;非法/空白返回 ''(about:blank 等不参与 fold 匹配)。 */

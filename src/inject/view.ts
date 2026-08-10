@@ -91,7 +91,7 @@ setResult((async () => {
     if (wait > 0) await new Promise(r => setTimeout(r, wait));
   }
   const visibleOnly = !!__CDP_ARG__.visibleOnly;
-  const v = buildView(root, { visibleOnly, viewport: true, folds: __CDP_ARG__.folds });
+  const v = buildView(root, { visibleOnly, viewport: true, folds: __CDP_ARG__.folds, ignoreLinks: __CDP_ARG__.ignoreLinks });
   markText(v);
   return setResult({ ok: true, lines: formatView(v) });
 })());
