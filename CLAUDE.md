@@ -90,18 +90,23 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 - **article**:命中 `linkIgnored` 即 `inlineSeg` 只回文本。
 
 ### 规则存储(rules-store)+ url-scope
-**规则是数据非代码,统一住 `rules/`**(skill 根,gitignore,运行时读写,build 不清不覆盖),内置默认在 `src/rules/`(入库)。`src/rules-store.ts` 定位目录 + **seed-once**(缺文件从 `src/rules/` 拷默认;已存在不覆盖,修旧 clobber bug)。fold/ignore-links/recipe 全部经它。`rulesDir()` 默认 `join(__dirname,'..','rules')`,测试用 `CDP_RULES_DIR`/`CDP_RULES_DEFAULT_DIR` 覆盖。
+**规则分两种生命周期、两处存储**:
+- **运行时可写数据**(fold.csv/ignore-links.csv):住 skill 根 `rules/`(gitignore,运行时读写),`src/rules-store.ts` **seed-once**(缺文件从 `src/rules/` 拷默认;已存在不覆盖,修旧 clobber bug)。
+- **作者代码(recipe)**:`src/rules/recipes/*.js` **直接读 git 权威**、不做 gitignored 镜像(曾 seed 到 `rules/recipes/` 双份手动同步必然漂移,2026-08 实测 `_lib.js` 差 22 字节)。recipe-runner 扫 `srcRecipesDir()`(经 `CDP_RULES_DEFAULT_DIR` 覆盖)。
+`rulesDir()` 默认 `join(__dirname,'..','rules')`;测试用 `CDP_RULES_DIR`/`CDP_RULES_DEFAULT_DIR` 覆盖(recipe 测试用后者指临时目录)。
 **共享工具 `src/url-scope.ts`**(纯函数零依赖):`globToRegExp`(唯一实现,消 3 份重复)+ `hostOf`/`pathOf` + `urlMatches`。fold 用 hostOf/pathOf 拆两维正交;ignore-links 用拼接串单 glob;recipe 作用域用 urlMatches。
 
 ### recipe(站点抽取配方)
 **聚焦站点摘要**:URL 命中的过程式摘要(文本 + 内嵌 `[ref=N]`),供 agent 聚焦读已知站点(如知乎问题页:标题/被浏览/逐回答/更多回答 ref),其余噪声隐去。
-- **文件形态(L0 站点聚合)**:`rules/recipes/<site>.js`(**纯 JS 不接 build**)导出**规则数组** `module.exports = [{name, scope: string|string[], extract}, ...]`。`scope` 数组=一抽取逻辑服务多 URL 形态(同布局多地址);数组元素=同站点多布局(不同 extract)。文件名只是聚合标签、与 scope 正交——加「专栏」不再纠结文件名撞车。
-- **执行模型**:`extract(cdp, ctx)` 复用完整 `cdp` api(view/article/find/locate/eval/click)编排,返回 `{lines}`。信任边界:作者信任的本地代码(等同 run 脚本),非沙箱。
-- **抽取/呈现分层(L1)**:eval 字符串只做 DOM 读(返回 raw 文本 + ref),归一化与 ref 呈现归 Node 侧共享 `rules/recipes/_lib.js`(`clean`/`refstr`/`opHint`,纯函数可单测)。**不要**在 eval 里手抄 clean/refstr、不要硬编码操作提示。
-- **refOf(L2)**:只查已建树节点、**绝不按需注册**(否则平移 ref 全局号、断 parentRef 自愈链),未命中返回 `null` 而非 `-1`(语义「断言未建树」)。
+- **文件形态(L0 站点聚合)**:`src/rules/recipes/<site>.js`(**纯 JS 不接 build**,作者代码直接读 git 权威、无镜像)导出**规则数组** `module.exports = [{name, scope: string|string[], extract}, ...]`。`scope` 数组=一抽取逻辑服务多 URL 形态(同布局多地址);数组元素=同站点多布局(不同 extract)。文件名只是聚合标签、与 scope 正交。
+- **执行模型**:`extract(cdp, ctx)` 复用完整 `cdp` api(view/article/read/find/locate/eval/click)编排,返回 `{lines}`。信任边界:作者信任的本地代码(等同 run 脚本),非沙箱。
+- **抽取/呈现分层(L1)**:eval 字符串只做 DOM 读(返回 raw 文本 + ref),归一化与 ref 呈现归 Node 侧共享 `src/rules/recipes/_lib.js`(`clean`/`refstr`/`opHint`/`abridge`/`entry`,纯函数可单测)。**不要**在 eval 里手抄 clean/refstr、不要硬编码操作提示。
+- **只读探针(引擎原语)**:`lib/probe.ts` 随 view 注入装 `window.__cdpProbe`(recipe 必先 `cdp.view` 建树,故保证可用)。`refOf(el)` 反查已建树 ref、`refOfSelector(sel)`(穿透 shadow)、`text(el)`。**只查已建树、绝不按需注册**(否则平移 ref 全局号、断 parentRef 自愈链),未命中返回 `null`。recipe eval 里 `const { refOf, text } = window.__cdpProbe`,不再手抄样板。
+- **展开再读(引擎原语)**:`cdp.read(target, {container, expand?, wait?})`(Node 侧 api,杀折叠状态机痛点)。三步分开各同步——`expand` 则 `click`(同步 eval 立即返回,避免同 eval 内 await 卡死)→ Node `sleep` → `read-content` 注入(`src/inject/read-content.ts`)按 `container` selector 重查容器、展开重渲染替换元素则**末尾追加**登记(append 不平移既有号,同 find-entry),返回 ref → 复用 `article` 取完整 Markdown。**article 保持纯读不动**。折叠判定(哪个按钮=展开)留 recipe 按站点语义决定。
+- **refOf(L2)**:只查已建树节点、**绝不按需注册**,未命中返回 `null` 而非 `-1`(语义「断言未建树」)。
 - **分发**:`view`/`fetch`(CLI action 顶层)调共享 `dispatchView`:无建树意图且命中 recipe → 输出摘要(带 RECIPE_LEGEND);未命中或**建树意图**(`--tree`/位置 ref/`--selector-file`/`--visible-only`/`--scroll-*`)→ 纯结构树。`api.view` 保持纯结构(fetchPage/操作反馈内部照旧,无递归)。run 脚本显式要摘要调 `cdp.recipe`。
 - **多规则命中**:匹配在跨文件×跨规则上做全序(每条规则取其与 URL 最匹配的 scope:通配最少 → 更长 → 声明顺序)。异常/返回 null → 安全回落树。
-- **示例**:`src/rules/recipes/zhihu.js`(同文件两条规则:`问题/回答页` scope `www.zhihu.com/question/*`、`专栏文章` scope `zhuanlan.zhihu.com/p/*`,共享 `_lib.js`)。
+- **示例**:`src/rules/recipes/zhihu.js`(问题页首答全文 + 专栏文章全文,共用探针/read/abridge)。
 
 ### article
 **Markdown 文章**:`inject/article.ts` 以 ref 为根提取格式友好的 Markdown。**专用保序 DOM 遍历**(不用 buildView),沿 `childNodes` 逐节点(Text 节点 + 元素)。
