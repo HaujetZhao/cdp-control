@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf } from '../src/inject/lib/view-utils.ts';
+import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf, cut } from '../src/inject/lib/view-utils.ts';
 
 // —— inlineLen ——
 test('inlineLen: 自身文本长度', () => {
@@ -83,4 +83,18 @@ test('isTrivialLeaf: 含字词的短串非琐碎(如 "游戏")', () => {
 
 test('isTrivialLeaf: 长纯符号串也非琐碎(如 "/usr/bin")', () => {
   assert.ok(!isTrivialLeaf({ text: '/usr/bin', kids: [] }));
+});
+
+// —— cut ——
+test('cut: 缺省 maxLen 不截断(默认全量)', () => {
+  const long = '甲乙'.repeat(50);
+  assert.equal(cut(long), long);
+});
+
+test('cut: 短文本不截', () => {
+  assert.equal(cut('abc', 10), 'abc');
+});
+
+test('cut: 超长截到 maxLen 并补省略号', () => {
+  assert.equal(cut('abcdef', 3), 'abc…');
 });

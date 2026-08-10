@@ -46,3 +46,8 @@ export function isTrivialLeaf(n: { text?: string; kids?: any[] }): boolean {
   if (!t) return true;
   return t.length <= 2 && /^[^\w一-龥]+$/.test(t);
 }
+
+/** 截断:maxLen 缺省/不足时不截;超长时截到 maxLen 并补省略号。
+ * 默认不截断(view 全量输出),设阈值才强制截断——截断补 "…" 让完整文本与截断文本可区分。 */
+export const cut = (text: string, maxLen?: number): string =>
+  maxLen == null || text.length <= maxLen ? text : text.slice(0, maxLen) + '…';

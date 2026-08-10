@@ -23,6 +23,7 @@ export interface ViewArgs {
   selector?: string; visibleOnly?: boolean; ref?: number; ancestor?: number;
   scrollToLoad?: boolean; scrollPages?: number; scrollTo?: string;
   scrollWait?: number; folds?: FoldItem[]; ignoreLinks?: string[];
+  maxLen?: number; // 文本截断阈值(字符数);缺省不截断(view 全量)
 }
 
 /** locate:按 view 的 ref 序号反查稳定 CSS selector,可选 --ancestor 向上爬 N 层。 */

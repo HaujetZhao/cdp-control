@@ -4,7 +4,7 @@
  * 与 DOM 完全解耦,逻辑从旧 scripts.js / tree.js 逐字搬移,语义不变。
  */
 
-import { inlineable, leafText, firstTxt, isTrivialLeaf } from './view-utils.ts';
+import { inlineable, leafText, firstTxt, isTrivialLeaf, cut } from './view-utils.ts';
 
 /** 内部节点:simplify(DOM 采集)的产物,也是 formatView 的输入。字段与旧 view.ts 的 interface Node 一一对应。 */
 export interface ViewNode {
@@ -15,6 +15,7 @@ export interface ViewNode {
   ref?: number;    // view 登记的全局引用序号(见 __cdpRefs),输出标注 [ref=i],agent 用它直接操作真实元素
   hidden?: boolean; // 纯容器 div(叶子路径上的祖父):ref 已登记进 __cdpRefs 但 view 默认不显示,info 反查可显示
   fold?: string;   // 命中折叠规则:输出一行 ▸ [ref=i] <备注>,不展开子树(但保留 ref,view <ref> 可展开)
+  foldSize?: number; // 被折叠掉的子树元素数,折叠行 ▸ 备注 (N) 显示规模(view-core 折叠点算)
   hasInter?: boolean; // 自身或任一后代可交互——含交互子代的包装节点不可内联折叠,否则交互叶的 ref 被整颗吞掉
   inView?: boolean; // visible-only:自身是否落在当前视口内且可见(仅 Element 计算;包装节点不查)
   view?: boolean;   // viewport 标记:带 ref 的节点是否在当前视区内(便宜判定,rect+宽高,不查 computed style)。true → 输出 [ref=i, visible]
@@ -63,30 +64,31 @@ export function markText(n: ViewNode): boolean {
  * 把已建好的 ViewNode 树折叠成带缩进的输出行数组(标签 + 引用文本)。与旧 view.js 的
  * leafish / leafLabel / inlineLabel / walk 及末尾 push(v.tag...) + for-walk 调用逐字一致。
  */
-export function formatView(v: ViewNode): string[] {
+export function formatView(v: ViewNode, maxLen?: number): string[] {
   const out: string[] = [];
   const leafish = (n: ViewNode) => n.inter || n.tag === 'img';
   const leafLabel = (n: ViewNode) => {
     let l = tagLabel(n) + inputAttr(n);
-    if (n.tag === 'img' && n.imgAlt) l += ' "' + n.imgAlt.slice(0, 40) + '"';
-    else if (n.text) l += (n.agg ? ' ~' : ' ') + '"' + n.text.slice(0, 60) + '"';
+    if (n.tag === 'img' && n.imgAlt) l += ' "' + cut(n.imgAlt, maxLen) + '"';
+    else if (n.text) l += (n.agg ? ' ~' : ' ') + '"' + cut(n.text, maxLen) + '"';
     return l + refTag(n);
   };
   const inlineLabel = (n: ViewNode) => {
-    if (n.tag === 'img' && n.imgAlt) return 'img "' + n.imgAlt.slice(0, 20) + '"';
+    if (n.tag === 'img' && n.imgAlt) return 'img "' + cut(n.imgAlt, maxLen) + '"';
     if (n.leafValue) {
       const v = firstTxt(n.kids);
       // leafValue 与后代首文本相同时去重(title 兜底值==子 <a> 直接文本,如 B站视频卡片),否则拼成 "X X" 重复。
       const tail = v && v !== n.leafValue ? ' ' + v : '';
       return '"' + n.leafValue + tail + '"';
     }
-    return (n.agg ? '~' : '') + '"' + leafText(n).slice(0, 24) + '"';
+    return (n.agg ? '~' : '') + '"' + cut(leafText(n), maxLen) + '"';
   };
 
   function walk(n: ViewNode, depth: number, path: string[]) {
-    // 折叠节点:输出一行带备注的折叠标识 + ref,不展开子树(子树里的嵌套折叠在 view <ref> 展开时才显现)。
+    // 折叠节点:输出一行带备注的折叠标识 + ref + 折叠规模,不展开子树(子树里的嵌套折叠在 view <ref> 展开时才显现)。
     if (n.fold != null) {
-      out.push('  '.repeat(depth) + '▸ [ref=' + n.ref + '] ' + n.fold + (n.shadow ? '[shadow]' : ''));
+      out.push('  '.repeat(depth) + '▸ [ref=' + n.ref + '] ' + n.fold + (n.shadow ? '[shadow]' : '')
+        + (n.foldSize ? ' (' + n.foldSize + ')' : ''));
       return;
     }
     // 整页 view 对带 shadowRoot 的 host(depth>0 子节点,已登记 ref)只输出占位行,不展开其 shadow 子树
@@ -100,7 +102,7 @@ export function formatView(v: ViewNode): string[] {
         const val = firstTxt(n.kids);
         const head = path.length ? path.join(' > ') + ' > ' : '';
         // leafValue 与后代首文本相同去重,避免 "X X"(B站视频卡片 H3[title]>a)。
-        const tail = val && val !== n.leafValue ? ' ' + val.slice(0, 60) : '';
+        const tail = val && val !== n.leafValue ? ' ' + cut(val, maxLen) : '';
         out.push('  '.repeat(depth) + head + '"' + n.leafValue + tail + '"' + refTag(n));
         return;
       }
@@ -114,7 +116,7 @@ export function formatView(v: ViewNode): string[] {
         if (n.tag === 'span') {
           if (n.text) {
             const head = path.length ? path.join(' > ') : '';
-            out.push('  '.repeat(depth) + (head ? head + ' ' : '') + '"' + n.text.slice(0, 60) + '"' + refTag(n));
+            out.push('  '.repeat(depth) + (head ? head + ' ' : '') + '"' + cut(n.text, maxLen) + '"' + refTag(n));
           }
           return;
         }
@@ -126,7 +128,7 @@ export function formatView(v: ViewNode): string[] {
       // 下方 productive 折叠/走子只输出子节点、把自身文本整段吞掉——先把它作为本节点文本行保住。
       if (n.text) {
         const head = path.length ? path.join(' > ') + ' ' : '';
-        out.push('  '.repeat(depth) + head + '"' + n.text.slice(0, 60) + '"' + refTag(n));
+        out.push('  '.repeat(depth) + head + '"' + cut(n.text, maxLen) + '"' + refTag(n));
       }
     }
     const kids = n.kids;
@@ -149,7 +151,7 @@ export function formatView(v: ViewNode): string[] {
     }
   }
 
-  out.push(tagLabel(v) + (v.text ? ' "' + v.text.slice(0, 60) + '"' : '') + refTag(v));
+  out.push(tagLabel(v) + (v.text ? ' "' + cut(v.text, maxLen) + '"' : '') + refTag(v));
   for (const k of v.kids) walk(k, 1, []);
   return out;
 }

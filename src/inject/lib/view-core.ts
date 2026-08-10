@@ -10,12 +10,21 @@ import type { ViewNode } from './view-format.ts';
 import { tmpFolds } from './fold.ts';
 import type { FoldItem } from './arg.ts';
 import { linkIgnored } from './ignore-links.ts';
+import { cut } from './view-utils.ts';
 
-export interface ViewBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[]; ignoreLinks?: string[] }
+export interface ViewBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[]; ignoreLinks?: string[]; maxLen?: number }
 
 const DROP = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'SVG', 'PATH', 'BR', 'IFRAME', 'PICTURE', 'SOURCE', 'USE']);
 /** 压空白 + 零宽字符、首尾 trim 的归一化(供文本采集/比对统一用)。 */
 export const strip = (s: string) => (s || '').replace(/[​‌‍⁠﻿\s]+/g, ' ').trim();
+/** 折叠子树元素数:穿透 children + shadowRoot、跳过 DROP 标签,供折叠行 ▸ 备注 (N) 显示规模。 */
+const countEls = (root: Element | ShadowRoot): number => {
+  const kids = Array.from(root.children);
+  if (root instanceof Element && root.shadowRoot) kids.push(...Array.from(root.shadowRoot.children));
+  let n = 0;
+  for (const c of kids) { if (c instanceof Element && DROP.has(c.tagName)) continue; n += 1 + countEls(c as Element); }
+  return n;
+};
 const ownText = (el: Element) => {
   const parts: string[] = [];
   for (const n of Array.from(el.childNodes)) if (n.nodeType === 3 && n.nodeValue && n.nodeValue.trim()) parts.push(n.nodeValue);
@@ -196,6 +205,7 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
           tag: e.tagName.toLowerCase(), isContent: true, text: '', inter: false, ref: undefined,
           wantRef: true, el: e, inView: true, view: viewport ? isInViewport(e) : undefined, imgAlt: '',
           shadow: !!e.shadowRoot, kids: [], size: 1, hasText: false, agg: false, fold: note,
+          foldSize: countEls(e),
         };
       }
     }
@@ -233,7 +243,7 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
       inputInfo: isEl && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')
         ? {
             type: el.tagName === 'INPUT' ? (el.getAttribute('type') || 'text') : undefined,
-            value: ((el as any).value || '').slice(0, 40),
+            value: cut(((el as any).value || ''), opts.maxLen),
             placeholder: el.getAttribute('placeholder') || undefined,
           }
         : undefined,
@@ -264,23 +274,23 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
     }
     // ignore-links:相邻纯文本段(span / 命中黑名单的 a)合并成一段,取最后段 el(ref)。
     node.kids = mergeTextRuns(node.kids);
-    if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
+    if (!text && !node.kids.length) { text = cut(strip(grabText(el, 0)), opts.maxLen); node.agg = true; }
     // 交互/图片元素自身无直接文本时,先试语义标签(aria/title),再 grabText 聚合后代文本
     // (空格分隔,穿透 shadow;替代 innerText——后者会把 inline 数字连排成 "822.2万904906:02")。
     if (!text && effInter) {
       const label = elLabel(el as Element);
-      if (label) { text = strip(label); node.agg = true; }
-      else { text = strip(grabText(el, 0)).slice(0, 80); node.agg = true; }
+      if (label) { text = cut(strip(label), opts.maxLen); node.agg = true; }
+      else { text = cut(strip(grabText(el, 0)), opts.maxLen); node.agg = true; }
     } else if (!text && ignoredA) {
-      text = strip(grabText(el as Element, 0)).slice(0, 80); node.agg = true;
+      text = cut(strip(grabText(el as Element, 0)), opts.maxLen); node.agg = true;
     } else if (!text && isEl && el.tagName === 'IMG') {
-      text = strip(grabText(el, 0)).slice(0, 80); node.agg = true;
+      text = cut(strip(grabText(el, 0)), opts.maxLen); node.agg = true;
     }
     node.text = text;
     node.isContent = !!text || (isEl && el.tagName === 'IMG') || effInter || hasShadow;
     node.size = 1 + node.kids.reduce((a, k) => a + k.size, 0);
     if (!text && title && !node.kids.some(k => k.text) && node.size <= 8 && (el as Element).tagName !== 'SVG' && (el as Element).tagName !== 'path' && (el as Element).tagName !== 'USE') {
-      node.leafValue = strip(title).slice(0, 40);
+      node.leafValue = cut(strip(title), opts.maxLen);
       node.isContent = true;
     }
     // 隐藏容器:纯包装元素(无自身文本/交互/shadow/表单),但子树含内容(叶子路径上的祖父 div)。
