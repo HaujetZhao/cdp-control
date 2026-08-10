@@ -61,14 +61,14 @@ program
   .version('1.0.0')
   .description('CDP 浏览器控制(取代 chrome-devtools MCP)');
 
-program.command('list').description('确保浏览器就绪并列出所有 page tab(含手动开的)')
+program.command('list').description('确保浏览器就绪并列出所有 page tab(含手动开的);第一项为前台 tab(← 前台)')
   .action(async () => {
     await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销),agent 无需先 ensure 再 list。
     const list = await api.list();
-    console.log(`共 ${list.length} 个 tab:`);
+    console.log(`共 ${list.length} 个 tab(第一项 = 前台):`);
     if (list.length === 0) return;
-    const line = (t: any) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}`;
-    console.log(list.map((t: any, i: number) => `${i + 1}. ${line(t)}`).join('\n'));
+    const line = (t: any, i: number) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}${i === 0 ? '  ← 前台' : ''}`;
+    console.log(list.map((t: any, i: number) => `${i + 1}. ${line(t, i)}`).join('\n'));
   });
 
 program.command('open').argument('<url>', '要打开的网址').description('新开一个 tab')
