@@ -65,7 +65,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 - 刷新后仍可用:把区域容器 selector(手动写,如 `#id` 或 fold 规则验证过的锚点)写文件,`view --selector-file <f>` 复用。
 - 多块布局(如知乎 Q&A 是"问题块+回答列"两个兄弟块、**没有共同容器**):分块各做一次 ref+ancestor 再并列看,别绕回 JS 探查。
 
-**文章提取(`article`)**:整页 view 树适合"看结构、拿 ref",但读正文(长回答/文章)会被树形截断、内联链接拆行。要**读文章本体**用 `article <ref>`——以 ref 为根沿 childNodes **保序**遍历发 Markdown,段落不截断、链接 `[文本](href)` 内联保留、粗斜体/图片/列表/引用/代码块映射、无文本交互元素降级 `[label]`(如 `[已赞同 3.2 万]`)。ref 取正文容器(如知乎 `.RichContent-inner` 下层),或 `--ancestor` 把叶子抬到正文容器。
+**文章提取(`article`)**:整页 view 树适合"看结构、拿 ref",但读正文(长回答/文章)会被树形截断、内联链接拆行。要**读文章本体**用 `article <ref>`——以 ref 为根沿 childNodes **保序**遍历发 Markdown,段落不截断、链接 `[文本](href)` 内联保留、粗斜体/图片/列表/引用/代码块映射、无文本交互元素降级 `[label]`(如 `[已赞同 3.2 万]`)。链接输出时**自动把站内跳转包装解回真实 URL**(如知乎 `link.zhihu.com/?target=…` → 真实目标),黑名单链接仍只留文本。ref 取正文容器(如知乎 `.RichContent-inner` 下层),或 `--ancestor` 把叶子抬到正文容器。
 
 **ignore-links 链接黑名单**:正文里的**词汇释义内部链接**(如知乎 `zhida.zhihu.com/search?q=词`)URL 是超长 search 串、无跳转价值,会淹没文章/视图。用 `ignore-link add <glob>`(匹配 hostname+pathname)把这类模式加进持久黑名单,**view 与 article 都生效**:
 - **view**:命中黑名单的 `<a>` 内联成纯文本,并与相邻文本段合并成一句(取末段 ref)——如 `设立[漕运总督]，这世上` 合并为 `设立漕运总督，这世上`;正文不再被超长链接拆散、也不再是独立的可点链接(ref 仍是末段文本的元素)。

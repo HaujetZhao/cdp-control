@@ -55,6 +55,7 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
         - URL 作用域(hostname+pathname glob)匹配，`view`/`fetch` 默认启用、未命中回落树
         - 过程式规则，recipe 是 Node 模块，复用已有 API，写"站点语义"不重造引擎感知器
         - 引擎原语接管可复用/易错/有状态部分：只读探针(refOf 只查不注册)、展开再读(cdp.read，article 保持纯读)、呈现(_lib.entry/abridge)
+        - 链接呈现：跳转包装(link.zhihu.com/?target=…)自动解回真实 URL——白名单表格只解明文承载，解不出原样保留
   - 指认
     - ref 指向一个结构，有 DOM、父链
       - 可通过 ref 直接操作 DOM

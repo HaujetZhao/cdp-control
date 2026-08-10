@@ -11,6 +11,7 @@ import { refElement, climbAncestors } from './lib/find-root';
 import { notFoundResult, type OperableArg } from './lib/find';
 import { elLabel, ownElText } from './lib/view-core';
 import { linkIgnored } from './lib/ignore-links';
+import { decodeRedirectUrl } from './lib/redirect';
 import type { ArticleArgs } from './lib/arg';
 
 declare const __CDP_ARG__: ArticleArgs;
@@ -50,7 +51,8 @@ const INTERACTIVE = new Set(['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA']);
       const t = ownText(e) || inlineContent(e, depth + 1);
       const h = e.getAttribute('href') || '';
       // 命中链接黑名单(如知乎词汇释义内部链接):只留文本、去 URL。
-      return h && !linkIgnored(ignoreLinks, h) ? `[${t}](${h})` : t;
+      // 未忽略的合法链接输出时把跳转包装(link.zhihu.com/?target=...)解回真实目标 URL。
+      return h && !linkIgnored(ignoreLinks, h) ? `[${t}](${decodeRedirectUrl(h)})` : t;
     }
     if (tag === 'IMG') {
       const a = e.getAttribute('alt') || '';

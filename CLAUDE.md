@@ -111,6 +111,7 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 ### article
 **Markdown 文章**:`inject/article.ts` 以 ref 为根提取格式友好的 Markdown。**专用保序 DOM 遍历**(不用 buildView),沿 `childNodes` 逐节点(Text 节点 + 元素)。
 - **格式**:标题 `#`、段落空行分隔、链接 `[文本](href)`、粗斜 `**`/`*`、代码 `\`\`\``、列表 `-`/`1.`、引用 `>`、图片 `![alt](src)`;无文本交互元素降级 `[label]`(复用 `elLabel`);`BLOCK_TAGS` 遇块即停交 `walkEl` 单独成块。**不截断**,直接读完整文本。
+- **链接跳转解码**:未命中黑名单的合法链接,输出前经 `lib/redirect.ts` 的 `decodeRedirectUrl` 把跳转包装(`link.zhihu.com/?target=…`)解回真实 URL。白名单表格只解明文承载(zhihu/juejin `target`、facebook `u`、google `/url?q`),百度密文/t.co/weixin 不碰,解不出原样保留;黑名单匹配仍用**原始 href**(先判黑名单、后解码输出,两语义不打架)。
 - **Args**:`ArticleArgs{ref,ancestor?,ignoreLinks?}`。
 - **限制**:仅遍历 light childNodes,shadow 文章不穿透。
 
