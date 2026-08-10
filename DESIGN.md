@@ -50,6 +50,10 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
       - 全页感知可依规则折叠指定区域
         - 聚焦规则持久化保存，用 uBlock Origin 的语法
       - 局部感知可指定区域
+      - 站点聚焦摘要 recipe(已知站点把整页替换成聚焦摘要)
+        - URL 作用域(hostname+pathname glob)匹配，`view`/`fetch` 默认启用、未命中回落树
+        - recipe 是 Node 模块，复用 view/article/find/eval 编排，返回文本行 + ref
+        - 规则统一住 `rules/`(数据非代码，seed-once 自 `src/rules/`)，共享 url-scope 匹配
   - 指认
     - ref 指向一个结构，有 DOM、父链
       - 可通过 ref 直接操作 DOM
@@ -80,8 +84,8 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
 - 页面导航
   - `navigate` 让当前 tab 导航到指定 url
 - 感知
-  - `view` 把页面压成带结构、带信息的紧凑树，供 Agent 查看页面内容
-  - `fetch <url>` 临时打开页面，用 `view` 抓取内容后，关闭页面，替代 web fetch MCP
+  - `view` 感知页面：命中站点 recipe 输出聚焦摘要，否则压成带结构、带信息的紧凑树；`--tree`/建树意图强制树
+  - `fetch <url>` 临时打开页面，用 `view`/`recipe` 感知抓取内容后，关闭页面，替代 web fetch MCP
 - 自由执行
   - `eval` 在页面内执行任意 JS,回传 JSON 值
 - 指认
@@ -99,4 +103,4 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
 
 ## 临时方案
 
-fold 规则先手动编辑
+fold / ignore-links 规则手动编辑 `rules/*.csv`(seed 自 `src/rules/`);recipe 手写 `rules/recipes/<site>.js`。

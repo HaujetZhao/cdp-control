@@ -1,6 +1,6 @@
 ---
 name: cdp-browser-control
-description: 控制本地浏览器——列出/打开/关闭/导航页面、提取元素、点击、填表、执行 JS、截图、读控制台日志。自动化优先写成脚本用 `run` 一次执行。核心模型:view 感知页面(整页文本+结构紧凑树,生成可操作 ref),ref 是操作索引(会话句柄)。首屏外没加载(如评论区)用 `view --scroll-to-load` 先滚动再建树。任何用 ref 的命令失效自动自愈。长页噪声用 fold 持久规则(手动编辑 `$CDP_USER_DATA/fold-selectors.csv`,类 uBlock)。
+description: 控制本地浏览器——列出/打开/关闭/导航页面、提取元素、点击、填表、执行 JS、截图、读控制台日志。自动化优先写成脚本用 `run` 一次执行。核心模型:view 感知页面(命中站点 recipe 输出聚焦摘要,否则整页文本+结构紧凑树,生成可操作 ref),ref 是操作索引(会话句柄)。首屏外没加载(如评论区)用 `view --scroll-to-load` 先滚动再建树。任何用 ref 的命令失效自动自愈。长页噪声用 fold 持久规则(手动编辑 `rules/fold.csv`,类 uBlock);已知站点聚焦摘要用 `rules/recipes/` 站点 recipe。
 ---
 
 # CDP 浏览器控制
@@ -14,6 +14,7 @@ description: 控制本地浏览器——列出/打开/关闭/导航页面、提�
 铁律:
 - `list`/`open` 自动确保浏览器就绪(CDP 未起自动启动)。
 - **首次看页面必须完整 `view`**(别 `| head`,别 `--visible-only`);view 输出**严禁 head/sed/grep 过滤**,局部只能用 `view <ref>`/`--ancestor/--selector-file/--visible-only`。
+- **裸 `view` 命中站点 recipe 会输出聚焦摘要而非整页树**——已知站点(如知乎)这是想要的聚焦版;要整页结构用 `view --tree`(或任何建树意图)。
 - 定位一律从 view 已有 ref 出发,**严禁 JS eval 探查 DOM**;要 selector(如写 fold 规则)手动写。
 - 多步交互写成 `.js` 脚本用 `run` 一次执行,省模型往返。
 
@@ -69,13 +70,15 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 **ignore-links 链接黑名单**:正文里的**词汇释义内部链接**(如知乎 `zhida.zhihu.com/search?q=词`)URL 是超长 search 串、无跳转价值,会淹没文章/视图。用 `ignore-link add <glob>`(匹配 hostname+pathname)把这类模式加进持久黑名单,**view 与 article 都生效**:
 - **view**:命中黑名单的 `<a>` 内联成纯文本,并与相邻文本段合并成一句(取末段 ref)——如 `设立[漕运总督]，这世上` 合并为 `设立漕运总督，这世上`;正文不再被超长链接拆散、也不再是独立的可点链接(ref 仍是末段文本的元素)。
 - **article**:命中就**只留文本、去 URL**(词保留、链接丢)。
-默认内置 `zhida.zhihu.com/search*`;`ignore-link list/rm` 管理,存 `dist/ignore-links.csv`(手动编辑或命令)。
+默认内置 `zhida.zhihu.com/search*`;`ignore-link list/rm` 管理,存 `rules/ignore-links.csv`(手动编辑或命令,seed 自 `src/rules/`)。
 
 **图例**:整页 view 顶部有一行 `#` 注释图例,解释 `[ref=i]`(可操作索引)、`[ref=i,visible]`(当前视口内)、`~"…"`(聚合文本)、`▸`(已折叠)、`[shadow]`(shadow DOM)——Agent 读取时跳过 `#` 行即可,不会误当页面内容。无文本图标按钮(点赞/分享等)自动用 `aria-label/title` 兜底显示功能。
 
 **整页去噪(`fold` 持久规则,类 uBlock)**:长页整页 view 常混入导航/推荐/广告等噪声 ref。用 `fold` 把区域**折叠成一行**(`▸ [ref=i] <备注>`,保留 ref 可展开),跨会话持久。
 
-**规则**:存 `dist/fold-selectors.csv`(与 cdp.js 同级),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`,view 时自动加载。
+**规则**:存 `rules/fold.csv`(实时,seed 自 `src/rules/fold.csv`),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`,view 时自动加载。
+
+**站点聚焦摘要(`recipe`)**:已知站点可写一个 recipe(`rules/recipes/<site>.js`)把整页**替换成聚焦摘要**(文本 + `[ref=N]`),供 agent 聚焦读。裸 `view`(无建树意图)命中 recipe 就输出摘要;要原始树用 `view --tree`(或任何 `[ref]`/`--selector-file`/`--visible-only`/`--scroll-*` 都强制树)。`fetch <url>` 同样命中 recipe。
 - `<id>` 单调递增不重排,新规则取 max+1;只认首列为数字的行。
 - `<域名>` 通配对齐 uBlock:精确(`www.bilibili.com`)/子域(`*.zhihu.com`)/entity(`zhihu.*`);空=不匹配。
 - `<path>` glob:`*` 含 `/`,如 `/video/*`;空=不限。同域名不同页结构不同,只用域名会跨页错位,用 path 限定。
@@ -107,10 +110,10 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 | `list` | 确保浏览器就绪并列出 page tab,先报总数 |
 | `open <url>` | 新开 tab,返回 targetId |
 | `close <target>` | 关闭 tab |
-| `fetch <url>` | 一次性抓取:临时开 tab→等渲染→view(整页首次自动 scroll-to-load)→关 tab,输出文本+结构含 `[ref]`,不残留 tab |
+| `fetch <url>` | 一次性抓取:临时开 tab→等渲染→感知(命中 recipe 输出摘要,否则整页树,整页首次自动 scroll-to-load)→关 tab,输出含 `[ref]`,不残留 tab |
 | `navigate <url>` | 导航 |
 | `eval "<js>"` | 执行 JS,返回 returnByValue 值 |
-| `view [<ref>] [...]` | 整页文本+结构紧凑树。首次必须完整 view(禁 --visible-only/截断)。参数见上表(锚点互斥:位置 ref 优先、其次 --selector-file、缺省 body)。命中 fold 规则输出 `▸ [ref=i] <备注>`;视区标 `[ref=i·屏]`;INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]` |
+| `view [<ref>] [--tree] [...]` | 感知:裸 `view`(无建树意图)命中站点 recipe 就输出聚焦摘要;否则整页文本+结构紧凑树。`--tree`/`[<ref>]`/`--selector-file`/`--visible-only`/`--scroll-*` 任一都**强制树**。首次必须完整 view(禁 --visible-only/截断)。命中 fold 规则输出 `▸ [ref=i] <备注>`;视区标 `[ref=i·屏]`;INPUT/TEXTAREA 显示 `[type=... value="..." placeholder="..."]` |
 | `click <target> [--ancestor <k>] [--no-feedback] [--feedback-delay <ms>]` | 点击(target 全数字=ref 否则 selector,穿透 shadow)。默认带反馈 |
 | `fill <target> <值> [--ancestor <k>] [...]` | 填输入框并派发 input/change。默认带反馈 |
 | `focus <target> [--ancestor <k>] [...]` | 聚焦元素。默认带反馈 |
@@ -122,9 +125,11 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 | `hover <target> [--ancestor <k>] [...]` | 鼠标移到元素(触发 mouseover/mouseenter)。默认带反馈 |
 | `shot [--file out.png]` | 截图 |
 | `logs [--level error,warn] [--since <ms>] [--json]` | 读控制台日志 |
-| `run <脚本文件>` | 执行自动化脚本(全局 `cdp` API,可顶层 await) |
+| `run <脚本文件>` | 执行自动化脚本(全局 `cdp` API,可顶层 await;**返回非 undefined 则打印**) |
 
-环境变量:`CDP_HOST`/`CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(daemon,默认 9333)、`CDP_USER_DATA`(默认 `~/.cdp-browser`)、`CDP_FOLD_FILE`(fold 规则路径覆盖,默认 `dist/fold-selectors.csv`)。
+环境变量:`CDP_HOST`/`CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(daemon,默认 9333)、`CDP_USER_DATA`(默认 `~/.cdp-browser`)、`CDP_RULES_DIR`(实时规则目录,默认 skill 根 `rules/`)、`CDP_FOLD_FILE`/`CDP_IGNORE_LINKS_FILE`(单文件路径覆盖,测试用)。
+
+**recipe 编写**:`rules/recipes/<site>.js` = `module.exports = { scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }`。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.eval` 按站点 selector 抓结构)。
 
 ## 命令示例(真实流程)
 
