@@ -10,6 +10,7 @@ import { inject, viewExpr, locateExpr, infoExpr, foldExpr, findExpr, articleExpr
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
 import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
+import { loadLinkRules, addLinkRule, removeLinkRule } from './article-links';
 import { normArg, type TargetArg } from './target-arg';
 import { diffTabs } from './tab-diff';
 
@@ -111,9 +112,18 @@ export async function info(target: Target, ref: number, ancestor?: number): Prom
   return invoke(target, infoExpr(ref, ancestor));
 }
 
-/** article:按 view 的 ref 提取子树为格式友好的 Markdown 文章(保序、不截断)。ancestor 可选向上爬父。 */
+/** article:按 view 的 ref 提取子树为格式友好的 Markdown 文章(保序、不截断)。ancestor 可选向上爬父。
+ * 链接黑名单(article-links.ts 读入的持久规则)命中只留文本、去 URL。 */
 export async function article(target: Target, ref: number, ancestor?: number): Promise<any> {
-  return invoke(target, articleExpr(ref, ancestor));
+  const blacklist = loadLinkRules().map(r => r.pattern);
+  return invoke(target, articleExpr(ref, ancestor, blacklist.length ? blacklist : undefined));
+}
+
+/** article 链接黑名单管理(add/rm/list)。pattern 为链接通配符(glob,匹配 hostname+pathname)。 */
+export async function articleLink(action: 'add' | 'rm' | 'list', pattern?: string, note?: string, id?: number): Promise<any> {
+  if (action === 'add') return { ok: true, rule: addLinkRule(pattern || '', note || '') };
+  if (action === 'rm') return { ok: removeLinkRule(id!), removed: id };
+  return { ok: true, rules: loadLinkRules() };
 }
 
 export interface FoldOpts {
@@ -309,7 +319,7 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
 const coreApi = {
   list, resolve, open, close, navigate, eval: evaluate,
-  view, locate, info, article, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  view, locate, info, article, articleLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

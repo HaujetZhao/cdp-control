@@ -74,6 +74,13 @@ async function main() {
     copyFileSync(foldTpl, foldOut);
     console.log('▶ fold 规则模板 → dist/folds.csv(覆盖)');
   }
+  // —— 拷贝 article 链接黑名单模板(src/article-links.csv → dist/article-links.csv)——
+  const linkTpl = join(src, 'article-links.csv');
+  const linkOut = join(dist, 'article-links.csv');
+  if (existsSync(linkTpl)) {
+    copyFileSync(linkTpl, linkOut);
+    console.log('▶ article 链接黑名单模板 → dist/article-links.csv(覆盖)');
+  }
 
   console.log('✅ build 完成 → dist/');
 }

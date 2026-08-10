@@ -61,9 +61,10 @@ export function infoExpr(ref: number, ancestor?: number): string {
   return inject('info', { ref, ancestor });
 }
 
-/** article:按 ref 提取子树为格式友好的 Markdown 文章(保序、不截断)。 */
-export function articleExpr(ref: number, ancestor?: number): string {
-  return inject('article', { ref, ancestor });
+/** article:按 ref 提取子树为格式友好的 Markdown 文章(保序、不截断)。
+ * linkBlacklist:链接黑名单模式数组,命中只留文本、去 URL(见 src/article-links.ts)。 */
+export function articleExpr(ref: number, ancestor?: number, linkBlacklist?: string[]): string {
+  return inject('article', { ref, ancestor, linkBlacklist });
 }
 
 /** 读控制台日志入口。 */

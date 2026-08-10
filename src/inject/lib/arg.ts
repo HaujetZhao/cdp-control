@@ -36,8 +36,9 @@ export interface FindCmdArgs { text?: string; selector?: string; ancestor?: numb
  * 供 agent 挑稳定锚点自己写 fold add 这种 uBlock 式短规则(如 #biliMainHeader)。 */
 export interface InfoArgs { ref: number; ancestor?: number }
 
-/** article:按 ref 提取子树为格式友好的 Markdown 文章(保序、不截断,穿透 shadow)。ancestor 可选按 ref 定位后爬父。 */
-export interface ArticleArgs { ref: number; ancestor?: number }
+/** article:按 ref 提取子树为格式友好的 Markdown 文章(保序、不截断,穿透 shadow)。ancestor 可选按 ref 定位后爬父。
+ * linkBlacklist:持久链接黑名单模式数组(Node 侧 article-links.ts 读后传入),命中只留文本、去 URL。 */
+export interface ArticleArgs { ref: number; ancestor?: number; linkBlacklist?: string[] }
 
 /** read:控制台日志过滤(level 数组;since 毫秒时间戳)。 */
 export interface ReadArgs { level?: string[]; since?: number }
