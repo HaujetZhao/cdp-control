@@ -13,7 +13,7 @@
 
 1. 新增**抽取配方(recipe)**:URL 命中的过程式站点摘要(文本 + 内嵌 ref),供 agent 聚焦读已知站点。
 2. `view` 命令默认启用 recipe:命中则输出摘要,未命中回落现有树;`view --tree` 强制树。
-3. 规则存储统一:fold / ignore-links / recipe 都进**同一规则目录**,默认种子入库、实时规则 gitignore,修 clobber、迁移旧 dist 规则。
+3. 规则存储统一:fold / ignore-links / recipe 都进**同一规则目录**,默认种子入库、实时规则 gitignore,修 clobber。
 4. 抽出共享工具 `globToRegExp`(消 3 份重复)与 `hostOf`/`pathOf`(fold/recipe 共用)。
 5. 配合性协调整改:`run` 引擎抽共享 + 捕获返回值(供 recipe 复用)。
 6. 实现放新分支,分阶段提交,最后 merge 到 main。
@@ -22,7 +22,7 @@
 
 - **不**把 fold / ignore-links / recipe 强并成一个"站点感知规则"**概念基座**。三者匹配维度、应用时机、执行模型各不相同(fold:域名×path 正交、Node 按当前页过滤;ignore:hostname+pathname 拼接串单 glob、浏览器逐链接匹配;recipe:URL→执行过程)。真正共享的只有**一个纯函数工具**与**一个存储目录**,不构成一个机制基座(律 1/律 2)。
 - 不做**自动**主内容识别器(readability 式启发式)。recipe 靠站点知识手写,是"一次作者、反复复用"的资产。
-- 不保留向后兼容、不写 migration、不加 fallback(遵循激进重构原则)。旧 `dist/*.csv` 规则由 **seed 迁移** best-effort 搬入新目录(见存储;注意 dist 常已被 build 冲标成默认,不夸大)。
+- 不保留向后兼容、不写 migration、不加 fallback(遵循激进重构原则)。旧 `dist/*.csv` 不迁移,seed 只从 `src/rules/` 拷默认(见存储)。
 
 ---
 
@@ -34,7 +34,7 @@
 
 - **浏览器侧**(`inject/lib/ignore-links.ts:13`)那份内联 regex 是**逐链接匹配**(与"哪条规则作用于当前页"不同问题),不与 Node 共享;在文档标注其与 Node `globToRegExp` 同构。
 
-### 改动 2:规则存储统一(修 clobber + 迁移)
+### 改动 2:规则存储统一(修 clobber)
 
 **新结构**:内置默认(入库)+ 实时(用户),单层实时、seed-once。
 
@@ -50,7 +50,7 @@ rules/                         ← 实时(skill 根,gitignore;运行时读写;bu
 dist/                          ← 不再携带规则(纯代码)
 ```
 
-- **seed-once**:首次运行时,`rules/` 缺某文件 → **若旧 `dist/<name>.csv` 存在则迁移它**(best-effort 保住可能残留的用户规则;注意 dist 常已被 build 冲标成默认,故不夸大),否则从 `src/rules/` 拷贝。此后 build **不再覆盖**(修 clobber)。
+- **seed-once**:首次运行时,`rules/` 缺某文件 → 从 `src/rules/` 拷贝默认。此后 build **不再覆盖**(修 clobber)。**不迁旧 dist csv**(实现时放弃:dist 常已被旧 build 冲标成默认,迁移价值低,且 `__dirname` 层级差异使测试变贵)。
 - **运行时读写**(`fold add`/`ignore-link add`/recipe 落盘)→ 一律 `rules/`。
 - 定位:`join(__dirname,'../rules')`(`__dirname` 即 dist)。
 - **clobber 根源厘清**:不是"规则在 dist"本身,而是 `build.mjs` 每次 build **无条件 `copyFileSync` 覆盖** + 运行时 `fold add` 写同一 dist 文件。所以修复 = 让运行时读写与 build 覆盖**不再撞同一文件**(规则搬进 `rules/`,build 不再碰)。
@@ -105,7 +105,7 @@ run / recipe → 共用 runScript helper(cdp 全局,run 副作用 / recipe 返�
 
 ```
 规则读写 → 一律 rules/(gitignore、build 不覆盖)
-  seed: 首跑缺文件 → 旧 dist csv? 迁它 : 从 src/rules/ 拷
+  seed: 首跑缺文件 → 从 src/rules/ 拷默认(不迁旧 dist)
 ```
 
 ```
@@ -120,7 +120,7 @@ url-scope.ts ← folds / ignore-links / recipe 分发(globToRegExp / hostOf / pa
 
 ## 测试
 
-- **纯函数单测**:`url-scope.ts`(globToRegExp/hostOf/pathOf/urlMatches)、rules seed 迁移往返(`CDP_RULES_DIR` 覆盖临时目录:首跑缺文件→拷默认;旧 dist csv 存在→迁它不丢用户规则;二次 build 不覆盖)。
+- **纯函数单测**:`url-scope.ts`(globToRegExp/hostOf/pathOf/urlMatches)、rules seed 往返(`CDP_RULES_DIR` 覆盖临时目录:首跑缺文件→拷默认;已有不覆盖;二次 build 不覆盖;运行时 `fold add` 写 `rules/` 持久)。
 - **浏览器实测**(DOM 依赖,遵循项目规范不写单测):`view` 命中 zhihu recipe 输出摘要(含图例)、裸 `view` 分发而 `view --visible-only`/`view <n>` 强制树、`view --tree` 强制树、`fetch <url>` 同样分发摘要、recipe 内部 `cdp.view` 不递归、失败回落、`api.fetchPage`/操作反馈不受 recipe 影响(仍抓整树)。
 - **既有回归**:`npm test` 全绿;`npm run build` 通过。
 

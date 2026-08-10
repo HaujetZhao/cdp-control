@@ -9,9 +9,10 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  hrefForMatch, globToRegExp, linkRuleMatch, matchLinkBlacklist, parseLinkRules,
+  hrefForMatch, linkRuleMatch, matchLinkBlacklist, parseLinkRules,
   loadLinkRules, addLinkRule, removeLinkRule,
 } from '../src/ignore-links.ts';
+import { globToRegExp } from '../src/url-scope.ts';
 import { linkIgnored } from '../src/inject/lib/ignore-links.ts';
 
 function withTmpDir<T>(fn: (dir: string) => T): T {

@@ -13,16 +13,16 @@ npm run build    # tsc --noEmit + esbuild(编译 + 打包注入脚本)
 npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
 ```
 
+`rules/`(skill 根,gitignore)是实时规则目录,首次跑 fold/view/recipe 时由 `rules-store.ts` seed-once 从 `src/rules/` 生成;**build 不清不覆盖**(修 clobber)。
+
 产物:
 ```
 dist/cdp.js          入口 bundle(commander+全部 src,自包含,拷走 dist 即可运行)
 dist/*.js            其余 Node 侧(api/transport/monitor/browser/inject-loader/keys)
 dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 IIFE)
-dist/fold-selectors.csv    fold 规则运行时副本
-dist/ignore-links.csv      ignore-links 黑名单运行时副本
 ```
 
-**两个 csv 的权威副本都在 `src/` 同名文件,构建时强制覆盖到 dist;改规则改 `src/`**(见「fold 折叠规则」「ignore-links」)。
+**规则是数据非代码,不住 dist**:统一住 skill 根 `rules/`(gitignore,运行时读写,build 不清不覆盖),内置默认在 `src/rules/`(入库),由 `rules-store.ts` seed-once 拷贝。fold/ignore-links/recipe 全部经此(见「规则存储」)。
 
 ## 源码结构(两层分离)
 
@@ -76,18 +76,29 @@ dist/ignore-links.csv      ignore-links 黑名单运行时副本
 
 ### fold 折叠规则
 **折叠页面元素**:基于 selector 规则折叠(保留 ref、可展开、跨会话持久)。注入入口 `inject/fold.ts`(临时折叠/list/clear),CLI `fold`。
-- **文件**:Node `src/folds.ts` 读写 `dist/fold-selectors.csv`(与 cdp.js 同级,`__dirname` 定位;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
+- **文件**:Node `src/folds.ts` 读写 `rules/fold.csv`(`rules-store.ts` seed-once 保证存在;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
 - **五列**:`<id>\t<域名>\t<path>\t<selector>\t<备注>`;id 单调递增不重排;域名通配(精确/`*.suffix`/`suffix.*`);path 为 glob(`*` 含 `/`,空=不限,修同域名跨页错位)。`parseRules` 只认首列为数字的行。
 - **函数**:`loadFolds/addFold/removeFold/matchFolds(hostOf/pathOf/domainMatch/pathMatch)` 纯函数+落盘;`api.view` 按 hostOf+pathOf 过滤注入 `__CDP_ARG__.folds`。
 - **会话临时折叠**:存页面全局 `__cdpFolds`(`lib/fold.ts`),刷新清空;`--save` 落盘由 Node `api.fold` 调 `locateExpr`。
 
 ### ignore-links(链接黑名单)
 **链接去 URL**:命中模式的链接只留文本、去 URL(如知乎 `zhida.zhihu.com/search*` 内部链接,URL 是超长 search 串)。**view 与 article 共用**,CLI `ignore-link`。
-- **文件**:Node `src/ignore-links.ts` 持久化 `dist/ignore-links.csv`(3 列 `id\tpattern\tnote`,pattern 为 glob 匹配 `hrefForMatch`=hostname+pathname,与 folds 同构)。
-- **纯函数**:`hrefForMatch`/`globToRegExp`/`linkRuleMatch`/`matchLinkBlacklist`/`parseLinkRules`/`addLinkRule`/`removeLinkRule`(单测 `tests/ignore-links.test.ts`)。
+- **文件**:Node `src/ignore-links.ts` 持久化 `rules/ignore-links.csv`(3 列 `id\tpattern\tnote`,pattern 为 glob 匹配 `hrefForMatch`=hostname+pathname,与 folds 同构)。
+- **纯函数**:`hrefForMatch`/`linkRuleMatch`/`matchLinkBlacklist`/`parseLinkRules`/`addLinkRule`/`removeLinkRule`(单测 `tests/ignore-links.test.ts`)。`globToRegExp` 共享自 `src/url-scope.ts`。
 - **注入侧匹配**:`src/inject/lib/ignore-links.ts` 的 `linkIgnored(patterns, href)`(浏览器);`api.view`/`api.article` 读 `loadLinkRules()` 的 pattern 数组,经 `__CDP_ARG__.ignoreLinks` 传入。
 - **view 内联合并**:命中黑名单的 `<a>`(含 `span>a` 包装)内联成纯文本并与相邻文本段合并成一句,取**末段文本的 el(ref)**。两种 DOM 编码:① 兄弟 span,由 `mergeTextRuns` + `inlineTextOf`(穿透单子节点 span 包装)合并;② 父自身文本,由 `ordered` 保序 childNodes 组装成片段再合并。粗斜(b/strong)里的 ignore 链接只去 URL。
 - **article**:命中 `linkIgnored` 即 `inlineSeg` 只回文本。
+
+### 规则存储(rules-store)+ url-scope
+**规则是数据非代码,统一住 `rules/`**(skill 根,gitignore,运行时读写,build 不清不覆盖),内置默认在 `src/rules/`(入库)。`src/rules-store.ts` 定位目录 + **seed-once**(缺文件从 `src/rules/` 拷默认;已存在不覆盖,修旧 clobber bug)。fold/ignore-links/recipe 全部经它。`rulesDir()` 默认 `join(__dirname,'..','rules')`,测试用 `CDP_RULES_DIR`/`CDP_RULES_DEFAULT_DIR` 覆盖。
+**共享工具 `src/url-scope.ts`**(纯函数零依赖):`globToRegExp`(唯一实现,消 3 份重复)+ `hostOf`/`pathOf` + `urlMatches`。fold 用 hostOf/pathOf 拆两维正交;ignore-links 用拼接串单 glob;recipe 作用域用 urlMatches。
+
+### recipe(站点抽取配方)
+**聚焦站点摘要**:URL 命中的过程式摘要(文本 + 内嵌 `[ref=N]`),供 agent 聚焦读已知站点(如知乎问题页:标题/被浏览/逐回答/更多回答 ref),其余噪声隐去。
+- **执行模型**:recipe = `rules/recipes/<site>.js`(CJS `module.exports={scope, extract}`,**纯 JS 不接 build**),`extract(cdp, ctx)` 复用完整 `cdp` api(view/article/find/locate/eval/click)编排,返回 `{lines}`。信任边界:作者信任的本地代码(等同 run 脚本),非沙箱。
+- **分发**:`view`/`fetch`(CLI action 顶层)调共享 `dispatchView`:无建树意图且命中 recipe → 输出摘要(带 RECIPE_LEGEND);未命中或**建树意图**(`--tree`/位置 ref/`--selector-file`/`--visible-only`/`--scroll-*`)→ 纯结构树。`api.view` 保持纯结构(fetchPage/操作反馈内部照旧,无递归)。run 脚本显式要摘要调 `cdp.recipe`。
+- **多 recipe 命中**:通配最少 → scope 更长 → 声明顺序。异常/返回 null → 安全回落树。
+- **示例**:`src/rules/recipes/zhihu.js`(scope `www.zhihu.com/question/*`,从 view 树行解析标题/被浏览/查看全部回答 ref;完整逐回答抽取用 `cdp.eval` 按站点 selector)。
 
 ### article
 **Markdown 文章**:`inject/article.ts` 以 ref 为根提取格式友好的 Markdown。**专用保序 DOM 遍历**(不用 buildView),沿 `childNodes` 逐节点(Text 节点 + 元素)。

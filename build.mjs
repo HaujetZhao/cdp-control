@@ -11,7 +11,7 @@
  */
 import { build } from 'esbuild';
 import { execSync } from 'node:child_process';
-import { readdirSync, copyFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,6 +29,8 @@ async function main() {
   execSync('npx tsc --noEmit', { stdio: 'inherit', cwd: __dirname });
 
   // —— Node 侧:转译 CJS,不打包 ——
+  // 源码跨文件用 `.ts` 扩展名(便于 strip-types 单测直跑),但 standalone 转译产物是 `.js`;
+  // esbuild 不打包时原样保留 require 路径,故产物里 `require('./x.ts')` 需改写成 `./x.js`。
   const nodeEntries = readdirSync(src).filter(f => f.endsWith('.ts') && f !== 'cdp.ts');
   if (nodeEntries.length) {
     console.log(`▶ Node 侧(转译):${nodeEntries.join(', ')} → dist/`);
@@ -36,6 +38,12 @@ async function main() {
       entryPoints: nodeEntries.map(f => join(src, f)),
       outdir: dist, bundle: false, format: 'cjs', platform: 'node', target: 'node21', sourcemap: false,
     });
+    // 改写 standalone 产物里的 .ts 相对 require 为 .js(esbuild 不打包不改路径)。
+    for (const f of nodeEntries.map(n => n.replace(/\.ts$/, '.js'))) {
+      const p = join(dist, f);
+      if (!existsSync(p)) continue;
+      writeFileSync(p, readFileSync(p, 'utf8').replace(/require\("(\.[^"]+)\.ts"\)/g, 'require("$1.js")'));
+    }
   }
   console.log('▶ Node 侧(入口 bundle): cdp.ts → dist/cdp.js');
   await build({
@@ -66,21 +74,8 @@ async function main() {
     console.log('▶ 注入页侧:(暂无 src/inject/*.ts,跳过)');
   }
 
-  // —— 拷贝 fold 规则模板(src/fold-selectors.csv → dist/fold-selectors.csv)——
-  // 每次构建都强制覆盖:src/fold-selectors.csv 是唯一权威副本,dist 只是产物。
-  const foldTpl = join(src, 'fold-selectors.csv');
-  const foldOut = join(dist, 'fold-selectors.csv');
-  if (existsSync(foldTpl)) {
-    copyFileSync(foldTpl, foldOut);
-    console.log('▶ fold 规则模板 → dist/fold-selectors.csv(覆盖)');
-  }
-  // —— 拷贝 ignore-links 黑名单模板(src/ignore-links.csv → dist/ignore-links.csv)——
-  const linkTpl = join(src, 'ignore-links.csv');
-  const linkOut = join(dist, 'ignore-links.csv');
-  if (existsSync(linkTpl)) {
-    copyFileSync(linkTpl, linkOut);
-    console.log('▶ ignore-links 黑名单模板 → dist/ignore-links.csv(覆盖)');
-  }
+  // —— 规则模板不再拷进 dist(dist 变纯代码)。规则是数据,住 skill 根 rules/,由 rules-store.ts seed-once
+  //    从 src/rules/ 拷默认 / 迁旧 dist csv。此处不覆盖任何规则文件(修 clobber)。
 
   console.log('✅ build 完成 → dist/');
 }
