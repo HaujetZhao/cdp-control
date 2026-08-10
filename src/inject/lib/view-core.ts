@@ -10,7 +10,7 @@ import type { ViewNode } from './view-format.ts';
 import { tmpFolds } from './fold.ts';
 import type { FoldItem } from './arg.ts';
 import { linkIgnored } from './ignore-links.ts';
-import { cut } from './view-utils.ts';
+import { cut, isPureCount } from './view-utils.ts';
 
 export interface ViewBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[]; ignoreLinks?: string[]; maxLen?: number }
 
@@ -281,7 +281,16 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
       const label = elLabel(el as Element);
       if (label) { text = cut(strip(label), opts.maxLen); node.agg = true; }
       else { text = cut(strip(grabText(el, 0)), opts.maxLen); node.agg = true; }
-    } else if (!text && ignoredA) {
+    }
+    // 交互元素直接文本是"纯计数"(如收藏数"3"、浏览"1.2万"),aria/title 才携带语义(如"收藏")。
+    // 合并显示 "收藏 3"——否则 agent 只见裸数字,把收藏数/浏览数误当评论数/点赞数(知乎收藏按钮即此类)。
+    else if (text && effInter) {
+      const aria = (el as Element).getAttribute('aria-label');
+      const ti = (el as Element).getAttribute('title');
+      const sem = aria || ti;
+      if (sem && isPureCount(text)) { text = cut(strip(sem + ' ' + text), opts.maxLen); node.agg = true; }
+    }
+    else if (!text && ignoredA) {
       text = cut(strip(grabText(el as Element, 0)), opts.maxLen); node.agg = true;
     } else if (!text && isEl && el.tagName === 'IMG') {
       text = cut(strip(grabText(el, 0)), opts.maxLen); node.agg = true;

@@ -51,3 +51,9 @@ export function isTrivialLeaf(n: { text?: string; kids?: any[] }): boolean {
  * 默认不截断(view 全量输出),设阈值才强制截断——截断补 "…" 让完整文本与截断文本可区分。 */
 export const cut = (text: string, maxLen?: number): string =>
   maxLen == null || text.length <= maxLen ? text : text.slice(0, maxLen) + '…';
+
+/** 纯计数文本(如 "3"、"1.2万"、"548"):交互元素直接文本只剩计数、不带语义。
+ * 此时需借 aria/title 补语义(见 view-core 的纯计数合并),否则 agent 只见裸数字,
+ * 把收藏数/浏览数误当评论数(知乎收藏按钮直接文本即纯计数、语义在 aria-label="收藏")。 */
+export const isPureCount = (text: string): boolean =>
+  /^[\d,，．.]+(?:万|亿|千|[kKmM])?$/.test(text.trim());

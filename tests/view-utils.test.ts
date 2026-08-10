@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf, cut } from '../src/inject/lib/view-utils.ts';
+import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf, cut, isPureCount } from '../src/inject/lib/view-utils.ts';
 
 // —— inlineLen ——
 test('inlineLen: 自身文本长度', () => {
@@ -97,4 +97,29 @@ test('cut: 短文本不截', () => {
 
 test('cut: 超长截到 maxLen 并补省略号', () => {
   assert.equal(cut('abcdef', 3), 'abc…');
+});
+
+// —— isPureCount ——
+test('isPureCount: 纯整数计数', () => {
+  assert.ok(isPureCount('3'));
+  assert.ok(isPureCount('548'));
+  assert.ok(isPureCount('13'));
+});
+
+test('isPureCount: 带单位/小数/千分位的计数', () => {
+  assert.ok(isPureCount('1.2万'));
+  assert.ok(isPureCount('3.8万'));
+  assert.ok(isPureCount('822.2万'));
+  assert.ok(isPureCount('2.3亿'));
+});
+
+test('isPureCount: 非纯计数(带语义词)返回 false', () => {
+  assert.ok(!isPureCount('赞同 12'));
+  assert.ok(!isPureCount('添加评论'));
+  assert.ok(!isPureCount('已收藏'));
+});
+
+test('isPureCount: 空串/纯符号返回 false', () => {
+  assert.ok(!isPureCount(''));
+  assert.ok(!isPureCount('/'));
 });
