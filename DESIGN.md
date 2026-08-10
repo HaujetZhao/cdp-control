@@ -52,7 +52,11 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
       - 局部感知可指定区域
       - 站点聚焦摘要 recipe(已知站点把整页替换成聚焦摘要)
         - URL 作用域(hostname+pathname glob)匹配，`view`/`fetch` 默认启用、未命中回落树
+        - **一文件 = 一站点聚合，文件导出规则数组** `[{name, scope: string|string[], extract}]`
+          - scope 与 extract 正交:`scope` 数组=一抽取服务多 URL 形态;数组元素=同站点多布局(不同 extract)
+          - 匹配跨文件×跨规则做全序(最具体 scope 优先);与「加专栏怕撞文件名」无关
         - recipe 是 Node 模块，复用 view/article/find/eval 编排，返回文本行 + ref
+        - **抽取/呈现分层**:eval 只做 DOM 读(raw 文本+ref)，Node 侧共享 `_lib.js`(clean/refstr/opHint，纯函数可单测)负责归一化与呈现；refOf 只查已建树返回 null、绝不按需注册
         - 规则统一住 `rules/`(数据非代码，seed-once 自 `src/rules/`)，共享 url-scope 匹配
   - 指认
     - ref 指向一个结构，有 DOM、父链
