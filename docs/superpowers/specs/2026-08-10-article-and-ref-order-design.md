@@ -25,12 +25,13 @@
 
 ## 架构
 
-### article：`src/inject/article.ts` + `lib/article-format.ts`
+### article：`src/inject/article.ts`（专用保序 DOM 遍历）
 
-- 复用 `buildView` 建 `ViewNode` 树，新增 `ViewBuildOpts.noTruncate`（见 #5 重构），关闭所有 `slice` 截断。
-- 新增纯函数 `toMarkdown(node: ViewNode): string`（零 DOM 依赖，同 `formatView`，可单测）。
+- **不用 buildView**：`buildView` 的 simplify 把元素自身直接文本合并成 blob、内联子元素（`<a>`/`<b>`）拆成独立子节点，**丢失内联顺序**（`<p>前 <a>链</a> 后</p>` 变 `前后`+链接），对文章致命。故用**专用 DOM 遍历**，直接沿 `childNodes` 保序走，忠实还原内联位置。
+- 递归遍历 `refElement` 子树，按 tag 语义发 Markdown；Text 节点与子元素天然保序。穿透 shadow（复用 `childrenOf`）。
 - 新 CLI 子命令 `article <ref>`，Node 侧 `api.article(target, {ref})`，走统一 `invoke`。
-- 入口用 `setResult` + `__CDP_ARG__`（FindArgs 类似形态）。
+- 入口用 `setResult` + `__CDP_ARG__`（新增 `ArticleArgs{ref, ancestor?}`）。
+- 无截断：直接读完整文本，不做任何 `slice`。
 
 #### Markdown 映射
 
@@ -51,11 +52,11 @@
 
 ### #3 图标按钮：`view-core.ts` 兜底顺序
 
-`simplify` 交互元素无直接文本时（现 :158 行 `grabText`），改为 `aria-label → title → grabText`。`title` 复用现有 `leafValue` 分支语义。view 与 article 共用此采集，行为一致。
+`simplify` 交互元素无直接文本时（现 :158 行 `grabText`），改为 `aria-label → title → grabText`。新增共享辅助 `elLabel(el)`（view-core 导出），view 与 article 共用，行为一致。
 
-### #4 图例：`view-format.ts`/`view` 入口
+### #4 图例：`view` 入口（Node 侧）
 
-view 输出顶部加一行 `#` 注释图例，解释 `[ref=i]`、`[ref=i,visible]`、`~"…"`（聚合文本）、`▸`（已折叠）、`[shadow]`（shadow DOM）、`input[...]`。单行、`#` 打头，Agent 易跳过、不会误当内容。
+view 输出顶部加一行 `#` 注释图例，解释 `[ref=i]`、`[ref=i,visible]`、`~"…"`（聚合文本）、`▸`（已折叠）、`[shadow]`（shadow DOM）、`input[...]`。单行、`#` 打头，Agent 易跳过、不会误当内容。只加在 `view` 命令顶层打印（反馈/自愈块不加）。
 
 ### #5 两遍先序 ref：`view-core.ts` 重构 `buildView`
 
@@ -73,7 +74,7 @@ view 输出顶部加一行 `#` 注释图例，解释 `[ref=i]`、`[ref=i,visible
 ```
 article <ref>
   → api.article (Node, invoke)
-    → inject/article.ts: refElement → buildView(root,{noTruncate}) → toMarkdown → setResult
+    → inject/article.ts: refElement → 保序 DOM 遍历 → Markdown 文本 → setResult
 ```
 
 ```
@@ -88,11 +89,10 @@ view / article / 反馈 / 自愈
 
 ## 测试
 
-- **单测**（纯函数）：`article-format.ts` 的 `toMarkdown`（标题/段落/列表/引用/代码/链接/图片/交互降级/纯包装下钻）；`view-utils` 的 `ariaLabel` 兜底顺序。
-- **两遍先序**：`view-core.ts` 纯逻辑分支（`wantRef`/`wantHidden` 判定、先序编号单调性）尽量抽纯函数测；DOM 依赖靠浏览器实测。
-- **浏览器实测**：`view` 图例、`article` 知乎回答、图标按钮 aria、`info` 链有序。
+- **浏览器实测**（DOM 依赖，遵循项目规范，不写单测）：`view` 图例、`article` 知乎回答保序与不截断、图标按钮 aria、`info` 链有序、ref 先序单调。
+- **构建 + 既有单测回归**：`npm test` 全绿（view-format/view-utils 等不受影响）；`npm run build` 通过。
 
 ## 文档分工
 
 - `SKILL.md`：补 `article` 命令、图例说明、aria 兜底说明。
-- `CLAUDE.md`：补 `article.ts`/`article-format.ts`、两遍先序 buildView 说明。
+- `CLAUDE.md`：补 `article.ts`（保序 DOM 遍历）、两遍先序 buildView 说明、`elLabel`。
