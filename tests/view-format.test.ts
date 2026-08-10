@@ -259,3 +259,35 @@ test('leafText: fold 节点返回其备注(让包装它的容器不被 isTrivial
   const wrap = mk({ tag: 'div', kids: [foldNode] });
   assert.equal(leafText(wrap), '顶栏');
 });
+
+test('formatView: 折叠节点带 foldSize 输出 ▸ 备注 (N)', () => {
+  const folded = mk({ tag: 'header', isContent: true, text: '', ref: 1, fold: '顶栏', foldSize: 23, size: 1, kids: [] });
+  const root = mk({ tag: 'body', isContent: false, size: 2, kids: [folded] });
+  markText(root);
+  assert.deepEqual(formatView(root), ['body', '  ▸ [ref=1] 顶栏 (23)']);
+});
+
+test('formatView: 折叠节点无 foldSize 不带括号(回归)', () => {
+  const folded = mk({ tag: 'footer', isContent: true, text: '', ref: 2, fold: '页脚', size: 1, kids: [] });
+  const root = mk({ tag: 'body', isContent: false, size: 2, kids: [folded] });
+  markText(root);
+  assert.deepEqual(formatView(root), ['body', '  ▸ [ref=2] 页脚']);
+});
+
+test('formatView: 缺省不截断,长文本完整输出', () => {
+  const long = '制度性硬化'.repeat(20); // 100 字符,旧逻辑会截 60
+  const p = mk({ tag: 'p', isContent: true, text: long, size: 1, ref: 5 });
+  const root = mk({ tag: 'div', isContent: false, size: 2, kids: [p] });
+  markText(root);
+  assert.deepEqual(formatView(root), ['div', '  p "' + long + '" [ref=5]']);
+});
+
+test('formatView: --max-len 截断超长文本并补省略号,短文本不截', () => {
+  const long = '制度性硬化'.repeat(20); // 100 字符;slice(0,10) 取前 10 字 = 两段 "制度性硬化"
+  const short = '首页';
+  const p = mk({ tag: 'p', isContent: true, text: long, size: 1, ref: 5 });
+  const a = mk({ tag: 'a', isContent: true, text: short, inter: true, size: 1, ref: 6 });
+  const root = mk({ tag: 'div', isContent: false, size: 3, kids: [p, a] });
+  markText(root);
+  assert.deepEqual(formatView(root, 10), ['div', '  p "制度性硬化制度性硬化…" [ref=5]', '  a "首页" [ref=6]']);
+});

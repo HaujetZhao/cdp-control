@@ -13,7 +13,7 @@ import { ensureBrowser } from './browser';
 const api = { ...coreApi, logs, ensure: ensureBrowser };
 
 /** view 输出顶部图例(解释各标记,Agent 易跳过、不误当内容;只加在 view 命令顶层,反馈/自愈块不加)。 */
-const VIEW_LEGEND = '# [ref=i]=可操作索引 · [ref=i,visible]=当前视口内 · ~"…"=聚合文本 · ▸=已折叠(view <ref> 展开) · [shadow]=shadow DOM';
+const VIEW_LEGEND = '# [ref=i]=可操作索引 · [ref=i,visible]=当前视口内 · ~"…"=聚合文本 · ▸=已折叠(括号内为隐藏元素数,view <ref> 展开) · [shadow]=shadow DOM';
 
 /** 读 --selector-file 内容(去首尾空白)。 */
 function readOptFile(file: string | undefined): string | undefined {
@@ -95,6 +95,7 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
   .option('--scroll-pages <n>', '与 --scroll-to-load 配合:循环向下滚 N 屏(边滚边检测 scrollHeight 增长,连续 2 次不增长提前停),用于无限流')
   .option('--scroll-to <selector>', '与 --scroll-to-load 配合:先滚到匹配该 selector 的元素(如 B站评论区 #bili-comments),命中不到优雅降级')
   .option('--scroll-wait <ms>', '与 --scroll-to-load 配合:滚动触发懒加载后等待内容渲染的毫秒数(默认 1000;调大给新回答/评论区更多加载时间)')
+  .option('--max-len <n>', '文本截断阈值(字符数);缺省不截断,设值则所有文本片截到 n 并补省略号')
   .action(async (n, opts) => {
     const sel = readOptFile(opts.selectorFile);
     const ref = n != null ? Number(n) : undefined;
@@ -110,6 +111,7 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
       scrollPages: opts.scrollPages != null ? Number(opts.scrollPages) : undefined,
       scrollTo: opts.scrollTo || undefined,
       scrollWait: opts.scrollWait != null ? Number(opts.scrollWait) : undefined,
+      maxLen: opts.maxLen != null ? Number(opts.maxLen) : undefined,
     });
     if (!r.lines?.length) { console.log('(空树)'); return; }
     console.log(VIEW_LEGEND + '\n' + r.lines.join('\n'));

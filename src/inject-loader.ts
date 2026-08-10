@@ -40,7 +40,7 @@ export function inject(name: string, args?: unknown): string {
 export function viewExpr(
   selector?: string, visibleOnly?: boolean, ref?: number, ancestor?: number,
   scrollToLoad?: boolean, folds?: unknown, scrollPages?: number, scrollTo?: string, scrollWait?: number,
-  ignoreLinks?: string[],
+  ignoreLinks?: string[], maxLen?: number,
 ): string {
   return inject('view', {
     selector, visibleOnly: visibleOnly || undefined, ref, ancestor,
@@ -49,6 +49,7 @@ export function viewExpr(
     scrollTo: scrollTo || undefined,
     scrollWait: scrollWait != null ? scrollWait : undefined,
     folds, ignoreLinks,
+    maxLen: maxLen != null ? maxLen : undefined,
   });
 }
 
