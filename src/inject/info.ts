@@ -1,8 +1,9 @@
 /**
  * info.ts — info 透视注入入口:列目标元素(爬 ancestor 后)从 <html> 到自身的祖先链。
- * 每层紧凑显示 tag/id/class/语义 data-* /aria-label/role,让 agent 一眼挑出稳定锚点
+ * 每层紧凑显示 tag/id/class/语义 data-* /aria-label/role/title,让 agent 一眼挑出稳定锚点
  * 自己写 `fold add` 这种 uBlock 式短规则(如 `###biliMainHeader` 折 B站顶栏),
  * 而非只靠 genSel 猜一个。另附 genSel(el) 的建议 selector 作参考。
+ * 语义 data-* 靠**值内容**识别(isSemanticDataValue),非属性名白名单——不同站点 data-* 命名各异,白名单追不全。
  *
  * 设计意图:genSel 已能生成 selector,但有时它选的不是 agent 想要的"语义锚点"
  * (比如挑了某个 data-v-xxx 而非更稳的 #id)。info 把整条祖先链信息摊开,
@@ -12,17 +13,10 @@ import { setResult } from './lib/result';
 import { refElement, climbAncestors } from './lib/find-root';
 import { genSel } from './lib/genSel';
 import { notFoundResult, type OperableArg } from './lib/find';
+import { isSemanticDataValue } from './lib/view-utils';
 import type { InfoArgs } from './lib/arg';
 
 declare const __CDP_ARG__: InfoArgs;
-
-/** 语义化 data-* 属性名(与 genSel 对齐:这些优先于泛化 data-*)。 */
-const SEMANTIC_DATA = [
-  'data-testid', 'data-test', 'data-cy', 'data-qa',
-  'data-role', 'data-type', 'data-component', 'data-name',
-  'data-za-extra-module', 'data-za-module', // 知乎/通用埋点模块名
-  'data-tooltip', // 知乎/B站等把按钮提示放这(如 "解释这篇内容"),无 aria/title 时是唯一语义来源
-];
 
 /** class 列表截断阈值(太长的 utility class 列表对挑锚点无信息量)。 */
 const MAX_CLASS_LEN = 80;
@@ -44,10 +38,12 @@ function describe(el: Element): {
   }
   const attrs = (el as any).attributes;
   if (attrs) {
+    // 内容模式识别:凡 data-* 且值像语义锚点(短、非 JSON/url 编码)就采,不靠属性名白名单——
+    // 不同站点把语义放不同 data-*(data-tooltip/data-testid/data-qa/...),白名单永远追不全。
     const data: Record<string, string> = {};
     for (let i = 0; i < attrs.length; i++) {
       const a = attrs[i];
-      if (SEMANTIC_DATA.includes(a.name) && a.value) data[a.name] = a.value;
+      if (a.name.startsWith('data-') && a.value && isSemanticDataValue(a.value)) data[a.name] = a.value;
     }
     if (Object.keys(data).length) out.dataAttrs = data;
   }

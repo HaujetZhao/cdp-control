@@ -57,3 +57,15 @@ export const cut = (text: string, maxLen?: number): string =>
  * 把收藏数/浏览数误当评论数(知乎收藏按钮直接文本即纯计数、语义在 aria-label="收藏")。 */
 export const isPureCount = (text: string): boolean =>
   /^[\d,，．.]+(?:万|亿|千|[kKmM])?$/.test(text.trim());
+
+/** data-* 属性值是否像"语义锚点":按**值内容**识别,而非属性名白名单。
+ * 不同站点把语义放进五花八门的 data-*(data-tooltip/data-testid/data-qa/data-role/...),白名单永远追不全;
+ * 值长得像可读语义(短、非 JSON 埋点、非 url 编码、非哈希)就采。info 据此自动抓语义 data-*。 */
+export const isSemanticDataValue = (value: string): boolean => {
+  const s = value.trim();
+  if (!s) return false;
+  if (s.length > 80) return false; // 超长:埋点 JSON / 哈希 / 长 url,非锚点
+  if (/^[\[\{]/.test(s)) return false; // JSON 数组/对象埋点(如知乎 data-za-extra-module)
+  if (/%[0-9A-Fa-f]{2}/.test(s)) return false; // url 编码串(如 %20),非可读语义
+  return true;
+};

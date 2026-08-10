@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf, cut, isPureCount } from '../src/inject/lib/view-utils.ts';
+import { inlineLen, inlineable, leafText, firstTxt, isTrivialLeaf, cut, isPureCount, isSemanticDataValue } from '../src/inject/lib/view-utils.ts';
 
 // —— inlineLen ——
 test('inlineLen: 自身文本长度', () => {
@@ -122,4 +122,20 @@ test('isPureCount: 非纯计数(带语义词)返回 false', () => {
 test('isPureCount: 空串/纯符号返回 false', () => {
   assert.ok(!isPureCount(''));
   assert.ok(!isPureCount('/'));
+});
+
+// —— isSemanticDataValue ——
+test('isSemanticDataValue: 短可读值(中文/英文标识符)是真', () => {
+  assert.ok(isSemanticDataValue('解释这篇内容'));
+  assert.ok(isSemanticDataValue('btn-save'));
+  assert.ok(isSemanticDataValue('收藏'));
+  assert.ok(isSemanticDataValue('B站顶栏'));
+});
+
+test('isSemanticDataValue: JSON 埋点 / 超长 / url编码 / 空 是假', () => {
+  assert.ok(!isSemanticDataValue('{"card":{}}'));
+  assert.ok(!isSemanticDataValue('[1,2,3]'));
+  assert.ok(!isSemanticDataValue('a'.repeat(81)));
+  assert.ok(!isSemanticDataValue('a%20b%20c'));
+  assert.ok(!isSemanticDataValue(''));
 });
