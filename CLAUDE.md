@@ -46,12 +46,16 @@ dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建�
 
 ### view-core(buildView)
 - `buildView(root,{visibleOnly,viewport,folds})` 被 view/feedback-collect/recoverRef/find-entry 共享。
-- **只追加 ref 到 `__cdpRefs`,不重置**:整页 `view` 才从 0 清空;其余只追加(增量号)。
+- **ref 两遍先序登记**:遍一(`simplify`)只建树 + 打标记(`wantRef`/`wantHidden`)+ 暂存 `node.el`,**不登记 `__cdpRefs`**;遍二(`assign`)按先序 DFS 一次性分配 `ref = __cdpRefs.length` + `{el,parentRef}`(parentRef=最近已登记祖先),号随树位置单调增。此前隐藏容器 ref 在递归后 append 到尾部,致结构祖先(html/body/#root)拿到高位号、与树顶位置矛盾(见 info 链);先序后低位、内容号递增。
+  - `wantRef`:内容/交互/折叠/shadow 宿主 → 遍二设 `node.ref` 并打印 `[ref=N]`。
+  - `wantHidden`:纯包装含内容 → 遍二登记但**不设 `node.ref`**(view 不打印,info 反查可用)。
+  - 只追加、不重置:整页 `view` 才从 0 清空;其余只追加(增量号)。
 - `viewport:true` 算 `isInViewport` 存 `node.view`,输出 `[ref=i·屏]`/`[ref=i]`。
-- **fold 折叠**:持久规则(`folds`,Node 按 hostname 过滤)+会话临时(`__cdpFolds`)合并,`el.matches(selector)` 判定。命中**非根**元素(depth>0)登记 ref、`node.fold=备注`、`kids=[]` 不递归;**根不折叠**(否则 `view <ref>` 展开折叠容器时根本身又被折叠);嵌套折叠自然支持。
-- **shadow host 占位**:带 `shadowRoot` 的 Element 无条件登记 ref+`isContent=true`(常无 light 文本)。`view-format.walk` 对 `depth>0 && shadow && ref` 输出 `<tag>[shadow] [ref=N]` 不展开子树,根正常走子树。
+- **fold 折叠**:持久规则(`folds`,Node 按 hostname 过滤)+会话临时(`__cdpFolds`)合并,`el.matches(selector)` 判定。命中**非根**元素(depth>0)标 `wantRef`、`node.fold=备注`、`kids=[]` 不递归;**根不折叠**(否则 `view <ref>` 展开折叠容器时根本身又被折叠);嵌套折叠自然支持。
+- **shadow host 占位**:带 `shadowRoot` 的 Element 无条件标 `wantRef`+`isContent=true`(常无 light 文本)。`view-format.walk` 对 `depth>0 && shadow && ref` 输出 `<tag>[shadow] [ref=N]` 不展开子树,根正常走子树。
+- **图标按钮兜底(`elLabel`)**:交互元素无直接文本时 `aria-label → title → 直接文本`。view 显示其功能、article 降级 `[label]`,而非裸 `button [ref=N]`。
 - **表单采集**:simplify 对 INPUT/TEXTAREA 设 `inputInfo={type,value,placeholder}`(value 截 40),formatView 输出 `input[type=text value="..." placeholder="..."]`,agent 不必 eval。
-- **导出**:`strip`/`ownElText`(元素自身直接文本,locate/find 用它)/`subtreeText`(穿透 shadow,备用)/`childrenOf`(穿透 shadow 取子)/`isInViewport`/`buildView`。
+- **导出**:`strip`/`ownElText`(元素自身直接文本,locate/find 用它)/`subtreeText`(穿透 shadow,备用)/`childrenOf`(穿透 shadow 取子)/`isInViewport`/`elLabel`/`buildView`。
 - **view 默认滚动加载**:`view.ts` 对整页完整 view 首次自动 `scrollToLoad()`(置 `__cdpFullViewDone`,同页只滚一次;局部/`--visible-only`/显式滚动参数不触发),滚动后默认等 `scrollWait`(默认 1000ms,`--scroll-wait 0` 关)渲染才建树。`api.fetchPage` 靠它一次抓全,等待条件="body 有非空文本"。
 
 ### feedback
@@ -79,6 +83,9 @@ dist/folds.csv       fold 规则运行时副本(由 src/folds.csv 每次构建�
 
 ### info(原 lineage)
 `inject/info.ts` 列目标从 `<html>` 到自身的祖先链,每层紧凑描述 `tag/id/class/语义 data-*/aria-label/role` + `genSel` 建议。设计意图:genSel 有时挑的锚点不是 agent 要的语义锚点,info 把整条链摊开**决策权交还 agent**(看清 `#biliMainHeader` 在第 N 层直接写 fold 规则)。与 locate 差别:locate 回一个 genSel(工具帮我定);info 回祖先链全貌(我自己挑)。**CLI 命令 `info <n> [--ancestor <k>]`(对应 DESIGN.md 的 info 条目),`api.info(target, ref, ancestor?)` 供脚本用**;`cdp.ts` `printInfoChain` 负责格式化输出。
+
+### article
+`inject/article.ts` 以 ref 为根提取**格式友好的 Markdown 文章**。**不用 buildView**:其 simplify 把内联子元素(<a>/<b>)拆成独立子节点、丢失句子内顺序,对文章致命。故**专用保序 DOM 遍历**——沿 `childNodes` 逐节点(Text 节点 + 元素)发 Markdown:标题 `#`、段落空行分隔、链接 `[文本](href)`、粗斜 `**`/`*`、代码 `\`\`\``、列表 `-`/`1.`、引用 `>`、图片 `![alt](src)`;无文本交互元素降级 `[label]`(复用 `elLabel`);`BLOCK_TAGS` 遇块即停交 `walkEl` 单独成块。**不截断**:直接读完整文本。`ArticleArgs{ref,ancestor?}`。注:仅遍历 light childNodes,shadow 文章暂不穿透(知乎/B站正文为 light DOM,够用)。
 
 ### find
 `inject/find-entry.ts`(类 uBlock `:has-text()`)解决"view 严禁 grep、ref 易失效"——按文本/selector 找元素登记新 ref,不必整页重 tree。`--text` 整页 DFS(`childrenOf` 穿透 shadow + `ownElText` 取**自身直接文本**)搜关键词,深度上限 `MAX_DEPTH=14`,命中即止。**为何用自身文本而非 subtreeText**:子树文本让最外层容器先命中(body 几乎含所有文本)。命中元素追加进 `__cdpRefs`(`{el,parentRef:null}`),`buildView(el,{viewport:true})` 取根行标 ref。`--ancestor` 爬父;`--all` 收集全部。`FindCmdArgs{text?,selector?,ancestor?,all?}`。
