@@ -86,13 +86,17 @@ function prune(n: ViewNode): boolean {
   return hasView;
 }
 
-/** 交互元素的语义标签:aria-label → title → 直接文本。
- * 无文本图标按钮(点赞/分享等)有 aria-label/title 时,view 显示其功能、article 降级标注,而非裸 `button [ref=N]`。 */
+/** 交互元素的语义标签:aria-label → title → data-tooltip → 直接文本。
+ * 无文本图标按钮(点赞/分享等)有 aria-label/title 时,view 显示其功能、article 降级标注,而非裸 `button [ref=N]`。
+ * data-tooltip 兜底:知乎(B站等)纯图标按钮常把提示放 data-tooltip(如 "解释这篇内容"),无 aria/title 时须借它,
+ * 否则 view 只能裸 `button [ref=N]`、agent 看不出含义。 */
 export const elLabel = (el: Element): string => {
   const aria = el.getAttribute && el.getAttribute('aria-label');
   if (aria) return aria;
   const t = el.getAttribute && el.getAttribute('title');
   if (t) return t;
+  const tip = el.getAttribute && el.getAttribute('data-tooltip');
+  if (tip) return tip;
   return ownText(el);
 };
 
