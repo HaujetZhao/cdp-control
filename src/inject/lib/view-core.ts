@@ -76,8 +76,23 @@ function prune(n: ViewNode): boolean {
   return hasView;
 }
 
+/** 交互元素的语义标签:aria-label → title → 直接文本。
+ * 无文本图标按钮(点赞/分享等)有 aria-label/title 时,view 显示其功能、article 降级标注,而非裸 `button [ref=N]`。 */
+export const elLabel = (el: Element): string => {
+  const aria = el.getAttribute && el.getAttribute('aria-label');
+  if (aria) return aria;
+  const t = el.getAttribute && el.getAttribute('title');
+  if (t) return t;
+  return ownText(el);
+};
+
 /** 从 root 建精简树。opts.visibleOnly:建视图后按视口可见裁剪(沿用 view --visible-only 语义);
- * opts.viewport:对带 ref 的节点算 node.view(输出 [ref=i, visible] 标记),见 lib/view-format.ts。 */
+ * opts.viewport:对带 ref 的节点算 node.view(输出 [ref=i, visible] 标记),见 lib/view-format.ts。
+ *
+ * ref 两遍先序登记:遍一(simplify)建树 + 打标记(wantRef/wantHidden)+ 暂存 el,**不登记 __cdpRefs**;
+ * 遍二(assign)按先序 DFS 一次性分配 ref,号随树位置单调增——之前隐藏容器 ref 在递归后 append 到尾部,
+ * 导致结构祖先(html/body/#root)拿到高位号、与树顶位置矛盾(见 info 链)。先序后 html/body 变低位,内容号递增。
+ * 只追加、不重置——重置由调用方决定(view 入口整页前重置;局部/反馈/自愈从当前长度继续)。 */
 export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}): ViewNode {
   const visibleOnly = !!opts.visibleOnly;
   const viewport = !!opts.viewport;
@@ -91,19 +106,18 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
   // 子树是否含"内容"节点(自身 isContent 或任一后代):判断纯容器是否在叶子路径上(有内容可包裹才登记隐藏 ref)。
   const subtreeHasContent = (n: ViewNode): boolean => n.isContent || n.kids.some(subtreeHasContent);
 
-  function simplify(el: Element | ShadowRoot, depth: number, parentRef: number | null): ViewNode | null {
+  // —— 遍一:建树 + 打标记 + 暂存 el。不登记 __cdpRefs ——
+  function simplify(el: Element | ShadowRoot, depth: number): ViewNode | null {
     const isEl = el instanceof Element;
-    // 折叠(非根元素命中 fold 规则):登记 ref(可展开)、设 fold=备注、不递归子树。
+    // 折叠(非根元素命中 fold 规则):标 wantRef(可展开)、设 fold=备注、不递归子树。
     // 根不折叠:view <ref> 展开折叠容器时,根本身(=该容器)不该再被折叠,否则永远展不开。
     if (isEl && depth > 0) {
       const note = foldNote(el as Element);
       if (note !== null) {
         const e = el as Element;
-        const ref = (globalThis as any).__cdpRefs.length;
-        (globalThis as any).__cdpRefs.push({ el: e, parentRef });
         return {
-          tag: e.tagName.toLowerCase(), isContent: true, text: '', inter: false, ref,
-          inView: true, view: viewport ? isInViewport(e) : undefined, imgAlt: '',
+          tag: e.tagName.toLowerCase(), isContent: true, text: '', inter: false, ref: undefined,
+          wantRef: true, el: e, inView: true, view: viewport ? isInViewport(e) : undefined, imgAlt: '',
           shadow: !!e.shadowRoot, kids: [], size: 1, hasText: false, agg: false, fold: note,
         };
       }
@@ -114,24 +128,17 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
     let text = isEl ? ownText(el as Element) : '';
     // visible-only 下只登记视口内可见内容节点的 ref,序号连续、输出的 [ref=i] 都指向真实可操作元素。
     const inView = visibleOnly && isEl ? isInView(el as Element) : true;
-    // 带 shadowRoot 的 host(如 bili-comments)无条件登记 ref:它们常无 light 文本、首屏还是空壳,
+    // 带 shadowRoot 的 host(如 bili-comments)无条件标 wantRef:它们常无 light 文本、首屏还是空壳,
     // 不强制登记就会在整页 view 里静默消失,agent 无从知道页面有评论区。登记后 formatView 输出占位行。
     const hasShadow = isEl && inView && !!(el as Element).shadowRoot;
-    let ref: number | undefined;
-    let view: boolean | undefined;
-    if (isEl && inView && (inter || !!text || hasShadow)) {
-      ref = (globalThis as any).__cdpRefs.length;
-      // 登记表存 {el, parentRef}:parentRef = 最近的已登记祖先 ref 号(跳表),供 ref 失效自愈向上找存活容器。
-      (globalThis as any).__cdpRefs.push({ el: el as Element, parentRef });
-      // viewport 标记:对带 ref 的节点算便宜的在视区判定(rect+宽高,不查 computed style)。
-      if (viewport) view = isInViewport(el as Element);
-    }
     const node: ViewNode = {
       tag,
       // shadow host 强制 isContent:空壳 host(无文本、shadow 子树也未加载)也要被 walk 到、输出占位,
       // 否则会被 productive 过滤掉,agent 在整页 view 里看不到它存在。
       isContent: !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow,
-      text, inter, ref, inView, view,
+      text, inter, ref: undefined, inView, view: viewport ? isInViewport(el as Element) : undefined,
+      wantRef: isEl && inView && (inter || !!text || hasShadow) ? true : undefined,
+      el: isEl ? el as Element : undefined,
       imgAlt: isEl && el.tagName === 'IMG' ? (el.getAttribute('alt') || '') : '',
       // 表单元素采集 type/value/placeholder(view 显示),让 agent 看到搜索框内容、不必 eval。
       // textarea 采 value/placeholder;input 采 type/value/placeholder;select 不采(options 由交互展开)。
@@ -143,20 +150,25 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
           }
         : undefined,
       // 宿主带 shadowRoot:其下的子节点展平自 shadow DOM,CSS 选择器无法穿透,须用 ref 定位
-      shadow: isEl && !!(el as Element).shadowRoot,
+      shadow: hasShadow,
       kids: [], size: 0, hasText: false, agg: false,
     };
-    // 子的 parentRef:本节点登记了 ref 就用本节点 ref,否则透传继承的 parentRef。
-    const childParent = ref != null ? ref : parentRef;
     for (const k of childrenOf(el as Element)) {
       const kt = k instanceof Element ? k.tagName.toUpperCase() : '';
       if (DROP.has(kt)) continue;
-      const kn = simplify(k, depth + 1, childParent);
+      const kn = simplify(k, depth + 1);
       if (kn) node.kids.push(kn); // 跳过被排除的 null
     }
     if (!text && !node.kids.length) { text = strip(grabText(el, 0)).slice(0, 120); node.agg = true; }
-    // 交互/图片元素自身无直接文本时,用 grabText 聚合后代文本(空格分隔,穿透 shadow;替代 innerText——后者会把 inline 数字连排成 "822.2万904906:02")。
-    if (!text && (inter || (isEl && el.tagName === 'IMG'))) { text = strip(grabText(el, 0)).slice(0, 80); node.agg = true; }
+    // 交互/图片元素自身无直接文本时,先试语义标签(aria/title),再 grabText 聚合后代文本
+    // (空格分隔,穿透 shadow;替代 innerText——后者会把 inline 数字连排成 "822.2万904906:02")。
+    if (!text && inter) {
+      const label = elLabel(el as Element);
+      if (label) { text = strip(label); node.agg = true; }
+      else { text = strip(grabText(el, 0)).slice(0, 80); node.agg = true; }
+    } else if (!text && isEl && el.tagName === 'IMG') {
+      text = strip(grabText(el, 0)).slice(0, 80); node.agg = true;
+    }
     node.text = text;
     node.isContent = !!text || (isEl && el.tagName === 'IMG') || inter || hasShadow;
     node.size = 1 + node.kids.reduce((a, k) => a + k.size, 0);
@@ -164,20 +176,34 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
       node.leafValue = strip(title).slice(0, 40);
       node.isContent = true;
     }
-    // 隐藏容器 ref:纯包装元素(无自身文本/交互/shadow/表单),但子树含内容(叶子路径上的祖父 div)。
-    // 只追加进 __cdpRefs(可被 view <ref>/fold/locate 定位),**不设 node.ref** —— formatView 不输出其 [ref=N],
-    // view 默认不显示、内联折叠行为也不变;info 反查 __cdpRefs 显示。parentRef 用进入时的最近已登记祖先;
-    // 追加在尾部,不挤占可见内容 ref 的编号。
-    if (isEl && inView && ref == null && !inter && !text && !hasShadow && !node.inputInfo
+    // 隐藏容器:纯包装元素(无自身文本/交互/shadow/表单),但子树含内容(叶子路径上的祖父 div)。
+    // 标 wantHidden(遍二登记进 __cdpRefs,可被 view <ref>/fold/locate/info 定位),**不设 node.ref** ——
+    // formatView 不输出其 [ref=N],view 默认不显示、内联折叠行为不变。parentRef 由遍二用最近已登记祖先填。
+    if (isEl && inView && !inter && !text && !hasShadow && !node.inputInfo
         && node.kids.length > 0 && subtreeHasContent(node)) {
-      (globalThis as any).__cdpRefs.push({ el: el as Element, parentRef });
+      node.wantHidden = true;
       node.hidden = true;
     }
     return node;
   }
 
-  let v = simplify(root, 0, null);
+  // —— 遍二:先序 DFS 分配 ref + parentRef。wantRef→设 node.ref 并打印;wantHidden→登记但不打印 ——
+  function assign(n: ViewNode, parentRef: number | null): void {
+    let childParent: number | null = parentRef;
+    if (n.wantRef && n.el) {
+      n.ref = (globalThis as any).__cdpRefs.length;
+      // 登记表存 {el, parentRef}:parentRef = 最近的已登记祖先 ref 号(跳表),供 ref 失效自愈向上找存活容器。
+      (globalThis as any).__cdpRefs.push({ el: n.el, parentRef });
+      if (n.ref != null) childParent = n.ref;
+    } else if (n.wantHidden && n.el) {
+      (globalThis as any).__cdpRefs.push({ el: n.el, parentRef });
+    }
+    for (const k of n.kids) assign(k, childParent);
+  }
+
+  let v = simplify(root, 0);
   if (!v) v = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
+  assign(v, null);
   if (visibleOnly) { v.kids = v.kids.filter(k => prune(k)); }
   return v;
 }

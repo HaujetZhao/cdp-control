@@ -19,6 +19,9 @@ export interface ViewNode {
   inView?: boolean; // visible-only:自身是否落在当前视口内且可见(仅 Element 计算;包装节点不查)
   view?: boolean;   // viewport 标记:带 ref 的节点是否在当前视区内(便宜判定,rect+宽高,不查 computed style)。true → 输出 [ref=i, visible]
   inputInfo?: { type?: string; value?: string; placeholder?: string }; // INPUT/TEXTAREA/SELECT:view 显示 type/value/placeholder,让 agent 看到表单内容
+  el?: Element;       // 建树时暂存真实 DOM 元素(两遍先序的遍二登记 ref 用);格式化忽略
+  wantRef?: boolean;  // 遍一标记:内容/交互/折叠/shadow 宿主,遍二分配并打印 [ref=N]
+  wantHidden?: boolean; // 遍一标记:纯包装含内容,遍二分配但不打印(隐藏容器,info 反查可用)
 }
 
 /** tag 输出,宿主带 shadowRoot 时追加 [shadow],提示该子树在 shadow DOM 内。 */
