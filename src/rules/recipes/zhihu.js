@@ -3,18 +3,15 @@
 // 设计(见 DESIGN.md recipe 段):文件名 = 站点聚合标签;每条规则 `{ name, scope, extract }` 里,
 // scope 可为 string|string[](一抽取逻辑服务多 URL 形态),规则数组元素对应不同布局(不同 extract)。
 // 匹配在跨文件跨规则上做全序(最具体 scope 优先),与「加专栏怕撞文件名」从此无关。
-const { clean, refstr, opHint } = require('./_lib.js');
+const { clean, refstr, opHint, abridge } = require('./_lib.js');
 
 // ──────────────────────────── 规则 1:问题 / 回答页 ────────────────────────────
-async function questionExtract(cdp, ctx) {
-  const { target } = ctx;
-  await cdp.view(target); // 建树 → 填充 __cdpRefs(ref 是已建树节点,只查不注册)
-
-  // eval 只做 DOM 读 + refOf(只查已建树,未命中返回 null,绝不按需注册);文本归 Node 侧 clean。
-  const r = await cdp.eval(target, `(function(){
-    const refs = window.__cdpRefs || [];
-    const refOf = (el) => { if (!el) return null; const i = refs.findIndex(r => r && r.el === el); return i < 0 ? null : i; };
-    const raw = (el) => el ? el.textContent : '';
+// questionRead:抽取问题页结构。eval 只做 DOM 读,refOf/text 用引擎只读探针 __cdpProbe(只查已建树、
+// 未命中 null、不按需注册);归一化/呈现归 Node 侧 _lib。抽成函数以便「展开首个回答后重读一次结构」复用。
+function questionRead() {
+  return `(function(){
+    const { refOf, text } = window.__cdpProbe;
+    const raw = text;
 
     const h1 = document.querySelector('h1');
     const vv = document.querySelector('.ViewAll a, .ViewAll');
@@ -64,7 +61,24 @@ async function questionExtract(cdp, ctx) {
       qInvite: fbt(0), qComment: fbt(1), qShare: fbt(2), qEdit: fbt(3),
       answers,
     };
-  })()`);
+  })()`;
+}
+
+// questionFirstFull:取首个回答正文的完整 Markdown(保序、不截断,含加粗/链接/标题)。
+// 用 cdp.read:容器 selector 每次重查(免疫展开重渲染替换元素/ref 漂移);被「阅读全文」折叠则传 expand
+// 先点击展开再取全文(点击/等待/重查分开编排,见 api.read)。折叠判定按站点语义:按钮文案是「阅读全文」= 折叠。
+async function questionFirstFull(cdp, target, first) {
+  if (!first) return null;
+  const container = '.ContentItem.AnswerItem .RichContent-inner';
+  const collapsed = first.expand && /阅读全文/.test(clean(first.expand.t));
+  const full = await cdp.read(target, { container, expand: collapsed ? { ref: first.expand.ref } : undefined });
+  return full && full.markdown ? full : null;
+}
+
+async function questionExtract(cdp, ctx) {
+  const { target } = ctx;
+  await cdp.view(target); // 建树 → 填充 __cdpRefs(ref 是已建树节点,只查不注册)
+  const r = await cdp.eval(target, questionRead());
 
   const out = [];
   if (r.h1) out.push(`# ${clean(r.h1)}`);
@@ -85,7 +99,8 @@ async function questionExtract(cdp, ctx) {
 
   const ans = r.answers || [];
   if (!ans.length) out.push('(未读到任何回答,可能需要 view --scroll-to-load 后再试)');
-  for (const a of ans) {
+  for (let i = 0; i < ans.length; i++) {
+    const a = ans[i];
     const metaBits = [];
     if (a.voteText) metaBits.push(`${clean(a.voteText).replace(/^已/, '')}${refstr(a.voteRef)}`);
     if (a.comment && a.comment.t) metaBits.push(`${clean(a.comment.t)}${refstr(a.comment.ref)}`);
@@ -94,11 +109,27 @@ async function questionExtract(cdp, ctx) {
     if (a.expand && /阅读全文|收起/.test(clean(a.expand.t))) {
       metaBits.push(`[${clean(a.expand.t)}${refstr(a.expand.ref)} ${opHint('click', a.expand.ref)}]`);
     }
-    const preview = clean(a.preview).slice(0, 160);
     out.push(`── 回答 ${a.seq}${a.author ? ' · ' + clean(a.author) : ''}${refstr(a.authorRef)}${a.followRef != null ? ` 关注TA${refstr(a.followRef)}` : ''}${a.bio ? ' (' + clean(a.bio) + ')' : ''}`);
     out.push(`    ${metaBits.join('  ')}`);
-    out.push(`    ${preview || '本回答无可预览文本。'}`);
-    out.push(`    展开全文: article ${a.richRef} · 定位容器: view ${a.ref}`);
+
+    if (i === 0) {
+      // 首个回答输出全文(完整正文,非 160 字预览);被「阅读全文」折叠先展开再取。
+      const full = await questionFirstFull(cdp, target, a);
+      if (full && full.markdown) {
+        const md = String(full.markdown).trim();
+        if (md) {
+          for (const line of md.split('\n')) out.push(`    ${line}`);
+        } else {
+          out.push(`    (首个回答无可提取文本) 定位容器: view ${a.ref}`);
+        }
+      } else {
+        out.push(`    展开全文: article ${a.richRef} · 定位容器: view ${a.ref}`);
+      }
+    } else {
+      const preview = abridge(a.preview);
+      out.push(`    ${preview || '本回答无可预览文本。'}`);
+      out.push(`    展开全文: article ${a.richRef} · 定位容器: view ${a.ref}`);
+    }
     out.push('');
   }
 
@@ -111,9 +142,8 @@ async function zhuanlanExtract(cdp, ctx) {
   await cdp.view(target); // 建树 → 填充 __cdpRefs;refOf 只查已建树
 
   const r = await cdp.eval(target, `(function(){
-    const refs = window.__cdpRefs || [];
-    const refOf = (el) => { if (!el) return null; const i = refs.findIndex(r => r && r.el === el); return i < 0 ? null : i; };
-    const raw = (el) => el ? el.textContent : '';
+    const { refOf, text } = window.__cdpProbe;
+    const raw = text;
 
     const art = document.querySelector('article');
     const h1 = art && art.querySelector('h1');
@@ -160,9 +190,19 @@ async function zhuanlanExtract(cdp, ctx) {
   out.push('');
   if (r.time) out.push(`   ${clean(r.time)}`);
   if (r.colTime) out.push(`   ${clean(r.colTime)}`);
-  const preview = clean(r.preview).slice(0, 160);
-  out.push(`   ${preview || '(正文无可预览文本)'}`);
-  out.push(`   展开全文: article ${r.richRef} · 定位容器: view ${r.h1Ref}`);
+  // 专栏正文完整取全文(保序、不截断);用 cdp.read 按容器 selector 取(专栏整文直接载入,无折叠,不传 expand)。
+  let md = '';
+  try {
+    const full = await cdp.read(target, { container: '.RichText' });
+    md = full && full.markdown ? String(full.markdown).trim() : '';
+  } catch (e) { md = ''; }
+  if (md) {
+    out.push('');
+    for (const line of md.split('\n')) out.push(`   ${line}`);
+  } else {
+    out.push(`   ${abridge(r.preview) || '(正文无可预览文本)'}`);
+    out.push(`   展开全文: article ${r.richRef} · 定位容器: view ${r.h1Ref}`);
+  }
   out.push('');
 
   return { lines: out };
