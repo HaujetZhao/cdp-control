@@ -12,6 +12,9 @@ import { ensureBrowser } from './browser';
 
 const api = { ...coreApi, logs, ensure: ensureBrowser };
 
+/** view 输出顶部图例(解释各标记,Agent 易跳过、不误当内容;只加在 view 命令顶层,反馈/自愈块不加)。 */
+const VIEW_LEGEND = '# [ref=i]=可操作索引 · [ref=i,visible]=当前视口内 · ~"…"=聚合文本 · ▸=已折叠(view <ref> 展开) · [shadow]=shadow DOM';
+
 /** 读 --selector-file 内容(去首尾空白)。 */
 function readOptFile(file: string | undefined): string | undefined {
   if (file === undefined) return undefined;
@@ -109,7 +112,7 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
       scrollWait: opts.scrollWait != null ? Number(opts.scrollWait) : undefined,
     });
     if (!r.lines?.length) { console.log('(空树)'); return; }
-    console.log(r.lines.join('\n'));
+    console.log(VIEW_LEGEND + '\n' + r.lines.join('\n'));
   });
 
 // 操作目标:位置参数 <target> 全数字→ref(配 --ancestor),否则视为 selector。见 api.TargetArg。
@@ -237,6 +240,16 @@ targetCmd('info', '列目标元素祖先链(tag/id/class/语义 data-*/aria/role
   .action(async (n, opts) => {
     const r = await api.info(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
     printInfoChain(r);
+  });
+
+targetCmd('article', '以 ref 为根提取格式友好的 Markdown 文章(保序、不截断;穿透 shadow)')
+  .argument('<n>', 'view 输出的 ref 序号(穿透 shadow)')
+  .option('--ancestor <k>', '按 ref 定位后向上爬 K 层父级再提取(默认 0)')
+  .action(async (n, opts) => {
+    const r = await api.article(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+    if (r?.refInvalid) { printRefInvalid(r); return; }
+    if (!r?.lines?.length) { console.log('(空文章)'); return; }
+    console.log(r.lines.join('\n'));
   });
 
 feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab')).argument('<key>', '按键')

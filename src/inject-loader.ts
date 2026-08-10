@@ -61,6 +61,11 @@ export function infoExpr(ref: number, ancestor?: number): string {
   return inject('info', { ref, ancestor });
 }
 
+/** article:按 ref 提取子树为格式友好的 Markdown 文章(保序、不截断)。 */
+export function articleExpr(ref: number, ancestor?: number): string {
+  return inject('article', { ref, ancestor });
+}
+
 /** 读控制台日志入口。 */
 export function readExpr(levelSet: string[] | null, since: number): string {
   return inject('read', levelSet ? { level: levelSet, since } : { since });
