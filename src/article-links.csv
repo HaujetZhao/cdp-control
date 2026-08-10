@@ -1,0 +1,3 @@
+# article 链接黑名单:命中模式(glob,匹配 hostname+pathname)的链接在 article 只留文本、去 URL。
+# 3 列 tab 分隔: <id>\t<pattern>\t<note>
+1	zhida.zhihu.com/search*	知乎词汇释义内部链接(正文词高亮,URL 无跳转价值)
