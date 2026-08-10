@@ -3,4 +3,4 @@ dist/
 *.err
 tmp/
 # 实时规则目录(用户数据,不入库;内置默认在 src/rules/ 入库)
-rules/
+/rules/

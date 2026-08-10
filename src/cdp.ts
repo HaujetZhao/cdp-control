@@ -10,11 +10,31 @@ import { coreApi } from './api';
 import { logs, cmdListen } from './monitor';
 import { ensureBrowser } from './browser';
 import { runScript } from './run-script';
+import { runRecipe } from './recipe-runner';
 
-const api = { ...coreApi, logs, ensure: ensureBrowser };
+const api: any = { ...coreApi, logs, ensure: ensureBrowser };
+// recipe:暴露给 run 脚本显式取站点摘要(命中返回 {lines},未命中 null)。
+api.recipe = async (target: any, opts: any) => runRecipe(target.url, api, target, opts);
+
+/**
+ * view/fetch 共用的感知分发:默认跑命中 recipe(站点摘要),未命中或用户表达建树意图 → 纯结构树。
+ * 建树意图(强制树)= --tree / 位置 ref / --selector-file / --visible-only / --scroll-* 任一。
+ * 分发在 CLI action 顶层,`api.view` 保持纯结构(fetchPage/操作反馈内部照旧用,无递归)。
+ */
+async function dispatchView(target: any, opts: any): Promise<{ lines: string[]; recipe: boolean }> {
+  const treeIntent = !!opts.tree || opts.ref != null || opts.selector != null || !!opts.visibleOnly || !!opts.scrollToLoad;
+  if (!treeIntent) {
+    const d = await runRecipe(target.url, api, target, opts);
+    if (d) return { lines: d.lines, recipe: true };
+  }
+  const r = await api.view(target, opts);
+  return { lines: r.lines ?? [], recipe: false };
+}
 
 /** view 输出顶部图例(解释各标记,Agent 易跳过、不误当内容;只加在 view 命令顶层,反馈/自愈块不加)。 */
 const VIEW_LEGEND = '# [ref=i]=可操作索引 · [ref=i,visible]=当前视口内 · ~"…"=聚合文本 · ▸=已折叠(括号内为隐藏元素数,view <ref> 展开) · [shadow]=shadow DOM';
+/** recipe 摘要输出顶部图例(复用 [ref=N] 约定,让 ref 自解释)。 */
+const RECIPE_LEGEND = '# 站点摘要(recipe 命中)· [ref=N]=可操作索引(可 click/fill/article 等按需展开)';
 
 /** 读 --selector-file 内容(去首尾空白)。 */
 function readOptFile(file: string | undefined): string | undefined {
@@ -57,12 +77,20 @@ program.command('open').argument('<url>', '要打开的网址').description('新
 program.command('close').argument('<target>', '目标匹配').description('关闭 tab')
   .action(async (tgt) => { const t = await api.resolve(tgt); await api.close(t); console.log(`已关闭: ${t.title || t.url}`); });
 
-program.command('fetch').argument('<url>', '要抓取的网址').description('一次性抓取页面:ensure → 临时开 tab 打开 url → view 建树 → 关闭 tab,输出视图内容(替代 web fetch MCP)')
+program.command('fetch').argument('<url>', '要抓取的网址').description('一次性抓取页面:ensure → 临时开 tab 打开 url → 感知(命中 recipe 输出摘要,否则建树) → 关闭 tab(替代 web fetch MCP)')
   .action(async (url) => {
     await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销)。
-    const lines = await api.fetchPage(url || 'about:blank');
-    if (!lines.length) { console.log('(空树)'); return; }
-    console.log(lines.join('\n'));
+    const tid = await api.open(url || 'about:blank');
+    let t: any;
+    try {
+      t = await api.resolve(tid);
+      try { await api.waitForFn(t, 'document.body && document.body.innerText.trim().length > 0', { timeout: 20000, interval: 300 }); } catch {}
+      const d = await dispatchView(t, {}); // 裸 fetch → recipe 摘要优先
+      if (!d.lines.length) { console.log('(空树)'); return; }
+      console.log((d.recipe ? RECIPE_LEGEND : VIEW_LEGEND) + '\n' + d.lines.join('\n'));
+    } finally {
+      if (t) { try { await api.close(t); } catch {} }
+    }
   });
 
 // 隐藏命令:内部 daemon 自重生入口(cmdListen)。用户不直接调——监听 daemon 由 open/ensure/logs
@@ -85,8 +113,9 @@ targetCmd('navigate', '导航到 url').argument('<url>', '网址')
 targetCmd('eval', '在页面执行 JS,返回 JSON 值').argument('<js...>', '要执行的 JS')
   .action(async (js, opts) => { const code = (js as string[]).join(' '); console.log(JSON.stringify(await api.eval(await needTarget(opts.target), code), null, 2)); });
 
-targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚点互斥:位置 ref 优先,其次 --selector-file,缺省 body;--ancestor 统一爬父;--visible-only 只输出视口内可见)')
-  .argument('[n]', 'view 输出的 ref 序号建视图根(不传则从根 body 建树;与 --selector-file 二选一)')
+targetCmd('view', '感知:命中 recipe 输出站点摘要,否则整页结构树(建树意图任一带--tree/位置ref/--selector-file/--visible-only/--scroll-* 则强制树)')
+  .argument('[n]', 'view 输出的 ref 序号建视图根(不传则从根 body 建树;与 --selector-file 二选一;给了即强制树)')
+  .option('--tree', '强制结构树(即便命中 recipe 也建树)')
   .option('--ancestor <n>', '从建视图根向上爬 N 层父级再建视图(默认 0;与 ref/selector 任一锚点配合)')
   .option('--selector-file <file>', '从文件读 selector')
   .option('--visible-only', '只输出当前视口内几何可见且非隐藏(display:none/opacity:0)的元素,模拟 agent 看到的当前屏幕;视口外的祖先退化为纯容器骨架')
@@ -102,8 +131,9 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
     if ((opts.scrollPages != null || opts.scrollTo != null) && !opts.scrollToLoad) {
       throw new Error('--scroll-pages / --scroll-to 必须与 --scroll-to-load 配合使用');
     }
-    const r = await api.view(await needTarget(opts.target), {
-      selector: sel, visibleOnly: !!opts.visibleOnly,
+    const target = await needTarget(opts.target);
+    const d = await dispatchView(target, {
+      tree: !!opts.tree, selector: sel, visibleOnly: !!opts.visibleOnly,
       ref,
       ancestor: opts.ancestor != null ? Number(opts.ancestor) : undefined,
       scrollToLoad: !!opts.scrollToLoad,
@@ -112,8 +142,8 @@ targetCmd('view', '结构视图:整页 body 的文本+结构紧凑层级树(锚�
       scrollWait: opts.scrollWait != null ? Number(opts.scrollWait) : undefined,
       maxLen: opts.maxLen != null ? Number(opts.maxLen) : undefined,
     });
-    if (!r.lines?.length) { console.log('(空树)'); return; }
-    console.log(VIEW_LEGEND + '\n' + r.lines.join('\n'));
+    if (!d.lines.length) { console.log('(空树)'); return; }
+    console.log((d.recipe ? RECIPE_LEGEND : VIEW_LEGEND) + '\n' + d.lines.join('\n'));
   });
 
 // 操作目标:位置参数 <target> 全数字→ref(配 --ancestor),否则视为 selector。见 api.TargetArg。
