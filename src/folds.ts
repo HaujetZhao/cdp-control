@@ -13,6 +13,10 @@
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { globToRegExp, hostOf, pathOf } from './url-scope.ts';
+
+// 复导出,供 api.ts 等继续从 './folds' 引用(hostOf/pathOf 同时是 fold 的作用域维度)。
+export { hostOf, pathOf };
 
 export interface FoldRule {
   id: number;
@@ -26,22 +30,6 @@ export interface FoldRule {
  * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 dist/fold-selectors.csv。 */
 function foldsPath(): string {
   return process.env.CDP_FOLD_FILE || join(__dirname, 'fold-selectors.csv');
-}
-
-/** 从 url 提取 hostname;非法/空白返回 ''(about:blank 等不参与 fold 匹配)。 */
-export function hostOf(url: string | undefined): string {
-  if (!url) return '';
-  try { return new URL(url).hostname; } catch { return ''; }
-}
-
-/** 从 url 提取 pathname(含根 /);非法/about:blank/无 hostname 返回 ''(与 hostOf 对齐,这些页不参与 fold)。 */
-export function pathOf(url: string | undefined): string {
-  if (!url) return '';
-  try {
-    const u = new URL(url);
-    if (!u.hostname) return ''; // about:blank 等无 host 的页不参与 fold
-    return u.pathname || '/';
-  } catch { return ''; }
 }
 
 /** 域名匹配:精确、*.suffix(自身+子域)、suffix.*(entity,任意 TLD)。 */
@@ -58,13 +46,7 @@ export function domainMatch(domain: string, hostname: string): boolean {
   return hostname === domain;
 }
 
-/** glob → RegExp:* 匹配任意字符(含 /),其余按字面;两端锚定。 */
-function globToRegExp(pat: string): RegExp {
-  const esc = pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp('^' + esc.replace(/\*/g, '.*') + '$');
-}
-
-/** 路径匹配:path 为 glob,空 = 不限定。 */
+/** 路径匹配:path 为 glob,空 = 不限定(globToRegExp 共享自 url-scope)。 */
 export function pathMatch(pattern: string, pathname: string): boolean {
   if (!pattern) return true; // 空 = 不限定路径
   return globToRegExp(pattern).test(pathname);

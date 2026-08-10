@@ -13,6 +13,7 @@
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { globToRegExp } from './url-scope.ts';
 
 export interface LinkRule { id: number; pattern: string; note: string }
 
@@ -30,13 +31,7 @@ export function hrefForMatch(href: string): string {
   } catch { return href; }
 }
 
-/** glob → RegExp:* 匹配任意字符(含 /),其余按字面;两端锚定。与 folds.ts 的 globToRegExp 语义一致。 */
-export function globToRegExp(pat: string): RegExp {
-  const esc = pat.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp('^' + esc.replace(/\*/g, '.*') + '$');
-}
-
-/** 单条规则是否命中某链接:pattern 为空 = 全命中;否则 glob 匹配 hrefForMatch(href)。 */
+/** 单条规则是否命中某链接:pattern 为空 = 全命中;否则 glob 匹配 hrefForMatch(href)(globToRegExp 共享自 url-scope)。 */
 export function linkRuleMatch(rule: LinkRule, href: string): boolean {
   if (!rule.pattern) return true;
   return globToRegExp(rule.pattern).test(hrefForMatch(href));
