@@ -1,6 +1,6 @@
 /**
  * folds.ts — fold 折叠规则的持久化(Node 侧)。
- * 规则文件放在 dist/cdp.js 同级(dist/fold-selectors.csv),便于手动编辑,随 dist 拷贝走。
+ * 规则是数据非代码,统一住 `rules/fold.csv`(见 rules-store.ts:seed-once、不再随 dist 拷贝走)。
  *
  * 文件格式(csv,tab 分隔,固定 5 列,因 selector 可能含空格——genSel 生成后代选择器):
  *   <id>\t<domain>\t<path>\t<selector>\t<note>
@@ -12,8 +12,8 @@
  * 行首 # 为注释。
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { globToRegExp, hostOf, pathOf } from './url-scope.ts';
+import { foldsLivePath } from './rules-store.ts';
 
 // 复导出,供 api.ts 等继续从 './folds' 引用(hostOf/pathOf 同时是 fold 的作用域维度)。
 export { hostOf, pathOf };
@@ -26,10 +26,10 @@ export interface FoldRule {
   note: string;
 }
 
-/** 规则文件路径:与 cdp.js 同级(dist/ 下),便于手动编辑;随 dist 拷贝走、跨会话持久。
- * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 dist/fold-selectors.csv。 */
+/** 规则文件路径:rules/fold.csv(rules-store seed-once 保证存在)。
+ * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 rules/fold.csv。 */
 function foldsPath(): string {
-  return process.env.CDP_FOLD_FILE || join(__dirname, 'fold-selectors.csv');
+  return process.env.CDP_FOLD_FILE || foldsLivePath();
 }
 
 /** 域名匹配:精确、*.suffix(自身+子域)、suffix.*(entity,任意 TLD)。 */
@@ -81,7 +81,7 @@ export function loadFolds(): FoldRule[] {
   catch { return []; }
 }
 
-/** 重写规则文件(保留各规则原 id,不按行号重排)。dist/ 与 cdp.js 同级必然存在,无需建目录。 */
+/** 重写规则文件(保留各规则原 id,不按行号重排)。 */
 function writeRules(rules: FoldRule[]): void {
   const text = rules.map(r =>
     `${r.id}\t${r.domain}\t${r.path}\t${r.selector}\t${r.note}`,
