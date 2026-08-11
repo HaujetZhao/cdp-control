@@ -117,6 +117,7 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
   - `list` 列出所有 page tab,同时确保 CDP 浏览器已就绪
   - `open` 新开一个 tab
   - `close` 关闭一个 tab
+  - `kill` 强制结束 9222 端口上的浏览器进程并等端口释放
   - `activate` 把指定 tab 拉到前台
 - 脚本执行
   - `run` 跑一段自动化脚本(脚本内用全局 cdp API)

@@ -110,6 +110,7 @@ cdp-control run "./scripts/你的脚本.js"
 | `list` | 确保浏览器就绪并列出 page tab,先报总数 |
 | `open <url>` | 新开 tab,返回 targetId |
 | `close <target>` | 关闭 tab |
+| `kill` | 强制结束 9222 端口上的浏览器进程并等端口释放(浏览器未起也自动拉起,此命令相反) |
 | `fetch <url>` | 一次性抓取:临时开 tab→等渲染→感知(命中 recipe 输出摘要,否则整页树,整页首次自动 scroll-to-load)→关 tab,输出含 `[ref]`,不残留 tab |
 | `navigate <url>` | 导航 |
 | `eval "<js>"` | 执行 JS,返回 returnByValue 值 |
