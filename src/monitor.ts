@@ -7,7 +7,7 @@ import { unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
-import { pageWs, send, listTargets, resolve, evaluate, sleep, Target } from './transport';
+import { pageWs, send, listTargets, resolve, evaluate, sleep, PORT, Target } from './transport';
 import { inject, readExpr } from './inject-loader';
 
 export const LOGS_PORT = Number(process.env.CDP_LOGS_PORT) || 9333;
@@ -18,7 +18,8 @@ export function pidFilePath(): string {
 
 async function spawnDaemon(): Promise<void> {
   const script = process.argv[1] || __filename;
-  const child = spawn(process.execPath, [script, '__daemon'], { detached: true, stdio: 'ignore' });
+  // 把当前浏览器端口(经 ensureBrowser 从 browser.json 同步的 PORT)注入 daemon,daemon 连对端口。
+  const child = spawn(process.execPath, [script, '__daemon'], { detached: true, stdio: 'ignore', env: { ...process.env, CDP_PORT: String(PORT) } });
   child.unref();
 }
 

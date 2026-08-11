@@ -1,18 +1,27 @@
 // browser-config.test.ts — browser.json 解析 + defaultArgs 单测(纯函数)。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseBrowserConfig, defaultArgs, browserConfigPath } from '../src/browser-config.ts';
+import { parseBrowserConfig, defaultArgs, browserConfigPath, DEFAULT_PORT, DEFAULT_USER_DATA } from '../src/browser-config.ts';
 
-test('parseBrowserConfig: 合法 JSON 解析', () => {
-  const c = parseBrowserConfig('{ "exe": "/x/msedge.exe", "kind": "edge", "args": ["--no-first-run"] }');
+test('parseBrowserConfig: 合法 JSON 解析(含 port/userData)', () => {
+  const c = parseBrowserConfig('{ "exe": "/x/msedge.exe", "kind": "edge", "args": ["--no-first-run"], "port": 9333, "userData": "/data" }');
   assert.equal(c.exe, '/x/msedge.exe');
   assert.equal(c.kind, 'edge');
   assert.deepEqual(c.args, ['--no-first-run']);
+  assert.equal(c.port, 9333);
+  assert.equal(c.userData, '/data');
 });
 
-test('parseBrowserConfig: args 缺省为空数组', () => {
+test('parseBrowserConfig: port/userData 缺省取默认值', () => {
   const c = parseBrowserConfig('{ "exe": "/x/msedge.exe" }');
   assert.deepEqual(c.args, []);
+  assert.equal(c.port, DEFAULT_PORT);
+  assert.equal(c.userData, DEFAULT_USER_DATA());
+});
+
+test('parseBrowserConfig: 显式 port 非法抛清晰错', () => {
+  assert.throws(() => parseBrowserConfig('{ "exe": "/x", "port": "abc" }'), /port 非法/);
+  assert.throws(() => parseBrowserConfig('{ "exe": "/x", "port": 70000 }'), /port 非法/);
 });
 
 test('parseBrowserConfig: 非 JSON 抛清晰错', () => {

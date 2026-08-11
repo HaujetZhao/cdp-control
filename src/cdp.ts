@@ -9,7 +9,6 @@ import { resolve as pathResolve } from 'node:path';
 import { coreApi } from './api';
 import { logs, cmdListen } from './monitor';
 import { ensureBrowser, killBrowser } from './browser';
-import { PORT } from './transport';
 import { runScript } from './run-script';
 import { runRecipe } from './recipe-runner';
 
@@ -74,10 +73,14 @@ program.command('list').description('确保浏览器就绪并列出所有 page t
 program.command('open').argument('<url>', '要打开的网址').description('新开一个 tab')
   .action(async (url) => { const tid = await api.open(url || 'about:blank'); console.log(`已打开: ${url}\ntargetId: ${tid}`); });
 
-program.command('kill').description(`强制结束 ${PORT} 端口上的浏览器进程并等端口释放(Edge 崩溃自启会重绑,等待确认)`)
+program.command('kill').description('强制结束 browser.json 指定端口上的浏览器进程并等端口释放(无配置则 kill 不生效)')
   .action(async () => {
-    const killed = await api.kill();
-    console.log(killed ? `已强制结束浏览器 (端口 ${PORT} 已释放)` : `端口 ${PORT} 上无浏览器进程`);
+    const r = await api.kill();
+    if (r.reason === 'noConfig') console.log('无 browser.json 配置,kill 不生效');
+    else if (r.reason === 'broken') console.log('browser.json 配置损坏,无法确定端口,kill 不生效');
+    else if (r.ok) console.log(`已强制结束浏览器 (端口 ${r.port} 已释放)`);
+    else if (r.reason === 'stillUp') console.log(`端口 ${r.port} 仍有进程(Edge 可能崩溃自启),kill 未完全生效`);
+    else console.log(`端口 ${r.port} 上无浏览器进程`);
   });
 
 program.command('close').argument('<target>', '目标匹配').description('关闭 tab')
