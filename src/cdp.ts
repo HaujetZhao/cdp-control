@@ -63,8 +63,7 @@ program
 
 program.command('list').description('确保浏览器就绪并列出所有 page tab(含手动开的);第一项为前台 tab(← 前台)')
   .action(async () => {
-    await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销),agent 无需先 ensure 再 list。
-    const list = await api.list();
+    const list = await api.list(); // api.list 已在 api 层前置 ensure(未起自动启动,就绪零开销)。
     console.log(`共 ${list.length} 个 tab(第一项 = 前台):`);
     if (list.length === 0) return;
     const line = (t: any, i: number) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}${i === 0 ? '  ← 前台' : ''}`;
@@ -79,8 +78,7 @@ program.command('close').argument('<target>', '目标匹配').description('关�
 
 program.command('fetch').argument('<url>', '要抓取的网址').description('一次性抓取页面:ensure → 临时开 tab 打开 url → 感知(命中 recipe 输出摘要,否则建树) → 关闭 tab(替代 web fetch MCP)')
   .action(async (url) => {
-    await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销)。
-    const tid = await api.open(url || 'about:blank');
+    const tid = await api.open(url || 'about:blank'); // api.open 已在 api 层前置 ensure。
     let t: any;
     try {
       t = await api.resolve(tid);
