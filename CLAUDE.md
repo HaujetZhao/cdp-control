@@ -92,13 +92,13 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 **折叠页面元素**:基于 selector 规则折叠(保留 ref、可展开、跨会话持久)。注入入口 `inject/fold.ts`(临时折叠/list/clear),CLI `fold`。
 - **文件**:Node `src/folds.ts` 读写 `~/.cdp-control/rules/fold.csv`(`rules-store.ts` seed-once 保证存在;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
 - **五列**:`<id>\t<域名>\t<path>\t<selector>\t<备注>`;id 单调递增不重排;域名通配(精确/`*.suffix`/`suffix.*`);path 为 glob(`*` 含 `/`,空=不限,修同域名跨页错位)。`parseRules` 只认首列为数字的行。
-- **函数**:`loadFolds/addFold/removeFold/matchFolds(hostOf/pathOf/domainMatch/pathMatch)` 纯函数+落盘;`api.view` 按 hostOf+pathOf 过滤注入 `__CDP_ARG__.folds`。
-- **会话临时折叠**:存页面全局 `__cdpFolds`(`lib/fold.ts`),刷新清空;`--save` 落盘由 Node `api.fold` 调 `locateExpr`。
+- **函数**:`loadFolds/matchFolds(hostOf/pathOf/domainMatch/pathMatch)` 纯读;`api.view` 按 hostOf+pathOf 过滤注入 `__CDP_ARG__.folds`。**写入口已移除,持久规则手动编辑 fold.csv**。
+- **会话临时折叠**:存页面全局 `__cdpFolds`(`lib/fold.ts`),刷新清空。持久折叠无命令写入口,手动编辑 fold.csv。
 
 ### ignore-links(链接黑名单)
-**链接去 URL**:命中模式的链接只留文本、去 URL(如知乎 `zhida.zhihu.com/search*` 内部链接,URL 是超长 search 串)。**view 与 article 共用**,CLI `ignore-link`。
+**链接去 URL**:命中模式的链接只留文本、去 URL(如知乎 `zhida.zhihu.com/search*` 内部链接,URL 是超长 search 串)。**view 与 article 共用**。规则文件 `~/.cdp-control/rules/ignore-links.csv` **手动编辑**。
 - **文件**:Node `src/ignore-links.ts` 持久化 `~/.cdp-control/rules/ignore-links.csv`(3 列 `id\tpattern\tnote`,pattern 为 glob 匹配 `hrefForMatch`=hostname+pathname,与 folds 同构)。
-- **纯函数**:`hrefForMatch`/`linkRuleMatch`/`matchLinkBlacklist`/`parseLinkRules`/`addLinkRule`/`removeLinkRule`(单测 `tests/ignore-links.test.ts`)。`globToRegExp` 共享自 `src/url-scope.ts`。
+- **纯函数**:`hrefForMatch`/`linkRuleMatch`/`parseLinkRules`/`loadLinkRules`(单测 `tests/ignore-links.test.ts`;写操作 addLinkRule/removeLinkRule 已随管理命令移除)。`globToRegExp` 共享自 `src/url-scope.ts`。
 - **注入侧匹配**:`src/inject/lib/ignore-links.ts` 的 `linkIgnored(patterns, href)`(浏览器);`api.view`/`api.article` 读 `loadLinkRules()` 的 pattern 数组,经 `__CDP_ARG__.ignoreLinks` 传入。
 - **view 内联合并**:命中黑名单的 `<a>`(含 `span>a` 包装)内联成纯文本并与相邻文本段合并成一句,取**末段文本的 el(ref)**。两种 DOM 编码:① 兄弟 span,由 `mergeTextRuns` + `inlineTextOf`(穿透单子节点 span 包装)合并;② 父自身文本,由 `ordered` 保序 childNodes 组装成片段再合并。粗斜(b/strong)里的 ignore 链接只去 URL。
 - **article**:命中 `linkIgnored` 即 `inlineSeg` 只回文本。
@@ -157,7 +157,7 @@ Node 侧统一 `invoke(target, expr)` 执行注入脚本并解包:成功返回�
 ## 测试
 
 - `tests/*.test.ts` 用 Node 内置 `node:test`+`node:assert/strict`,零运行时依赖。
-- 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/addFold/removeFold,临时 CDP_FOLD_FILE 验证落盘往返)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/matchLinkBlacklist/parseLinkRules + 落盘 + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
+- 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/loadFolds,临时 CDP_FOLD_FILE)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/parseLinkRules + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
 - 注入侧 DOM 相关(buildView/fold/inputInfo、find-entry 穿透 shadow、feedback observer/子树黑名单、recoverRef live 分支)依赖真实 DOM,靠浏览器实测(见 SKILL.md),不写单测。纯函数分支(`formatView` 的 `·屏`/shadow 占位/fold 优先/`inputAttr`、`feedback` 的 `foldTimestampRun`)有单测。
 
 ## 文档分工
