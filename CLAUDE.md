@@ -25,7 +25,7 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 
 **规则是数据非代码,不住 dist**:统一住 `~/.cdp-control/rules`(用户本机符号链接到 `rules/`,规则即根本、运行时读写直接入库),内置默认在 `rules/`(入库,publish 随包),干净环境由 `rules-store.ts` seed-once 拷贝。fold/ignore-links/recipe 全部经此(见「规则存储」)。
 
-**全局 CLI(`npm link`)**:`package.json` 的 `bin.cdp-control` → `dist/cdp.js`(首行 shebang 由 `build.mjs` 给 cdp bundle 加 banner,只加这一次、勿配到 standalone/inject 产物)。`npm link` 后任意目录可敲 `cdp-control`;SKILL.md 全用此命令。`private:true` 不影响 npm link;publish 前翻 private + `files:["dist","rules"]`。
+**全局 CLI(`npm link`)**:`package.json` 的 `bin.cdp-control` → `dist/cdp.js`(首行 shebang 由 `build.mjs` 给 cdp bundle 加 banner,只加这一次、勿配到 standalone/inject 产物)。`npm link` 后任意目录可敲 `cdp-control`;SKILL.md 全用此命令。`private:true` 不影响 npm link;publish 前翻 private + `files:["dist","rules","skills"]`。
 
 ## 源码结构(两层分离)
 
