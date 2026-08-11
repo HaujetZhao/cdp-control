@@ -66,12 +66,12 @@ program.command('list').description('确保浏览器就绪并列出所有 page t
     const list = await api.list(); // api.list 已在 api 层前置 ensure(未起自动启动,就绪零开销)。
     console.log(`共 ${list.length} 个 tab(第一项 = 前台):`);
     if (list.length === 0) return;
-    const line = (t: any, i: number) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}${i === 0 ? '  ← 前台' : ''}`;
+    const line = (t: any, i: number) => `${t.id.slice(0, 8)}  ${t.title || '(无标题)'}  ${t.url}${i === 0 ? '  ← 前台' : ''}`;
     console.log(list.map((t: any, i: number) => `${i + 1}. ${line(t, i)}`).join('\n'));
   });
 
 program.command('open').argument('<url>', '要打开的网址').description('新开一个 tab')
-  .action(async (url) => { const tid = await api.open(url || 'about:blank'); console.log(`已打开: ${url}\ntargetId: ${tid}`); });
+  .action(async (url) => { const tid = await api.open(url || 'about:blank'); console.log(`已打开: ${url}\ntargetId: ${tid.slice(0, 8)}`); });
 
 program.command('kill').description('强制结束 browser.json 指定端口上的浏览器进程并等端口释放(无配置则 kill 不生效)')
   .action(async () => {
@@ -85,6 +85,9 @@ program.command('kill').description('强制结束 browser.json 指定端口上�
 
 program.command('close').argument('<target>', '目标匹配').description('关闭 tab')
   .action(async (tgt) => { const t = await api.resolve(tgt); await api.close(t); console.log(`已关闭: ${t.title || t.url}`); });
+
+program.command('activate').argument('<target>', '目标匹配').description('把指定 tab 拉到前台')
+  .action(async (tgt) => { const t = await api.resolve(tgt); await api.activate(t); console.log(`已激活: ${t.title || t.url}`); });
 
 program.command('fetch').argument('<url>', '要抓取的网址').description('一次性抓取页面:ensure → 临时开 tab 打开 url → 感知(命中 recipe 输出摘要,否则建树) → 关闭 tab(替代 web fetch MCP)')
   .action(async (url) => {
@@ -227,7 +230,7 @@ function printFeedback(fb: any): void {
   }
   if (fb.tabs?.opened?.length) {
     out.push('新开 tab:');
-    for (const t of fb.tabs.opened) out.push('  · ' + `${t.title || t.url} [${t.id}]`);
+    for (const t of fb.tabs.opened) out.push('  · ' + `${t.title || t.url} [${t.id.slice(0, 8)}]`);
   }
   if (fb.tabs?.closed?.length) {
     out.push('关闭 tab:');
@@ -235,7 +238,7 @@ function printFeedback(fb: any): void {
   }
   if (fb.tabs?.navigated?.length) {
     out.push('跳转 tab:');
-    for (const n of fb.tabs.navigated) out.push('  · ' + `${n.to} [${n.id}]` + (n.from ? ` (原 ${n.from})` : ''));
+    for (const n of fb.tabs.navigated) out.push('  · ' + `${n.to} [${n.id.slice(0, 8)}]` + (n.from ? ` (原 ${n.from})` : ''));
   }
   if (out.length) console.log(out.join('\n'));
 }
@@ -314,8 +317,8 @@ feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、
 feedbackOpt(targetOpt(targetCmd('hover', '鼠标移到元素上'))).argument('<target>', 'ref 序号或 selector(全数字=ref)')
   .action(async (t: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.hover(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已悬停: ${argLabel(arg)}`, r); printFeedback(r?.feedback); });
 
-targetCmd('shot', '截图').option('-f, --file <file>', '输出文件')
-  .action(async (opts) => { const file = await api.shot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });
+targetCmd('screenshot', '截图').option('-f, --file <file>', '输出文件')
+  .action(async (opts) => { const file = await api.screenshot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });
 
 targetCmd('logs', '读 target 控制台日志(常驻 daemon,支持过滤)')
   .option('--level <level>', '过滤级别,如 error,warn')

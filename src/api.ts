@@ -85,6 +85,13 @@ export async function close(target: Target): Promise<void> {
   });
 }
 
+/** 把 target 拉到前台(焦点切到该 tab)。 */
+export async function activate(target: Target): Promise<void> {
+  await withBrowser(async (ws) => {
+    await send(ws, 'Target.activateTarget', { targetId: target.id });
+  });
+}
+
 /** 导航 target 到 url。 */
 export async function navigate(target: Target, url: string): Promise<void> {
   await withPage(target, async (ws) => {
@@ -310,12 +317,12 @@ export async function waitForFn(target: Target, expression: string, opts?: any):
 }
 
 /** 截图 target 页面到文件,返回文件路径。写文件在关闭 ws 之后做。 */
-export async function shot(target: Target, file?: string): Promise<string> {
+export async function screenshot(target: Target, file?: string): Promise<string> {
   const r = await withPage(target, async (ws) => {
     return await send(ws, 'Page.captureScreenshot', { format: 'png' });
   });
   if (!r.data) throw new Error('截图失败:无数据');
-  const out = file || `shot_${Date.now()}.png`;
+  const out = file || `screenshot_${Date.now()}.png`;
   writeFileSync(pathResolve(out), Buffer.from(r.data, 'base64'));
   return out;
 }
@@ -365,8 +372,8 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 const coreApi = {
   list: async () => { await ensureBrowser(); return list(); },
   resolve: async (match?: string) => { await ensureBrowser(); return resolve(match); },
-  open, close, navigate, eval: evaluate,
-  view, locate, info, article, read, ignoreLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
+  open, close, activate, navigate, eval: evaluate,
+  view, locate, info, article, read, ignoreLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, screenshot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

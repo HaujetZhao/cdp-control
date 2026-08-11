@@ -110,6 +110,7 @@ cdp-control run "./scripts/你的脚本.js"
 | `list` | 确保浏览器就绪并列出 page tab,先报总数 |
 | `open <url>` | 新开 tab,返回 targetId |
 | `close <target>` | 关闭 tab |
+| `activate <target>` | 把指定 tab 拉到前台 |
 | `kill` | 强制结束 `browser.json` 指定端口上的浏览器进程并等端口释放;无配置则 kill 不生效(浏览器未起时其它命令自动拉起,此命令相反) |
 | `fetch <url>` | 一次性抓取:临时开 tab→等渲染→感知(命中 recipe 输出摘要,否则整页树,整页首次自动 scroll-to-load)→关 tab,输出含 `[ref]`,不残留 tab |
 | `navigate <url>` | 导航 |
@@ -124,7 +125,7 @@ cdp-control run "./scripts/你的脚本.js"
 | `ignore-link add/list/rm` | 管理 **ignore-links 黑名单**(glob 匹配 hostname+pathname)。view:命中 a 内联合并取末段 ref;article:命中只留文本去 URL。如 `zhida.zhihu.com/search*` |
 | `press-key <键> [...]` | 真实按键/组合键,如 Enter/Tab/Ctrl+Shift+A(含滚动如 PageDown)。默认带反馈 |
 | `hover <target> [--ancestor <k>] [...]` | 鼠标移到元素(触发 mouseover/mouseenter)。默认带反馈 |
-| `shot [--file out.png]` | 截图 |
+| `screenshot [--file out.png]` | 截图 |
 | `logs [--level error,warn] [--since <ms>] [--json]` | 读控制台日志 |
 | `run <脚本文件>` | 执行自动化脚本(全局 `cdp` API,可顶层 await;**返回非 undefined 则打印**) |
 
@@ -171,7 +172,7 @@ await cdp.waitFor(t, '#btn');
 await cdp.fill(t, '#box', '值');
 await cdp.click(t, '#btn');
 console.log(await cdp.eval(t, 'document.title'));
-await cdp.shot(t, 'out.png');
+await cdp.screenshot(t, 'out.png');
 await cdp.close(t);
 ```
 
@@ -184,6 +185,7 @@ await cdp.close(t);
 | `resolve(匹配?)` | `target` 对象 |
 | `open(url)` | 字符串 `targetId`(⚠️ 非对象) |
 | `close(target)` | — |
+| `activate(target)` | — |
 | `fetchPage(url)` | `string[]` 视图 lines(临时开 tab→等加载→view→关 tab) |
 | `navigate(target, url)` | — |
 | `eval(target, js, timeout?)` | returnByValue 值 |
@@ -197,7 +199,7 @@ await cdp.close(t);
 | `getFocus(target)` | 焦点元素信息或 null |
 | `pressKey(target, "Ctrl+Shift+A", opts?)` | `{ok, feedback?}` |
 | `hover(target, selector \| {ref:12}, opts?)` | `{ok, feedback?}` |
-| `shot(target, file?)` | 截图文件路径 |
+| `screenshot(target, file?)` | 截图文件路径 |
 | `logs(target, {level,since})` | 控制台日志数组(自动拉起 daemon) |
 
 ## 常见错误
