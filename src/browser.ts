@@ -5,7 +5,7 @@
  * 依赖 transport + monitor + browser-discover + browser-config。不再依赖 api(无环)。
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { getJson, PORT } from './transport';
@@ -113,4 +113,42 @@ export async function ensureBrowser(): Promise<EnsureResult> {
   const info = await coldStart();
   console.error(`已自动启动浏览器: ${describeBrowser(info.exe)} (端口 ${PORT})`);
   return { ready: true, started: true, browser: describeBrowser(info.exe), userData: info.userData };
+}
+
+/** 找出监听 PORT 的进程 pid(win 走 netstat,posix 走 lsof);无则 null。 */
+function pidOnPort(port: number): number | null {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' });
+      for (const line of out.split('\n')) {
+        if (line.includes(`:${port}`) && line.includes('LISTENING')) {
+          const pid = Number(line.trim().split(/\s+/).pop());
+          if (pid) return pid;
+        }
+      }
+    } else {
+      const out = execFileSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8' }).trim();
+      if (out) return Number(out.split('\n')[0]);
+    }
+  } catch {}
+  return null;
+}
+
+/** 强制结束 9222(PORT)上监听的浏览器进程,并等端口释放。返回是否已无监听。 */
+export async function killBrowser(): Promise<boolean> {
+  const port = Number(PORT);
+  const pid = pidOnPort(port);
+  if (pid) {
+    try {
+      if (process.platform === 'win32') execFileSync('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore' });
+      else process.kill(pid, 'SIGKILL');
+    } catch {}
+  }
+  // 等端口真正释放(最多 ~3s),Edge 可能崩溃自启重绑端口
+  const t0 = Date.now();
+  while (Date.now() - t0 < 3000) {
+    if (pidOnPort(port) === null) return true;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return pidOnPort(port) === null;
 }

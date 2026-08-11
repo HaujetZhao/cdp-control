@@ -8,11 +8,12 @@ import { readFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { coreApi } from './api';
 import { logs, cmdListen } from './monitor';
-import { ensureBrowser } from './browser';
+import { ensureBrowser, killBrowser } from './browser';
+import { PORT } from './transport';
 import { runScript } from './run-script';
 import { runRecipe } from './recipe-runner';
 
-const api: any = { ...coreApi, logs, ensure: ensureBrowser };
+const api: any = { ...coreApi, logs, ensure: ensureBrowser, kill: killBrowser };
 // recipe:暴露给 run 脚本显式取站点摘要(命中返回 {lines},未命中 null)。
 api.recipe = async (target: any, opts: any) => runRecipe(target.url, api, target, opts);
 
@@ -72,6 +73,12 @@ program.command('list').description('确保浏览器就绪并列出所有 page t
 
 program.command('open').argument('<url>', '要打开的网址').description('新开一个 tab')
   .action(async (url) => { const tid = await api.open(url || 'about:blank'); console.log(`已打开: ${url}\ntargetId: ${tid}`); });
+
+program.command('kill').description(`强制结束 ${PORT} 端口上的浏览器进程并等端口释放(Edge 崩溃自启会重绑,等待确认)`)
+  .action(async () => {
+    const killed = await api.kill();
+    console.log(killed ? `已强制结束浏览器 (端口 ${PORT} 已释放)` : `端口 ${PORT} 上无浏览器进程`);
+  });
 
 program.command('close').argument('<target>', '目标匹配').description('关闭 tab')
   .action(async (tgt) => { const t = await api.resolve(tgt); await api.close(t); console.log(`已关闭: ${t.title || t.url}`); });
