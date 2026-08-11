@@ -15,8 +15,8 @@ export interface Target {
   webSocketDebuggerUrl?: string;
 }
 
-export async function getJson(path: string): Promise<any> {
-  const r = await fetch(`${BASE}${path}`);
+export async function getJson(path: string, timeoutMs = 5000): Promise<any> {
+  const r = await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
   if (!r.ok) throw new Error(`HTTP ${r.status} GET ${path}`);
   return r.json();
 }
