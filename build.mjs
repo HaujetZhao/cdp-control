@@ -11,7 +11,7 @@
  */
 import { build } from 'esbuild';
 import { execSync } from 'node:child_process';
-import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,24 +28,8 @@ async function main() {
   console.log('🔍 tsc --noEmit (类型检查)…');
   execSync('npx tsc --noEmit', { stdio: 'inherit', cwd: __dirname });
 
-  // —— Node 侧:转译 CJS,不打包 ——
-  // 源码跨文件用 `.ts` 扩展名(便于 strip-types 单测直跑),但 standalone 转译产物是 `.js`;
-  // esbuild 不打包时原样保留 require 路径,故产物里 `require('./x.ts')` 需改写成 `./x.js`。
-  const nodeEntries = readdirSync(src).filter(f => f.endsWith('.ts') && f !== 'cdp.ts');
-  if (nodeEntries.length) {
-    console.log(`▶ Node 侧(转译):${nodeEntries.join(', ')} → dist/`);
-    await build({
-      entryPoints: nodeEntries.map(f => join(src, f)),
-      outdir: dist, bundle: false, format: 'cjs', platform: 'node', target: 'node21', sourcemap: false,
-    });
-    // 改写 standalone 产物里的 .ts 相对 require 为 .js(esbuild 不打包不改路径)。
-    for (const f of nodeEntries.map(n => n.replace(/\.ts$/, '.js'))) {
-      const p = join(dist, f);
-      if (!existsSync(p)) continue;
-      writeFileSync(p, readFileSync(p, 'utf8').replace(/require\("(\.[^"]+)\.ts"\)/g, 'require("$1.js")'));
-    }
-  }
-  console.log('▶ Node 侧(入口 bundle): cdp.ts → dist/cdp.js');
+  // —— Node 侧:cdp.ts bundle 为唯一 Node 产物(自包含全部依赖,无相对 require)——
+  console.log('▶ Node 侧:cdp.ts → dist/cdp.js');
   await build({
     entryPoints: [join(src, 'cdp.ts')],
     outfile: join(dist, 'cdp.js'),
