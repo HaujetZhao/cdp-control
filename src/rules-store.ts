@@ -1,24 +1,24 @@
 /**
  * rules-store.ts — 规则持久化的统一目录与 seed-once(Node 侧)。
  *
- * 规则分两种生命周期,分别落两处:
- * - **运行时可写数据**(fold.csv / ignore-links.csv):住 skill 根 `rules/`(gitignore,运行时读写),
- *   内置默认在 `src/rules/`(入库、权威),seed-once 首跑缺文件时拷默认,已存在不覆盖。
- * - **作者代码**(recipe,`src/rules/recipes/*.js`):直接读 git 权威,不做 gitignored 镜像
- *   (曾 seed 到 `rules/recipes/`,两份手动同步必然漂移——见 2026-08 实测 _lib.js 漂移 22 字节)。
+ * 规则统一住 `~/.cdp-control/rules`(数据 home,spec「数据归用户目录」):用户本机它是指向
+ * `src/rules/` 的符号链接(用户规则=根本规则,运行时读写直接落 git 工作树的 src/rules),干净环境
+ * 是真实目录,seed-once 首跑缺文件时从包内 `src/rules/` 拷默认。recipe 作者代码直接读 git 权威、
+ * 不做镜像(曾 seed 到 `rules/recipes/` 双份必漂移——见 2026-08 实测 _lib.js 漂移 22 字节)。
  *
- * 注意 `__dirname`:src(测试)与 dist(编译)同为项目根的**直接子目录**,故 `join(__dirname,'..')`
- * 在两种环境下都解析到项目根,`rules/` 与 `src/rules/` 的定位一致。
+ * 默认定位:`rulesDir()` 用 homedir(不依赖 __dirname,故 src/测试与 dist/编译一致);
+ * `srcRulesDir()` 仍用 __dirname 定位包内 `src/rules/`(publish 随包,seed 源稳定)。
  */
 import { existsSync, copyFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-/** 实时规则目录(默认 skill 根 rules/,可用 CDP_RULES_DIR 覆盖用于测试)。 */
+/** 实时规则目录(默认 ~/.cdp-control/rules,可用 CDP_RULES_DIR 覆盖用于测试)。 */
 export function rulesDir(): string {
-  return process.env.CDP_RULES_DIR || join(__dirname, '..', 'rules');
+  return process.env.CDP_RULES_DIR || join(homedir(), '.cdp-control', 'rules');
 }
 
-/** 内置默认源(src/rules/)。测试用 CDP_RULES_DEFAULT_DIR 覆盖(避免依赖 __dirname,strip-types 下无 __dirname)。 */
+/** 内置默认源(包内 src/rules/)。测试用 CDP_RULES_DEFAULT_DIR 覆盖(避免依赖 __dirname,strip-types 下无 __dirname)。 */
 function srcRulesDir(): string {
   return process.env.CDP_RULES_DEFAULT_DIR || join(__dirname, '..', 'src', 'rules');
 }

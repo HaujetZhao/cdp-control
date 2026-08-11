@@ -1,7 +1,8 @@
-# cdp-browser-control 开发者说明
+# cdp-control 开发者说明
 
-> 面向**开发者**(维护本 skill 源码的人)。**agent 使用本 skill 时只需要 `SKILL.md`**。
-> 运行入口:`node dist/cdp.js`(需先构建)。
+> 面向**开发者**(维护本 skill 源码的人)。**agent 使用本 skill 时只需要 `skills/cdp-control/SKILL.md`**。
+> 运行入口:`cdp-control`(全局命令,`npm link` 后任意目录可调;等效 `node dist/cdp.js`)。
+> 数据归用户目录:`rulesDir()`→`~/.cdp-control/rules`(本机符号链接指向 `src/rules/`),浏览器用户数据→`~/.cdp-control/user-data`。
 
 ## 构建
 
@@ -13,16 +14,18 @@ npm run build    # tsc --noEmit + esbuild(编译 + 打包注入脚本)
 npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
 ```
 
-`rules/`(skill 根,gitignore)是实时规则目录,首次跑 fold/view/recipe 时由 `rules-store.ts` seed-once 从 `src/rules/` 生成;**build 不清不覆盖**(修 clobber)。
+实时规则目录 = `~/.cdp-control/rules`(数据 home):本机它是**符号链接指向 `src/rules/`**(用户规则=根本规则,运行时读写直接落 git 工作树的 src/rules,**无覆盖问题**);干净环境是真目录,`rules-store.ts` seed-once 缺文件时从 `src/rules/` 拷默认。**build 不清不覆盖**(修 clobber)。
 
 产物:
 ```
-dist/cdp.js          入口 bundle(commander+全部 src,自包含,拷走 dist 即可运行)
+dist/cdp.js          入口 bundle(commander+全部 src,自包含;首行 shebang,经 package.json `bin` → 全局 `cdp-control`)
 dist/*.js            其余 Node 侧(api/transport/monitor/browser/inject-loader/keys)
 dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 IIFE)
 ```
 
-**规则是数据非代码,不住 dist**:统一住 skill 根 `rules/`(gitignore,运行时读写,build 不清不覆盖),内置默认在 `src/rules/`(入库),由 `rules-store.ts` seed-once 拷贝。fold/ignore-links/recipe 全部经此(见「规则存储」)。
+**规则是数据非代码,不住 dist**:统一住 `~/.cdp-control/rules`(用户本机符号链接到 `src/rules/`,规则即根本、运行时读写直接入库),内置默认在 `src/rules/`(入库,publish 随包),干净环境由 `rules-store.ts` seed-once 拷贝。fold/ignore-links/recipe 全部经此(见「规则存储」)。
+
+**全局 CLI(`npm link`)**:`package.json` 的 `bin.cdp-control` → `dist/cdp.js`(首行 shebang 由 `build.mjs` 给 cdp bundle 加 banner,只加这一次、勿配到 standalone/inject 产物)。`npm link` 后任意目录可敲 `cdp-control`;SKILL.md 全用此命令。`private:true` 不影响 npm link;publish 前翻 private + `files:["dist","src/rules"]`。
 
 ## 源码结构(两层分离)
 
@@ -31,6 +34,7 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 | `src/*.ts` | Node 侧(CDP/CLI/api/纯函数;`folds.ts` 读写 fold 规则) | Node | 入口 `cdp.ts` bundle → `dist/cdp.js`;其余转译 CJS |
 | `src/inject/*.ts` | 注入浏览器执行的 JS(入口) | 浏览器(DOM lib) | esbuild bundle 成 IIFE → `dist/inject/` |
 | `src/inject/lib/` | 注入侧共享模块 | 浏览器 | 打进各入口 |
+| `skills/cdp-control/SKILL.md` | agent 用法文档(极薄,只教调 `cdp-control`);`~/.claude/skills/cdp-control` 符号链接指向它 | — | 不动 |
 
 依赖单向无环:`transport ← inject-loader/api/folds ← monitor/browser ← cdp`。定位收敛为两套:**ref(前台索引)+ selector(后台匹配)**。
 
@@ -76,14 +80,14 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 
 ### fold 折叠规则
 **折叠页面元素**:基于 selector 规则折叠(保留 ref、可展开、跨会话持久)。注入入口 `inject/fold.ts`(临时折叠/list/clear),CLI `fold`。
-- **文件**:Node `src/folds.ts` 读写 `rules/fold.csv`(`rules-store.ts` seed-once 保证存在;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
+- **文件**:Node `src/folds.ts` 读写 `~/.cdp-control/rules/fold.csv`(`rules-store.ts` seed-once 保证存在;测试 `CDP_FOLD_FILE` 覆盖)。tab 分隔(selector 含空格),行首 `#` 注释。
 - **五列**:`<id>\t<域名>\t<path>\t<selector>\t<备注>`;id 单调递增不重排;域名通配(精确/`*.suffix`/`suffix.*`);path 为 glob(`*` 含 `/`,空=不限,修同域名跨页错位)。`parseRules` 只认首列为数字的行。
 - **函数**:`loadFolds/addFold/removeFold/matchFolds(hostOf/pathOf/domainMatch/pathMatch)` 纯函数+落盘;`api.view` 按 hostOf+pathOf 过滤注入 `__CDP_ARG__.folds`。
 - **会话临时折叠**:存页面全局 `__cdpFolds`(`lib/fold.ts`),刷新清空;`--save` 落盘由 Node `api.fold` 调 `locateExpr`。
 
 ### ignore-links(链接黑名单)
 **链接去 URL**:命中模式的链接只留文本、去 URL(如知乎 `zhida.zhihu.com/search*` 内部链接,URL 是超长 search 串)。**view 与 article 共用**,CLI `ignore-link`。
-- **文件**:Node `src/ignore-links.ts` 持久化 `rules/ignore-links.csv`(3 列 `id\tpattern\tnote`,pattern 为 glob 匹配 `hrefForMatch`=hostname+pathname,与 folds 同构)。
+- **文件**:Node `src/ignore-links.ts` 持久化 `~/.cdp-control/rules/ignore-links.csv`(3 列 `id\tpattern\tnote`,pattern 为 glob 匹配 `hrefForMatch`=hostname+pathname,与 folds 同构)。
 - **纯函数**:`hrefForMatch`/`linkRuleMatch`/`matchLinkBlacklist`/`parseLinkRules`/`addLinkRule`/`removeLinkRule`(单测 `tests/ignore-links.test.ts`)。`globToRegExp` 共享自 `src/url-scope.ts`。
 - **注入侧匹配**:`src/inject/lib/ignore-links.ts` 的 `linkIgnored(patterns, href)`(浏览器);`api.view`/`api.article` 读 `loadLinkRules()` 的 pattern 数组,经 `__CDP_ARG__.ignoreLinks` 传入。
 - **view 内联合并**:命中黑名单的 `<a>`(含 `span>a` 包装)内联成纯文本并与相邻文本段合并成一句,取**末段文本的 el(ref)**。两种 DOM 编码:① 兄弟 span,由 `mergeTextRuns` + `inlineTextOf`(穿透单子节点 span 包装)合并;② 父自身文本,由 `ordered` 保序 childNodes 组装成片段再合并。粗斜(b/strong)里的 ignore 链接只去 URL。
@@ -91,9 +95,9 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 
 ### 规则存储(rules-store)+ url-scope
 **规则分两种生命周期、两处存储**:
-- **运行时可写数据**(fold.csv/ignore-links.csv):住 skill 根 `rules/`(gitignore,运行时读写),`src/rules-store.ts` **seed-once**(缺文件从 `src/rules/` 拷默认;已存在不覆盖,修旧 clobber bug)。
+- **运行时可写数据**(fold.csv/ignore-links.csv):住 `~/.cdp-control/rules`(数据 home)。本机是符号链接指向 `src/rules/`(规则=根本,读写直落 git 工作树,无覆盖);干净环境是真目录,`src/rules-store.ts` **seed-once** 缺文件时从 `src/rules/` 拷默认(已存在不覆盖,修旧 clobber bug)。
 - **作者代码(recipe)**:`src/rules/recipes/*.js` **直接读 git 权威**、不做 gitignored 镜像(曾 seed 到 `rules/recipes/` 双份手动同步必然漂移,2026-08 实测 `_lib.js` 差 22 字节)。recipe-runner 扫 `srcRecipesDir()`(经 `CDP_RULES_DEFAULT_DIR` 覆盖)。
-`rulesDir()` 默认 `join(__dirname,'..','rules')`;测试用 `CDP_RULES_DIR`/`CDP_RULES_DEFAULT_DIR` 覆盖(recipe 测试用后者指临时目录)。
+`rulesDir()` 默认 `join(homedir(), '.cdp-control', 'rules')`;测试用 `CDP_RULES_DIR`/`CDP_RULES_DEFAULT_DIR` 覆盖(recipe 测试用后者指临时目录)。
 **共享工具 `src/url-scope.ts`**(纯函数零依赖):`globToRegExp`(唯一实现,消 3 份重复)+ `hostOf`/`pathOf` + `urlMatches`。fold 用 hostOf/pathOf 拆两维正交;ignore-links 用拼接串单 glob;recipe 作用域用 urlMatches。
 
 ### recipe(站点抽取配方)
@@ -148,7 +152,7 @@ Node 侧统一 `invoke(target, expr)` 执行注入脚本并解包:成功返回�
 
 ## 文档分工
 
-- `SKILL.md`:面向 **agent**,只讲怎么调 `dist/cdp.js`,不含构建/源码结构。
+- `skills/cdp-control/SKILL.md`:面向 **agent**(极薄),只教怎么调 `cdp-control`,不含构建/源码结构。`~/.claude/skills/cdp-control` 符号链接指向它。
 - `CLAUDE.md`(本文件):面向 **开发者**,含构建、源码结构、注入契约、测试。
 - `docs/superpowers/specs/`:设计文档。
 

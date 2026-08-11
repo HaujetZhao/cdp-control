@@ -1,13 +1,13 @@
 ---
-name: cdp-browser-control
-description: 控制本地浏览器——列出/打开/关闭/导航页面、提取元素、点击、填表、执行 JS、截图、读控制台日志。自动化优先写成脚本用 `run` 一次执行。核心模型:view 感知页面(命中站点 recipe 输出聚焦摘要,否则整页文本+结构紧凑树,生成可操作 ref),ref 是操作索引(会话句柄)。首屏外没加载(如评论区)用 `view --scroll-to-load` 先滚动再建树。任何用 ref 的命令失效自动自愈。长页噪声用 fold 持久规则(手动编辑 `rules/fold.csv`,类 uBlock);已知站点聚焦摘要用 `rules/recipes/` 站点 recipe。
+name: cdp-control
+description: 控制本地浏览器——列出/打开/关闭/导航页面、提取元素、点击、填表、执行 JS、截图、读控制台日志。自动化优先写成脚本用 `run` 一次执行。核心模型:view 感知页面(命中站点 recipe 输出聚焦摘要,否则整页文本+结构紧凑树,生成可操作 ref),ref 是操作索引(会话句柄)。首屏外没加载(如评论区)用 `view --scroll-to-load` 先滚动再建树。任何用 ref 的命令失效自动自愈。长页噪声用 fold 持久规则(手动编辑 `~/.cdp-control/rules/fold.csv`,类 uBlock);已知站点聚焦摘要用 `~/.cdp-control/rules/recipes/` 站点 recipe。
 ---
 
 # CDP 浏览器控制
 
 ## Overview
 
-本 Skill 目录有零依赖 Node 脚本 `dist/cdp.js`,连 Chrome/Edge 的 CDP 端口(默认 9222),取代 chrome-devtools MCP。核心价值:**能看到并操作手动打开的 tab**(MCP 因 Puppeteer attach 竞态会漏看)。
+`cdp-control` 连 Chrome/Edge 的 CDP 端口(默认 9222),取代 chrome-devtools MCP。核心价值:**能看到并操作手动打开的 tab**(MCP 因 Puppeteer attach 竞态会漏看)。
 
 **核心模型**:`view` 感知(整页 body 建紧凑树+结构,给可操作元素标 `[ref=i]`);`ref` 是操作索引(会话句柄,存 `window.__cdpRefs`,刷新失效、每次 view 重排)。
 
@@ -25,13 +25,13 @@ description: 控制本地浏览器——列出/打开/关闭/导航页面、提�
 ## 调用方式
 
 ```bash
-node "<本 SKILL 所在目录>/dist/cdp.js" <子命令> [参数]
-node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
+cdp-control <子命令> [参数]
+cdp-control run "./scripts/你的脚本.js"
 ```
 
-浏览器就绪:CDP 未起则自动探测默认浏览器(优先 Edge,其次 Chrome),独立用户数据目录启动(默认 `~/.cdp-browser`,`CDP_USER_DATA` 覆盖),轮询等 ready(≤15s)。冷启动复用首个空白 tab,热启动新开 tab。
+浏览器就绪:CDP 未起则自动探测默认浏览器(优先 Edge,其次 Chrome),独立用户数据目录启动(默认 `~/.cdp-control/user-data`,`CDP_USER_DATA` 覆盖),轮询等 ready(≤15s)。冷启动复用首个空白 tab,热启动新开 tab。
 
-**脚本放置**:写到**当前项目根**(或 `scripts`/`tmp`),不写进 skill 目录;用 `dist/cdp.js` 绝对路径在项目根运行(`run` 的读写以 cwd 为基准,输出落项目根)。别 `cd` 进 skill 目录。脚本环境只有全局 `cdp` + 白名单 `require`(`os/path/fs/child_process/crypto/util/stream/url`);临时路径用 `path.join(os.tmpdir(), name)`,勿用 `/tmp/xx`(Windows 解析成盘根 ENOENT)。
+**脚本放置**:写到**当前项目根**(或 `scripts`/`tmp`),用 `cdp-control run <文件>` 在项目根运行(`run` 的读写以 cwd 为基准,输出落项目根)。脚本环境只有全局 `cdp` + 白名单 `require`(`os/path/fs/child_process/crypto/util/stream/url`);临时路径用 `path.join(os.tmpdir(), name)`,勿用 `/tmp/xx`(Windows 解析成盘根 ENOENT)。
 
 ## 感知页面(view)
 
@@ -70,13 +70,13 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 **ignore-links 链接黑名单**:正文里的**词汇释义内部链接**(如知乎 `zhida.zhihu.com/search?q=词`)URL 是超长 search 串、无跳转价值,会淹没文章/视图。用 `ignore-link add <glob>`(匹配 hostname+pathname)把这类模式加进持久黑名单,**view 与 article 都生效**:
 - **view**:命中黑名单的 `<a>` 内联成纯文本,并与相邻文本段合并成一句(取末段 ref)——如 `设立[漕运总督]，这世上` 合并为 `设立漕运总督，这世上`;正文不再被超长链接拆散、也不再是独立的可点链接(ref 仍是末段文本的元素)。
 - **article**:命中就**只留文本、去 URL**(词保留、链接丢)。
-默认内置 `zhida.zhihu.com/search*`;`ignore-link list/rm` 管理,存 `rules/ignore-links.csv`(手动编辑或命令,seed 自 `src/rules/`)。
+默认内置 `zhida.zhihu.com/search*`;`ignore-link list/rm` 管理,存 `~/.cdp-control/rules/ignore-links.csv`(手动编辑或命令,seed 自包内 `src/rules/`)。
 
 **图例**:整页 view 顶部有一行 `#` 注释图例,解释 `[ref=i]`(可操作索引)、`[ref=i,visible]`(当前视口内)、`~"…"`(聚合文本)、`▸`(已折叠)、`[shadow]`(shadow DOM)——Agent 读取时跳过 `#` 行即可,不会误当页面内容。无文本图标按钮(点赞/分享等)自动用 `aria-label/title` 兜底显示功能。
 
 **整页去噪(`fold` 持久规则,类 uBlock)**:长页整页 view 常混入导航/推荐/广告等噪声 ref。用 `fold` 把区域**折叠成一行**(`▸ [ref=i] <备注>`,保留 ref 可展开),跨会话持久。
 
-**规则**:存 `rules/fold.csv`(实时,seed 自 `src/rules/fold.csv`),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`,view 时自动加载。
+**规则**:存 `~/.cdp-control/rules/fold.csv`(实时,seed 自包内 `src/rules/fold.csv`),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`,view 时自动加载。
 
 **站点聚焦摘要(`recipe`)**:已知站点可写一个 recipe(`rules/recipes/<site>.js`)把整页**替换成聚焦摘要**(文本 + `[ref=N]`),供 agent 聚焦读。裸 `view`(无建树意图)命中 recipe 就输出摘要;要原始树用 `view --tree`(或任何 `[ref]`/`--selector-file`/`--visible-only`/`--scroll-*` 都强制树)。`fetch <url>` 同样命中 recipe。
 - `<id>` 单调递增不重排,新规则取 max+1;只认首列为数字的行。
@@ -127,7 +127,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 | `logs [--level error,warn] [--since <ms>] [--json]` | 读控制台日志 |
 | `run <脚本文件>` | 执行自动化脚本(全局 `cdp` API,可顶层 await;**返回非 undefined 则打印**) |
 
-环境变量:`CDP_HOST`/`CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(daemon,默认 9333)、`CDP_USER_DATA`(默认 `~/.cdp-browser`)、`CDP_RULES_DIR`(实时规则目录,默认 skill 根 `rules/`)、`CDP_FOLD_FILE`/`CDP_IGNORE_LINKS_FILE`(单文件路径覆盖,测试用)。
+环境变量:`CDP_HOST`/`CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(daemon,默认 9333)、`CDP_USER_DATA`(默认 `~/.cdp-control/user-data`)、`CDP_RULES_DIR`(实时规则目录,默认 `~/.cdp-control/rules`)、`CDP_FOLD_FILE`/`CDP_IGNORE_LINKS_FILE`(单文件路径覆盖,测试用)。
 
 **recipe 编写**:`src/rules/recipes/<site>.js`(作者代码直接住 git,单一来源)一文件一站点,导出**规则数组** `module.exports = [{ name, scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }, …]`。`scope` 可为字符串或数组(一抽取服务多 URL 形态);同文件多元素=同站点多布局。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.read` 展开再读、`cdp.eval` 按站点 selector 抓结构)。**三个引擎原语替你接管可复用/易错部分**:
 - **只读探针 `window.__cdpProbe`**(view 建树后自动注入):eval 里 `const { refOf, text } = window.__cdpProbe`,`refOf(el)` 反查已建树 ref(未命中 `null`,绝不按需注册)。不再手抄 refOf 样板。
@@ -138,7 +138,7 @@ node "<本 SKILL 所在目录>/dist/cdp.js" run "./scripts/你的脚本.js"
 
 ## 命令示例(真实流程)
 
-> 以下 `cdp` 均指 `node "<本 SKILL 所在目录>/dist/cdp.js"`。真实流程照"打开→感知→点击→核对落点/结果";CLI 直接传数字 ref,脚本 API 才用 `{ref:n}`。
+> 以下 `cdp` 均指 `cdp-control`。真实流程照"打开→感知→点击→核对落点/结果";CLI 直接传数字 ref,脚本 API 才用 `{ref:n}`。
 
 ```bash
 cdp open "https://www.zhihu.com/"                 # 开页
@@ -150,7 +150,7 @@ cdp click 36 --target "BV1..."                    # 点赞;反馈回文本变化
 
 ## 读控制台日志
 
-`dist/cdp.js` 用常驻 daemon 给每个页面注入监控脚本,把日志存进 `window.__cdpLogs`,`logs` 再 eval 读出来——**保留对象嵌套结构与调用链**(直接监听 CDP 事件只拿描述文本)。核心价值:抓到手动操作期间日志、跨命令累计、刷新后自动补装、支持过滤。关键机制 `Page.addScriptToEvaluateOnNewDocument` 注册在 tab 会话,每次 document 创建(含刷新)先跑监控脚本。
+`cdp-control` 用常驻 daemon 给每个页面注入监控脚本,把日志存进 `window.__cdpLogs`,`logs` 再 eval 读出来——**保留对象嵌套结构与调用链**(直接监听 CDP 事件只拿描述文本)。核心价值:抓到手动操作期间日志、跨命令累计、刷新后自动补装、支持过滤。关键机制 `Page.addScriptToEvaluateOnNewDocument` 注册在 tab 会话,每次 document 创建(含刷新)先跑监控脚本。
 
 - **自动装**:`open`/`list`/`logs` 自动拉起 daemon,轮询给每个 tab 注册监控;`logs` 本身幂等补种。
 - **读**:`logs [--target <匹配>] [--level error,warn] [--since <ms>] [--json]`。`--level` 逗号分隔(debug/log/info/warn/error);未捕获异常归 `error`。默认人类可读 `[HH:MM:SS][level] args`;`--json` 完整结构(嵌套对象+`stack`)。

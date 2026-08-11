@@ -51,6 +51,8 @@ async function main() {
     outfile: join(dist, 'cdp.js'),
     bundle: true, format: 'cjs', platform: 'node', target: 'node21', sourcemap: false,
     external: ['node:fs', 'node:path'],
+    // 只给 cdp bundle 加 shebang,支持 `npm link` 全局直接执行 cdp-control(dist 每次重建覆盖)。
+    banner: { js: '#!/usr/bin/env node' },
     logLevel: 'info',
   });
 

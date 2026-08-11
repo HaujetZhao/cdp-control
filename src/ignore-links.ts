@@ -3,7 +3,7 @@
  * 命中黑名单的链接在 article/view 里**只留文本、去 URL**(如知乎 `zhida.zhihu.com/search?...` 词汇释义内部链接,
  * URL 是超长 search 串、无跳转价值,文本才是正文里的词)。跨会话持久。
  *
- * 文件格式(csv,tab 分隔,3 列,rules/ignore-links.csv,见 rules-store.ts):
+ * 文件格式(csv,tab 分隔,3 列,~/.cdp-control/rules/ignore-links.csv,见 rules-store.ts):
  *   <id>\t<pattern>\t<note>
  *   - id:稳定标识(单调递增,删除不重排)
  *   - pattern:链接通配符(glob,`*` 匹配任意字符含 /),匹配 href 的 hostname+pathname(去协议/去 query)
@@ -17,8 +17,8 @@ import { linksLivePath } from './rules-store.ts';
 
 export interface LinkRule { id: number; pattern: string; note: string }
 
-/** 规则文件路径:rules/ignore-links.csv(rules-store seed-once 保证存在)。
- * 测试用 CDP_IGNORE_LINKS_FILE 覆盖到临时文件,避免写进真实 rules/ignore-links.csv。 */
+/** 规则文件路径:~/.cdp-control/rules/ignore-links.csv(rules-store seed-once 保证存在)。
+ * 测试用 CDP_IGNORE_LINKS_FILE 覆盖到临时文件,避免写进真实 ~/.cdp-control/rules/ignore-links.csv。 */
 function linksPath(): string {
   return process.env.CDP_IGNORE_LINKS_FILE || linksLivePath();
 }

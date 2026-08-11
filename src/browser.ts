@@ -69,7 +69,7 @@ export async function ensureBrowser(url?: string): Promise<EnsureResult> {
   if (!(await isBrowserReady())) {
     exe = await findBrowserExe();
     if (!exe) throw new Error('未找到可用的 Edge/Chrome,请手动用 --remote-debugging-port 启动浏览器');
-    userData = process.env.CDP_USER_DATA || join(homedir(), '.cdp-browser');
+    userData = process.env.CDP_USER_DATA || join(homedir(), '.cdp-control', 'user-data');
     mkdirSync(userData, { recursive: true });
     const child = spawn(exe, [
       `--remote-debugging-port=${PORT}`,

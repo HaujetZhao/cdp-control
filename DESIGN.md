@@ -147,10 +147,11 @@ fold / ignore-links 规则手动编辑 `rules/*.csv`(seed 自 `src/rules/`);reci
 ## TODO
 
 - 引入 Playwright ，复用已成熟巨人的 API，供脚本编排用
+- 改进目录结构，skill 相关放入项目子文件夹，不与项目开发造成干扰
 - 想一个新方法，免去每次都 `node ~/.claude/skills/cdp-browser-control/dist/cdp.js` 这么长的路径前缀
   - skill 改名，更好听好记的名
   - 上传到 npm
   - 安装为系统可执行的 cli
-- 改进目录结构，skill 相关放入项目子文件夹，不与项目开发造成干扰
 - 反馈格式改进
   - list 不用列出全长 id
+- search 功能，子代理调用，多个搜索引擎，配 recipe ，多引擎搜索摘要聚合，agent 筛选后并行 fetch，子代理返回给出分析结果
