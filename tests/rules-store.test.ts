@@ -1,7 +1,7 @@
 /**
  * rules-store.test.ts — 规则持久化统一目录 + seed-once 单测。
  * 用 CDP_RULES_DIR 指到临时目录,避免碰真实 rules/ 与 dist/。验证:
- *   首跑缺文件 → 从 src/rules/ 拷默认;已有 → 不覆盖(修 clobber);运行时 fold add 写进 rules/ 持久。
+ *   首跑缺文件 → 从根 rules/ 拷默认;已有 → 不覆盖(修 clobber);运行时 fold add 写进 rules/ 持久。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,8 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { ensureRules, foldsLivePath, linksLivePath } from '../src/rules-store.ts';
 import { addFold } from '../src/folds.ts';
 
-// strip-types(ESM)下无 __dirname,默认源用 CDP_RULES_DEFAULT_DIR 指到真实 src/rules。
-const DEFAULT_RULES = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'rules');
+// strip-types(ESM)下无 __dirname,默认源用 CDP_RULES_DEFAULT_DIR 指到真实根 rules/。
+const DEFAULT_RULES = join(dirname(fileURLToPath(import.meta.url)), '..', 'rules');
 
 function withRulesDir<T>(fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-rules-'));
@@ -29,7 +29,7 @@ function withRulesDir<T>(fn: (dir: string) => T): T {
   }
 }
 
-test('seed-once: 首跑缺文件从 src/rules/ 拷默认', () => {
+test('seed-once: 首跑缺文件从根 rules/ 拷默认', () => {
   withRulesDir((dir) => {
     ensureRules();
     const fold = join(dir, 'fold.csv');

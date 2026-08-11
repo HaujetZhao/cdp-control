@@ -60,8 +60,8 @@ async function main() {
     console.log('▶ 注入页侧:(暂无 src/inject/*.ts,跳过)');
   }
 
-  // —— 规则模板不再拷进 dist(dist 变纯代码)。规则是数据,住 skill 根 rules/,由 rules-store.ts seed-once
-  //    从 src/rules/ 拷默认 / 迁旧 dist csv。此处不覆盖任何规则文件(修 clobber)。
+  // —— 规则模板不再拷进 dist(dist 变纯代码)。规则是数据,住根 rules/,由 rules-store.ts seed-once
+  //    从根 rules/ 拷默认。此处不覆盖任何规则文件(修 clobber)。
 
   console.log('✅ build 完成 → dist/');
 }
