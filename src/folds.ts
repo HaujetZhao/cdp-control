@@ -1,6 +1,6 @@
 /**
  * folds.ts — fold 折叠规则的持久化(Node 侧)。
- * 规则是数据非代码,统一住 `rules/fold.csv`(见 rules-store.ts:seed-once、不再随 dist 拷贝走)。
+ * 规则是数据非代码,统一住 `~/.cdp-control/rules/fold.csv`(见 rules-store.ts:seed-once、不再随 dist 拷贝走)。
  *
  * 文件格式(csv,tab 分隔,固定 5 列,因 selector 可能含空格——genSel 生成后代选择器):
  *   <id>\t<domain>\t<path>\t<selector>\t<note>
@@ -26,8 +26,8 @@ export interface FoldRule {
   note: string;
 }
 
-/** 规则文件路径:rules/fold.csv(rules-store seed-once 保证存在)。
- * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 rules/fold.csv。 */
+/** 规则文件路径:~/.cdp-control/rules/fold.csv(rules-store seed-once 保证存在)。
+ * 测试用 CDP_FOLD_FILE 覆盖到临时文件,避免写进真实 ~/.cdp-control/rules/fold.csv。 */
 function foldsPath(): string {
   return process.env.CDP_FOLD_FILE || foldsLivePath();
 }
