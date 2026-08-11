@@ -295,21 +295,6 @@ targetCmd('article', '以 ref 为根提取格式友好的 Markdown 文章(保序
     console.log(r.lines.join('\n'));
   });
 
-// ignore-links 链接黑名单:命中模式(glob,匹配 hostname+pathname)的链接在 article 去 URL、在 view 内联合并。
-// 持久化到 dist/ignore-links.csv(手动编辑或本命令)。知乎 zhida.zhihu.com/search* 是默认内置条目。
-const linkCmd = program.command('ignore-link').description('链接黑名单:命中只留文本去 URL(如 zhida.zhihu.com/search*);view 内联合并、article 去链接');
-linkCmd.command('add').argument('<pattern>', '链接通配符(glob,匹配 hostname+pathname,如 zhida.zhihu.com/search*)').argument('[note]', '备注')
-  .action(async (pattern: string, note: string) => { const r = await api.ignoreLink('add', pattern, note); console.log(`已加黑名单 #${r.rule.id}: ${r.rule.pattern}${r.rule.note ? ' (' + r.rule.note + ')' : ''}`); });
-linkCmd.command('list').action(async () => {
-  const r = await api.ignoreLink('list');
-  if (!r.rules?.length) { console.log('(空黑名单)'); return; }
-  console.log('ignore-links 黑名单:');
-  for (const x of r.rules) console.log(`  #${x.id}\t${x.pattern}${x.note ? '\t' + x.note : ''}`);
-});
-linkCmd.command('rm').argument('<id>', '规则 id(数字)').action(async (id: string) => {
-  const r = await api.ignoreLink('rm', undefined, undefined, Number(id));
-  console.log(r.ok ? `已删黑名单 #${id}` : `未找到黑名单 #${id}`);
-});
 
 feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab')).argument('<key>', '按键')
   .action(async (key: string, opts: any) => { const r = await api.pressKey(await needTarget(opts.target), key, feedbackCfg(opts)); console.log(`已按键: ${key}`); printFeedback(r?.feedback); });

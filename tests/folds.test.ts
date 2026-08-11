@@ -1,6 +1,6 @@
 /**
  * folds.test.ts — fold 规则文件的纯函数单测(parseRules/domainMatch/pathMatch/hostOf/pathOf/matchFolds)。
- * 文件读写(loadFolds/addFold/removeFold)依赖磁盘,用临时 CDP_USER_DATA 验证落盘往返。
+ * 读取链 loadFolds 依赖磁盘,用临时 CDP_FOLD_FILE 验证;写操作(addFold/removeFold)已随规则管理命令一并移除。
  * 新格式 5 列:id domain path selector note;旧格式不迁移(非数字 id 行跳过)。
  */
 import { test } from 'node:test';
@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  parseRules, domainMatch, pathMatch, hostOf, pathOf, matchFolds, loadFolds, addFold, removeFold,
+  parseRules, domainMatch, pathMatch, hostOf, pathOf, matchFolds, loadFolds,
 } from '../src/folds.ts';
 
 // 每个需要落盘的测试用独立临时 folds 文件,避免互相污染 / 污染真实 dist/fold-selectors.csv。
@@ -168,35 +168,3 @@ test('loadFolds: 文件不存在返回空数组', () => {
   });
 });
 
-test('addFold: id 单调递增(max+1),不按行号重排,落盘为 5 列', () => {
-  withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.csv'), '5\ta.com\t*\t.a\tA\n8\tb.com\t*\t.b\tB\n', 'utf8');
-    const r = addFold('c.com', '/x/*', '.c', 'C');
-    assert.equal(r.id, 9); // max(5,8)+1
-    const all = loadFolds();
-    assert.deepEqual(all.map(x => x.id), [5, 8, 9]);
-    const txt = readFileSync(join(dir, 'folds.csv'), 'utf8');
-    assert.ok(txt.includes('9\tc.com\t/x/*\t.c\tC\n'));
-  });
-});
-
-test('removeFold: 按 id 删,其它规则保留原 id(连续 rm 不漏删)', () => {
-  withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.csv'), '5\ta.com\t*\t.a\tA\n8\tb.com\t*\t.b\tB\n9\tc.com\t*\t.c\tC\n', 'utf8');
-    // 模拟 agent 连续删两条:先删 5,再删 8(B8 bug 场景:行号重排会导致第二次删错)
-    assert.equal(removeFold(5), true);
-    let all = loadFolds();
-    assert.deepEqual(all.map(x => x.id), [8, 9]); // 删 5 后 8、9 不变
-    assert.equal(removeFold(8), true);
-    all = loadFolds();
-    assert.deepEqual(all.map(x => x.id), [9]); // 只剩 9,没漏删
-  });
-});
-
-test('removeFold: 删不存在的 id 返回 false,文件不变', () => {
-  withTmpDir(dir => {
-    writeFileSync(join(dir, 'folds.csv'), '5\ta.com\t*\t.a\tA\n', 'utf8');
-    assert.equal(removeFold(99), false);
-    assert.equal(loadFolds().length, 1);
-  });
-});
