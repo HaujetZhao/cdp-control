@@ -11,7 +11,7 @@
  *   - note:备注
  * 行首 # 为注释。pattern 为空 = 匹配所有。
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { globToRegExp } from './url-scope.ts';
 import { linksLivePath } from './rules-store.ts';
 
@@ -35,11 +35,6 @@ export function hrefForMatch(href: string): string {
 export function linkRuleMatch(rule: LinkRule, href: string): boolean {
   if (!rule.pattern) return true;
   return globToRegExp(rule.pattern).test(hrefForMatch(href));
-}
-
-/** 链接是否命中任一黑名单规则。 */
-export function matchLinkBlacklist(rules: LinkRule[], href: string): boolean {
-  return rules.some(r => linkRuleMatch(r, href));
 }
 
 /**
@@ -67,29 +62,4 @@ export function loadLinkRules(): LinkRule[] {
   if (!existsSync(p)) return [];
   try { return parseLinkRules(readFileSync(p, 'utf8')); }
   catch { return []; }
-}
-
-/** 重写规则文件(保留各规则原 id,不按行号重排)。 */
-function writeLinkRules(rules: LinkRule[]): void {
-  const text = rules.map(r => `${r.id}\t${r.pattern}\t${r.note}`).join('\n') + '\n';
-  writeFileSync(linksPath(), text, 'utf8');
-}
-
-/** 追加一条持久黑名单规则。id = max(现有 id)+1(单调递增,不重排)。 */
-export function addLinkRule(pattern: string, note = ''): LinkRule {
-  const rules = loadLinkRules();
-  const id = rules.reduce((m, r) => Math.max(m, r.id), 0) + 1;
-  const rule: LinkRule = { id, pattern, note };
-  rules.push(rule);
-  writeLinkRules(rules);
-  return rule;
-}
-
-/** 按 id 删除一条持久黑名单规则;**保留其它规则原 id**(不重排)。返回是否删到。 */
-export function removeLinkRule(id: number): boolean {
-  const rules = loadLinkRules();
-  const next = rules.filter(r => r.id !== id);
-  if (next.length === rules.length) return false;
-  writeLinkRules(next);
-  return true;
 }

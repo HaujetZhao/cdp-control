@@ -11,7 +11,7 @@
  *   - selector:命中该元素的 CSS selector,即要折叠的区域
  * 行首 # 为注释。
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { globToRegExp, hostOf, pathOf } from './url-scope.ts';
 import { foldsLivePath } from './rules-store.ts';
 
@@ -79,33 +79,6 @@ export function loadFolds(): FoldRule[] {
   if (!existsSync(p)) return [];
   try { return parseRules(readFileSync(p, 'utf8')); }
   catch { return []; }
-}
-
-/** 重写规则文件(保留各规则原 id,不按行号重排)。 */
-function writeRules(rules: FoldRule[]): void {
-  const text = rules.map(r =>
-    `${r.id}\t${r.domain}\t${r.path}\t${r.selector}\t${r.note}`,
-  ).join('\n') + '\n';
-  writeFileSync(foldsPath(), text, 'utf8');
-}
-
-/** 追加一条持久规则。id = max(现有 id)+1(单调递增,不重排)。path 空 = 不限定。 */
-export function addFold(domain: string, path: string, selector: string, note: string): FoldRule {
-  const rules = loadFolds();
-  const id = rules.reduce((m, r) => Math.max(m, r.id), 0) + 1;
-  const rule: FoldRule = { id, domain, path, selector, note };
-  rules.push(rule);
-  writeRules(rules);
-  return rule;
-}
-
-/** 按 id 删除一条持久规则;**保留其它规则原 id**(不重排)。返回是否删到。 */
-export function removeFold(id: number): boolean {
-  const rules = loadFolds();
-  const next = rules.filter(r => r.id !== id);
-  if (next.length === rules.length) return false;
-  writeRules(next);
-  return true;
 }
 
 /** 筛选匹配某 hostname(+pathname)的规则:domainMatch 外,path 再 glob 命中。 */

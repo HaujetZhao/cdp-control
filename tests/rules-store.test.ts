@@ -10,7 +10,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureRules, foldsLivePath, linksLivePath } from '../src/rules-store.ts';
-import { addFold } from '../src/folds.ts';
 
 // strip-types(ESM)下无 __dirname,默认源用 CDP_RULES_DEFAULT_DIR 指到真实根 rules/。
 const DEFAULT_RULES = join(dirname(fileURLToPath(import.meta.url)), '..', 'rules');
@@ -51,13 +50,3 @@ test('seed-once: 已有文件不被覆盖(修 clobber)', () => {
   });
 });
 
-test('运行时 fold add 写进 rules/ 且跨调用持久', () => {
-  withRulesDir((dir) => {
-    addFold('www.test.com', '/x/*', '.sel', '自定义');
-    const fold = join(dir, 'fold.csv');
-    assert.ok(readFileSync(fold, 'utf8').includes('www.test.com'), 'addFold 落盘 rules/fold.csv');
-    // 二次读(不带 env CDP_FOLD_FILE)仍能读到,证明规则持久在 rules/
-    ensureRules();
-    assert.ok(readFileSync(fold, 'utf8').includes('www.test.com'), '跨调用不丢');
-  });
-});

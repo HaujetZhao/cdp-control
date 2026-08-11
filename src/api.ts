@@ -9,8 +9,8 @@ import { pageWs, browserWs, send, evalJs, evaluate, resolve, list, sleep, Target
 import { inject, viewExpr, locateExpr, infoExpr, foldExpr, findExpr, articleExpr, readContentExpr } from './inject-loader';
 import { parseKeySpec } from './keys';
 import { maybeSpawnDaemon, injectMonitor } from './monitor';
-import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './folds';
-import { loadLinkRules, addLinkRule, removeLinkRule } from './ignore-links';
+import { matchFolds, hostOf, pathOf, loadFolds } from './folds';
+import { loadLinkRules } from './ignore-links';
 import { normArg, type TargetArg } from './target-arg';
 import { diffTabs } from './tab-diff';
 import { ensureBrowser } from './browser';
@@ -169,17 +169,8 @@ export async function read(target: Target, opts: ReadOpts): Promise<any> {
   return article(target, rc.ref);
 }
 
-/** ignore-links 黑名单管理(add/rm/list)。pattern 为链接通配符(glob,匹配 hostname+pathname)。
- * view 与 article 共用:命中只留文本(article 去 URL;view 内联文本并与相邻段合并)。 */
-export async function ignoreLink(action: 'add' | 'rm' | 'list', pattern?: string, note?: string, id?: number): Promise<any> {
-  if (action === 'add') return { ok: true, rule: addLinkRule(pattern || '', note || '') };
-  if (action === 'rm') return { ok: removeLinkRule(id!), removed: id };
-  return { ok: true, rules: loadLinkRules() };
-}
-
 export interface FoldOpts {
-  ref?: number; ancestor?: number; note?: string; save?: boolean; domain?: string; path?: string;
-  add?: { domain: string; path: string; selector: string; note: string }; list?: boolean; rm?: number;
+  ref?: number; ancestor?: number; note?: string; list?: boolean;
 }
 
 /** find:按文本(--text)或 selector(--selector)找元素,登记 ref 返回(追加,不重置)。
@@ -190,27 +181,13 @@ export interface FindOpts { text?: string; selector?: string; ancestor?: number;
 export async function find(target: Target, opts: FindOpts = {}): Promise<any> {
   return invoke(target, findExpr(opts));
 }
-/** 折叠规则管理(取代 stash):
- *  - add {domain, path, selector, note}:加持久规则(fold-selectors.csv)
- *  - rm <id>:删持久规则(其它规则 id 不重排)
- *  - list:列持久 + 会话级临时
- *  - ref + save:从 ref 反查 selector + 当前 hostname,落盘持久规则
- *  - ref(无 save):会话级临时折叠(注入 __cdpFolds,刷新失效) */
+/** 折叠:会话级临时折叠某 ref 区域(注入 __cdpFolds,刷新失效),或 list 列持久+临时规则。
+ * 持久规则改为手动编辑 rules/fold.csv,view 读取自动生效(无命令/脚本写入口)。 */
 export async function fold(target: Target, opts: FoldOpts = {}): Promise<any> {
-  if (opts.rm != null) return { ok: removeFold(opts.rm), removed: opts.rm };
   if (opts.list) {
     const persist = loadFolds();
     const tmp = await invoke<{ folds: any[] }>(target, foldExpr({ list: true }));
     return { ok: true, persist, tmp: tmp.folds };
-  }
-  if (opts.add) { return { ok: true, rule: addFold(opts.add.domain, opts.add.path, opts.add.selector, opts.add.note) }; }
-  if (opts.save) {
-    // locate 失效(refInvalid)时 invoke 不抛、透传 recovered;此时 loc.selector 是 undefined,
-    // 不能 addFold,直接把 recovered 透传给 CLI 走自愈打印。
-    const loc = await invoke<{ selector: string } | { ok: false; refInvalid: true; recovered: any }>(target, locateExpr(opts.ref!, opts.ancestor));
-    if ((loc as any)?.refInvalid) return loc as any;
-    const domain = opts.domain || hostOf(target.url);
-    return { ok: true, rule: addFold(domain, opts.path || '', (loc as any).selector, opts.note || (loc as any).selector) };
   }
   return invoke(target, foldExpr({ ref: opts.ref, ancestor: opts.ancestor, note: opts.note }));
 }
@@ -373,7 +350,7 @@ const coreApi = {
   list: async () => { await ensureBrowser(); return list(); },
   resolve: async (match?: string) => { await ensureBrowser(); return resolve(match); },
   open, close, activate, navigate, eval: evaluate,
-  view, locate, info, article, read, ignoreLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, screenshot, focus, getFocus, pressKey, hover,
+  view, locate, info, article, read, fold, find, fetchPage, click, fill, waitFor, waitForFn, screenshot, focus, getFocus, pressKey, hover,
 };
 
 export { coreApi };

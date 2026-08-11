@@ -67,14 +67,14 @@ cdp-control run "./scripts/你的脚本.js"
 
 **文章提取(`article`)**:整页 view 树适合"看结构、拿 ref",但读正文(长回答/文章)会被树形截断、内联链接拆行。要**读文章本体**用 `article <ref>`——以 ref 为根沿 childNodes **保序**遍历发 Markdown,段落不截断、链接 `[文本](href)` 内联保留、粗斜体/图片/列表/引用/代码块映射、无文本交互元素降级 `[label]`(如 `[已赞同 3.2 万]`)。链接输出时**自动把站内跳转包装解回真实 URL**(如知乎 `link.zhihu.com/?target=…` → 真实目标),黑名单链接仍只留文本。ref 取正文容器(如知乎 `.RichContent-inner` 下层),或 `--ancestor` 把叶子抬到正文容器。
 
-**ignore-links 链接黑名单**:正文里的**词汇释义内部链接**(如知乎 `zhida.zhihu.com/search?q=词`)URL 是超长 search 串、无跳转价值,会淹没文章/视图。用 `ignore-link add <glob>`(匹配 hostname+pathname)把这类模式加进持久黑名单,**view 与 article 都生效**:
+**ignore-links 链接黑名单**:正文里的**词汇释义内部链接**(如知乎 `zhida.zhihu.com/search?q=词`)URL 是超长 search 串、无跳转价值,会淹没文章/视图。**手动编辑 `~/.cdp-control/rules/ignore-links.csv`** 加 glob 模式(匹配 hostname+pathname),**view 与 article 都生效**:
 - **view**:命中黑名单的 `<a>` 内联成纯文本,并与相邻文本段合并成一句(取末段 ref)——如 `设立[漕运总督]，这世上` 合并为 `设立漕运总督，这世上`;正文不再被超长链接拆散、也不再是独立的可点链接(ref 仍是末段文本的元素)。
 - **article**:命中就**只留文本、去 URL**(词保留、链接丢)。
-默认内置 `zhida.zhihu.com/search*`;`ignore-link list/rm` 管理,存 `~/.cdp-control/rules/ignore-links.csv`(手动编辑或命令,seed 自包内 `rules/`)。
+默认内置 `zhida.zhihu.com/search*`;存 `~/.cdp-control/rules/ignore-links.csv`,**手动编辑**(seed 自包内 `rules/`),无命令写入口。
 
 **图例**:整页 view 顶部有一行 `#` 注释图例,解释 `[ref=i]`(可操作索引)、`[ref=i,visible]`(当前视口内)、`~"…"`(聚合文本)、`▸`(已折叠)、`[shadow]`(shadow DOM)——Agent 读取时跳过 `#` 行即可,不会误当页面内容。无文本图标按钮(点赞/分享等)自动用 `aria-label/title` 兜底显示功能。
 
-**整页去噪(`fold` 持久规则,类 uBlock)**:长页整页 view 常混入导航/推荐/广告等噪声 ref。用 `fold` 把区域**折叠成一行**(`▸ [ref=i] <备注>`,保留 ref 可展开),跨会话持久。
+**整页去噪(`fold` 持久规则,类 uBlock)**:长页整页 view 常混入导航/推荐/广告等噪声 ref。持久折叠规则**手动编辑 `~/.cdp-control/rules/fold.csv`** 把区域**折叠成一行**(`▸ [ref=i] <备注>`,保留 ref 可展开),跨会话持久;临时折叠用脚本 `api.fold(ref)`(不落盘)。
 
 **规则**:存 `~/.cdp-control/rules/fold.csv`(实时,seed 自包内 `rules/fold.csv`),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`,view 时自动加载。
 
@@ -122,7 +122,6 @@ cdp-control run "./scripts/你的脚本.js"
 | `get-focus` | 查看当前焦点元素在哪 |
 | `info <n> [--ancestor <k>]` | 列元素祖先链(tag/id/class/语义 data-*/aria/role 逐层)+ 建议 selector,看清稳定锚点自己写 fold 规则 |
 | `article <n> [--ancestor <k>]` | 以 ref 为根提取**格式友好的 Markdown 文章**(保序、不截断;穿透 shadow;黑名单链接只留文本去 URL)。读正文用这个,比 view 树更贴近文章本身 |
-| `ignore-link add/list/rm` | 管理 **ignore-links 黑名单**(glob 匹配 hostname+pathname)。view:命中 a 内联合并取末段 ref;article:命中只留文本去 URL。如 `zhida.zhihu.com/search*` |
 | `press-key <键> [...]` | 真实按键/组合键,如 Enter/Tab/Ctrl+Shift+A(含滚动如 PageDown)。默认带反馈 |
 | `hover <target> [--ancestor <k>] [...]` | 鼠标移到元素(触发 mouseover/mouseenter)。默认带反馈 |
 | `screenshot [--file out.png]` | 截图 |
