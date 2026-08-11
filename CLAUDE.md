@@ -40,13 +40,13 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 
 ## 浏览器连接(ensureBrowser / kill)
 
-- **端口固定 9222**(`CDP_PORT` 覆盖)。`ensureBrowser()` 语义:**已就绪**(9222 有响应)→ 直接用,就绪零开销(1 次 GET `/json/version`,顺带拿浏览器名);**未就绪** → 读 `~/.cdp-control/browser.json` 拉起(缺失自动发现生成 / 存在则用 / 损坏警告不兜底 / 用户可改)。
-- **启动配置 `~/.cdp-control/browser.json`**(用户可编辑,权威):`{ exe, kind, args }`。`args` 存稳定参数(remote-allow-origins/no-first-run/window-size 等);受保护项 `--remote-debugging-port` 与 `--user-data-dir` 由工具注入、不进文件。缺失时 bootstrap 用 `browser-discover.ts` 跨平台候选(Edge 优先)首个能拉起者原子写配置;损坏(JSON 非法/exe 不存在/args 非数组)打印清晰错误、**不 fallback**,用户改文件。原子写(tmp+rename)。
+- **端口与用户数据路径入配置**:`browser.json` 的 `port`(默认 9222)与 `userData`(默认 `~/.cdp-control/user-data`)用户可改。`ensureBrowser()` 读配置后 `transport.setPort(cfg.port)` 同步端口,所有命令连该端口。`CDP_PORT` env 仅无配置时兜底默认。语义:**已就绪**(配置端口有响应)→ 直接用,就绪零开销(读配置 + 1 次 GET `/json/version`,顺带拿浏览器名);**未就绪** → 读 `~/.cdp-control/browser.json` 拉起(缺失自动发现生成 / 存在则用 / 损坏警告不兜底 / 用户可改)。
+- **启动配置 `~/.cdp-control/browser.json`**(用户可编辑,权威):`{ exe, kind, args, port, userData }`。`args` 存稳定参数(remote-allow-origins/no-first-run/window-size 等);`--remote-debugging-port` 与 `--user-data-dir` 由工具据 `port`/`userData` 生成。缺失时 bootstrap 用 `browser-discover.ts` 跨平台候选(Edge 优先)首个能拉起者原子写配置;损坏(JSON 非法/exe 不存在/args 非数组/显式 port 非法)打印清晰错误、**不 fallback**,用户改文件。原子写(tmp+rename)。
 - **跨平台发现 `browser-discover.ts`**(纯函数):win env 路径表(Edge/Chrome 各通道)+`where`;mac 硬编码精确 `.app`+`Contents/MacOS/<bin>`(Safari 排除);linux `command -v` + `.desktop`。
-- **配置解析 `browser-config.ts`**(纯函数):`parseBrowserConfig`(损坏抛清晰错)/`defaultArgs`(linux 加 `--disable-dev-shm-usage`)/`browserConfigPath`。
-- **冷启动**:`spawn(exe, [...args, --remote-debugging-port, --user-data-dir=~/.cdp-control/user-data], {detached:true, stdio:'ignore'}).unref()` → 轮询 `/json/version` 就绪(20s)→ `maybeSpawnDaemon`。浏览器不随父进程死(持久)。
+- **配置解析 `browser-config.ts`**(纯函数):`parseBrowserConfig`(port/userData 缺省取默认,损坏抛清晰错)/`defaultArgs`(linux 加 `--disable-dev-shm-usage`)/`browserConfigPath`/`DEFAULT_PORT`/`DEFAULT_USER_DATA`。
+- **冷启动**:`spawn(exe, [...args, --remote-debugging-port=<cfg.port>, --user-data-dir=<cfg.userData>], {detached:true, stdio:'ignore'}).unref()` → 轮询 `/json/version` 就绪(20s)→ `maybeSpawnDaemon`。浏览器不随父进程死(持久)。
 - **"一切命令自愈"**:`api.resolve/list/open` 前置 `ensureBrowser()`(幂等)→ 所有 target 命令与 list/open 未起自动启动;`transport.evaluate` 由 api 的 `connectTarget` 包一层——连接失败(浏览器死/target stale)→ ensure + 按 url 重 resolve + 重试一次(堵 run 脚本直传 stale target);daemon(走 `pageWs`/`send`)天然豁免,不会死循环拉起浏览器。
-- **`kill` 命令**:`cdp-control kill` 强制结束 9222 端口监听进程(netstat/lsof 找 pid → taskkill `/F /T`/SIGKILL)并等端口释放(Edge 崩溃自启会重绑,等待确认)。
+- **`kill` 命令**:`cdp-control kill` 从 `browser.json` 读 `port`(**不**用默认 9222);**无配置 → kill 不生效**。找监听进程(netstat/lsof → pid)→ taskkill `/F /T`/SIGKILL → 等端口释放(Edge 崩溃自启会重绑,等待确认)。daemon 经 `spawnDaemon` 以 `env.CDP_PORT = transport.PORT` 拉起,端口由 ensureBrowser 从配置同步。
 
 ## 注入脚本契约(改动注入脚本必读)
 
