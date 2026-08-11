@@ -14,8 +14,8 @@ import { matchRecipe } from '../src/recipe-runner.ts';
 
 const require = createRequire(import.meta.url);
 
-/** 在临时 src/rules/recipes 下写入若干 recipe 文件,跑完清理。
- * P-4 后 recipe 直接读 git 权威 src/rules/recipes/(经 CDP_RULES_DEFAULT_DIR 覆盖指向临时目录),
+/** 在临时 rules/recipes 下写入若干 recipe 文件,跑完清理。
+ * P-4 后 recipe 直接读 git 权威 rules/recipes/(经 CDP_RULES_DEFAULT_DIR 覆盖指向临时目录),
  * 故用 CDP_RULES_DEFAULT_DIR 指到临时目录、recipe 落 <dir>/recipes。 */
 async function withRecipes(files: Record<string, string>, fn: () => Promise<void>): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'cdp-recipe-'));
@@ -95,13 +95,13 @@ test('跨文件规则级全序:通配符最少 → scope 更长 → 声明顺序
 
 // ────────────────────────── _lib.js 共享工具 ──────────────────────────
 test('_lib clean:剥零宽/扁平空白/去首尾', () => {
-  const { clean } = require('../src/rules/recipes/_lib.js');
+  const { clean } = require('../rules/recipes/_lib.js');
   assert.equal(clean('  a\n b ​ c  '), 'a b c');
   assert.equal(clean(undefined), '');
 });
 
 test('_lib refstr/opHint:null 与负数均返回空串,有效 ref 才上标', () => {
-  const { refstr, opHint } = require('../src/rules/recipes/_lib.js');
+  const { refstr, opHint } = require('../rules/recipes/_lib.js');
   assert.equal(refstr(null), '');
   assert.equal(refstr(-1), '');
   assert.equal(refstr(74), ' [ref=74]');
@@ -110,7 +110,7 @@ test('_lib refstr/opHint:null 与负数均返回空串,有效 ref 才上标', ()
 });
 
 test('_lib abridge:归一化 + 截断 + 补省略号;不足不截', () => {
-  const { abridge } = require('../src/rules/recipes/_lib.js');
+  const { abridge } = require('../rules/recipes/_lib.js');
   assert.equal(abridge('  a\n b  c '), 'a b c'); // 短文本:只归一化,不截
   const long = 'x'.repeat(200);
   assert.equal(abridge(long, 160).length, 160 + 1); // 超长截 160 + '…'
@@ -119,7 +119,7 @@ test('_lib abridge:归一化 + 截断 + 补省略号;不足不截', () => {
 });
 
 test('_lib entry:label + clean(value) + refstr(ref);站点整形不下沉', () => {
-  const { entry } = require('../src/rules/recipes/_lib.js');
+  const { entry } = require('../rules/recipes/_lib.js');
   assert.equal(entry({ value: '  赞同 1.5 万​ ', ref: 7 }), '赞同 1.5 万 [ref=7]');
   assert.equal(entry({ label: '作者:', value: '柳下风来', ref: 3 }), '作者:柳下风来 [ref=3]');
   assert.equal(entry({ value: '裸数字', ref: null }), '裸数字'); // 无 label 无 ref

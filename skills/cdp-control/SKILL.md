@@ -70,13 +70,13 @@ cdp-control run "./scripts/你的脚本.js"
 **ignore-links 链接黑名单**:正文里的**词汇释义内部链接**(如知乎 `zhida.zhihu.com/search?q=词`)URL 是超长 search 串、无跳转价值,会淹没文章/视图。用 `ignore-link add <glob>`(匹配 hostname+pathname)把这类模式加进持久黑名单,**view 与 article 都生效**:
 - **view**:命中黑名单的 `<a>` 内联成纯文本,并与相邻文本段合并成一句(取末段 ref)——如 `设立[漕运总督]，这世上` 合并为 `设立漕运总督，这世上`;正文不再被超长链接拆散、也不再是独立的可点链接(ref 仍是末段文本的元素)。
 - **article**:命中就**只留文本、去 URL**(词保留、链接丢)。
-默认内置 `zhida.zhihu.com/search*`;`ignore-link list/rm` 管理,存 `~/.cdp-control/rules/ignore-links.csv`(手动编辑或命令,seed 自包内 `src/rules/`)。
+默认内置 `zhida.zhihu.com/search*`;`ignore-link list/rm` 管理,存 `~/.cdp-control/rules/ignore-links.csv`(手动编辑或命令,seed 自包内 `rules/`)。
 
 **图例**:整页 view 顶部有一行 `#` 注释图例,解释 `[ref=i]`(可操作索引)、`[ref=i,visible]`(当前视口内)、`~"…"`(聚合文本)、`▸`(已折叠)、`[shadow]`(shadow DOM)——Agent 读取时跳过 `#` 行即可,不会误当页面内容。无文本图标按钮(点赞/分享等)自动用 `aria-label/title` 兜底显示功能。
 
 **整页去噪(`fold` 持久规则,类 uBlock)**:长页整页 view 常混入导航/推荐/广告等噪声 ref。用 `fold` 把区域**折叠成一行**(`▸ [ref=i] <备注>`,保留 ref 可展开),跨会话持久。
 
-**规则**:存 `~/.cdp-control/rules/fold.csv`(实时,seed 自包内 `src/rules/fold.csv`),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`,view 时自动加载。
+**规则**:存 `~/.cdp-control/rules/fold.csv`(实时,seed 自包内 `rules/fold.csv`),五列 tab:`<id>\t<域名>\t<path>\t<selector>\t<备注>`,view 时自动加载。
 
 **站点聚焦摘要(`recipe`)**:已知站点可写一个 recipe(`rules/recipes/<site>.js`)把整页**替换成聚焦摘要**(文本 + `[ref=N]`),供 agent 聚焦读。裸 `view`(无建树意图)命中 recipe 就输出摘要;要原始树用 `view --tree`(或任何 `[ref]`/`--selector-file`/`--visible-only`/`--scroll-*` 都强制树)。`fetch <url>` 同样命中 recipe。
 - `<id>` 单调递增不重排,新规则取 max+1;只认首列为数字的行。
@@ -131,12 +131,12 @@ cdp-control run "./scripts/你的脚本.js"
 
 环境变量:`CDP_HOST`/`CDP_PORT`(默认 `127.0.0.1:9222`)、`CDP_LOGS_PORT`(daemon,默认 9333)、`CDP_USER_DATA`(默认 `~/.cdp-control/user-data`)、`CDP_RULES_DIR`(实时规则目录,默认 `~/.cdp-control/rules`)、`CDP_FOLD_FILE`/`CDP_IGNORE_LINKS_FILE`(单文件路径覆盖,测试用)。
 
-**recipe 编写**:`src/rules/recipes/<site>.js`(作者代码直接住 git,单一来源)一文件一站点,导出**规则数组** `module.exports = [{ name, scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }, …]`。`scope` 可为字符串或数组(一抽取服务多 URL 形态);同文件多元素=同站点多布局。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.read` 展开再读、`cdp.eval` 按站点 selector 抓结构)。**三个引擎原语替你接管可复用/易错部分**:
+**recipe 编写**:`rules/recipes/<site>.js`(作者代码直接住 git,单一来源)一文件一站点,导出**规则数组** `module.exports = [{ name, scope: '<hostname+pathname glob>', async extract(cdp, ctx) { … return { lines: [文本行(可内嵌 [ref=N])] }; } }, …]`。`scope` 可为字符串或数组(一抽取服务多 URL 形态);同文件多元素=同站点多布局。`extract` 内可用完整 `cdp` api(`cdp.view` 拿树与 ref、`cdp.article` 取正文、`cdp.read` 展开再读、`cdp.eval` 按站点 selector 抓结构)。**三个引擎原语替你接管可复用/易错部分**:
 - **只读探针 `window.__cdpProbe`**(view 建树后自动注入):eval 里 `const { refOf, text } = window.__cdpProbe`,`refOf(el)` 反查已建树 ref(未命中 `null`,绝不按需注册)。不再手抄 refOf 样板。
 - **`cdp.read(target, {container, expand?, wait?})`**:按 `container` selector 取正文容器**完整 Markdown**(不截断)。`expand` 给折叠按钮(ref/selector)则先点击展开再取全文——容器每次重查、免疫展开重渲染 ref 漂移。折叠判定(哪个按钮=展开)由你按站点语义决定。读正文优先用它,替代手写"click 展开→重读→article"状态机。
 - **`_lib` 呈现**:`clean`/`refstr`/`opHint` + `abridge(text,n=160)`(预览摘要)+ `entry({label,value,ref})`(labeled 数据点→文本)。站点特有整形(剥 label/剥「已」)留在 recipe 调用处、不下沉。
 
-参考 `src/rules/recipes/zhihu.js`(问题页首答全文 + 专栏文章全文,共用这些原语)。
+参考 `rules/recipes/zhihu.js`(问题页首答全文 + 专栏文章全文,共用这些原语)。
 
 ## 命令示例(真实流程)
 

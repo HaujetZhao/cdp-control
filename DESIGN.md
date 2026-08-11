@@ -67,7 +67,7 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
         - view --visible-only，只看当前屏，仅用于确认眼前
         - article ref 将富文本区域转为 Markdown 文章
       - 被动聚焦 / 规则化聚焦
-        - 规则保存于 `src/rules/` ，build 后更新至 `dist/rules/` 
+        - 规则保存于 `rules/` ，build 后更新至 `dist/rules/` 
         - 规则库以 agent 编辑维护为主，等待更好的管理方案
         - 跳转链接(link.zhihu.com/?target=…)自动解回真实 URL
         - fold 规则，用于感知树折叠低信息区
@@ -75,7 +75,7 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
           - 折叠不销毁，以该 ref 局部感知即展开
         - ignore-links 规则，article 去除垃圾 URL
         - recipe 站点规则，常用页面 view 全页时只筛选重点信息，以期望的格式结构化输出
-          - 多文件，每文件可存多份规则，应对同一站点的不同路径，保存于 `src/rules/` 
+          - 多文件，每文件可存多份规则，应对同一站点的不同路径，保存于 `rules/` 
           - URL 作用域(hostname+pathname glob)匹配，`view`/`fetch` 默认启用、未命中回落树
           - 过程式规则，recipe 是 Node 模块，复用已有 API，写"站点语义"不重造引擎感知器
           - 引擎原语接管可复用/易错/有状态部分：只读探针(refOf 只查不注册)、展开再读(cdp.read，article 保持纯读)、呈现(_lib.entry/abridge)
@@ -143,7 +143,7 @@ Agent 的开发也是这样，一步加一个约束，然后相信前面的约�
 
 ## 临时方案
 
-fold / ignore-links 规则手动编辑 `rules/*.csv`(seed 自 `src/rules/`);recipe 手写 `rules/recipes/<site>.js`。
+fold / ignore-links 规则手动编辑 `rules/*.csv`(seed 自 `rules/`);recipe 手写 `rules/recipes/<site>.js`。
 
 ## TODO
 
