@@ -4,8 +4,10 @@
  */
 
 export const HOST = process.env.CDP_HOST || '127.0.0.1';
-export const PORT = process.env.CDP_PORT || 9222;
-export const BASE = `http://${HOST}:${PORT}`;
+// 端口默认为 env CDP_PORT 或 9222;浏览器配置 browser.json 的 port 由 ensureBrowser 经 setPort 同步进来。
+export let PORT: string | number = process.env.CDP_PORT || 9222;
+export let BASE = `http://${HOST}:${PORT}`;
+export function setPort(p: string | number): void { PORT = p; BASE = `http://${HOST}:${p}`; }
 
 export interface Target {
   id: string;
@@ -15,8 +17,8 @@ export interface Target {
   webSocketDebuggerUrl?: string;
 }
 
-export async function getJson(path: string): Promise<any> {
-  const r = await fetch(`${BASE}${path}`);
+export async function getJson(path: string, timeoutMs = 5000): Promise<any> {
+  const r = await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
   if (!r.ok) throw new Error(`HTTP ${r.status} GET ${path}`);
   return r.json();
 }

@@ -8,11 +8,11 @@ import { readFileSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { coreApi } from './api';
 import { logs, cmdListen } from './monitor';
-import { ensureBrowser } from './browser';
+import { ensureBrowser, killBrowser } from './browser';
 import { runScript } from './run-script';
 import { runRecipe } from './recipe-runner';
 
-const api: any = { ...coreApi, logs, ensure: ensureBrowser };
+const api: any = { ...coreApi, logs, ensure: ensureBrowser, kill: killBrowser };
 // recipe:暴露给 run 脚本显式取站点摘要(命中返回 {lines},未命中 null)。
 api.recipe = async (target: any, opts: any) => runRecipe(target.url, api, target, opts);
 
@@ -63,8 +63,7 @@ program
 
 program.command('list').description('确保浏览器就绪并列出所有 page tab(含手动开的);第一项为前台 tab(← 前台)')
   .action(async () => {
-    await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销),agent 无需先 ensure 再 list。
-    const list = await api.list();
+    const list = await api.list(); // api.list 已在 api 层前置 ensure(未起自动启动,就绪零开销)。
     console.log(`共 ${list.length} 个 tab(第一项 = 前台):`);
     if (list.length === 0) return;
     const line = (t: any, i: number) => `${t.id}  ${t.title || '(无标题)'}  ${t.url}${i === 0 ? '  ← 前台' : ''}`;
@@ -74,13 +73,22 @@ program.command('list').description('确保浏览器就绪并列出所有 page t
 program.command('open').argument('<url>', '要打开的网址').description('新开一个 tab')
   .action(async (url) => { const tid = await api.open(url || 'about:blank'); console.log(`已打开: ${url}\ntargetId: ${tid}`); });
 
+program.command('kill').description('强制结束 browser.json 指定端口上的浏览器进程并等端口释放(无配置则 kill 不生效)')
+  .action(async () => {
+    const r = await api.kill();
+    if (r.reason === 'noConfig') console.log('无 browser.json 配置,kill 不生效');
+    else if (r.reason === 'broken') console.log('browser.json 配置损坏,无法确定端口,kill 不生效');
+    else if (r.ok) console.log(`已强制结束浏览器 (端口 ${r.port} 已释放)`);
+    else if (r.reason === 'stillUp') console.log(`端口 ${r.port} 仍有进程(Edge 可能崩溃自启),kill 未完全生效`);
+    else console.log(`端口 ${r.port} 上无浏览器进程`);
+  });
+
 program.command('close').argument('<target>', '目标匹配').description('关闭 tab')
   .action(async (tgt) => { const t = await api.resolve(tgt); await api.close(t); console.log(`已关闭: ${t.title || t.url}`); });
 
 program.command('fetch').argument('<url>', '要抓取的网址').description('一次性抓取页面:ensure → 临时开 tab 打开 url → 感知(命中 recipe 输出摘要,否则建树) → 关闭 tab(替代 web fetch MCP)')
   .action(async (url) => {
-    await api.ensure(); // 合并 ensure:CDP 未起则自动启动(已就绪则无开销)。
-    const tid = await api.open(url || 'about:blank');
+    const tid = await api.open(url || 'about:blank'); // api.open 已在 api 层前置 ensure。
     let t: any;
     try {
       t = await api.resolve(tid);

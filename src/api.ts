@@ -13,6 +13,7 @@ import { matchFolds, hostOf, pathOf, loadFolds, addFold, removeFold } from './fo
 import { loadLinkRules, addLinkRule, removeLinkRule } from './ignore-links';
 import { normArg, type TargetArg } from './target-arg';
 import { diffTabs } from './tab-diff';
+import { ensureBrowser } from './browser';
 
 /**
  * 统一执行注入脚本并解包结果契约:
@@ -21,9 +22,30 @@ import { diffTabs } from './tab-diff';
  * 例外:ref 失效自愈({ok:false, refInvalid:true, recovered})不抛——上层据此打印 recovered view,不走反馈。
  */
 async function invoke<T>(target: Target, expr: string, timeout?: number): Promise<T> {
-  const r = await evaluate(target, expr, timeout);
+  const r = await evaluateWithSelfHeal(target, expr, timeout);
   if (r && typeof r === 'object' && (r as any).ok === false && !(r as any).refInvalid) throw new Error((r as any).err || '操作失败');
   return r as T;
+}
+
+/**
+ * 连接失败自愈:pageWs 失败(浏览器死/端口死/target stale)→ 确保浏览器 → 按 url 重 resolve → 重试一次。
+ * 只包 pageWs 建立阶段,不包命令执行——避免命令错误被误判为连接失败而重复执行。
+ * daemon(monitor)走 pageWs/send 不经此,天然豁免自愈(不会死循环拉起浏览器)。
+ */
+async function connectTarget(target: Target): Promise<WebSocket> {
+  try { return await pageWs(target); }
+  catch (e) {
+    let revived = target;
+    try { await ensureBrowser(); } catch {}
+    try { revived = await resolve(target.url || ''); } catch {}
+    return await pageWs(revived);
+  }
+}
+
+/** 用 connectTarget 连上后执行 JS(替代 transport.evaluate,获得连接失败自愈)。 */
+async function evaluateWithSelfHeal(target: Target, expression: string, timeout?: number): Promise<any> {
+  const ws = await connectTarget(target);
+  try { return await evalJs(ws, expression, timeout); } finally { ws.close(); }
 }
 
 /**
@@ -31,7 +53,7 @@ async function invoke<T>(target: Target, expr: string, timeout?: number): Promis
  * 消除「拿 ws → 用 → 关」样板,关闭时机统一在 finally,保证异常/正常路径都关。
  */
 async function withPage<T>(target: Target, fn: (ws: WebSocket) => Promise<T>): Promise<T> {
-  const ws = await pageWs(target);
+  const ws = await connectTarget(target);
   try { return await fn(ws); } finally { ws.close(); }
 }
 
@@ -43,6 +65,7 @@ async function withBrowser<T>(fn: (ws: WebSocket) => Promise<T>): Promise<T> {
 
 /** 新开一个 tab,返回 targetId。ws 在 maybeSpawnDaemon() 之前已关闭。 */
 export async function open(url = 'about:blank'): Promise<string> {
+  await ensureBrowser();
   const { targetId } = await withBrowser(async (ws) => {
     const r = await send(ws, 'Target.createTarget', { url, newWindow: false });
     return { targetId: r.targetId };
@@ -338,8 +361,11 @@ export async function hover(target: Target, arg: TargetArg, opts: FeedbackOpts =
 }
 
 // 核心 api 对象(不含 logs/ensure,入口 cdp.ts 组装补全)。
+// resolve/list 前置 ensureBrowser:覆盖所有 target 命令(经 needTarget→resolve)与 list,让"一切命令"自愈。
 const coreApi = {
-  list, resolve, open, close, navigate, eval: evaluate,
+  list: async () => { await ensureBrowser(); return list(); },
+  resolve: async (match?: string) => { await ensureBrowser(); return resolve(match); },
+  open, close, navigate, eval: evaluate,
   view, locate, info, article, read, ignoreLink, fold, find, fetchPage, click, fill, waitFor, waitForFn, shot, focus, getFocus, pressKey, hover,
 };
 
