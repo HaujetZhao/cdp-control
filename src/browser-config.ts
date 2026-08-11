@@ -37,7 +37,7 @@ export function parseBrowserConfig(text: string): BrowserConfig {
 export function defaultArgs(platform: string = process.platform): string[] {
   const args = [
     '--remote-allow-origins=*', '--no-first-run', '--no-default-browser-check',
-    '--disable-background-networking', '--disable-component-update', '--window-size=1600,1000',
+    '--disable-background-networking', '--disable-component-update', '--window-size=1200,800',
   ];
   if (platform === 'linux') args.push('--disable-dev-shm-usage');
   return args;

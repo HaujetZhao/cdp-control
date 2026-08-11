@@ -31,7 +31,7 @@
 
 - **作用**：保存浏览器启动命令、参数、端口与用户数据路径。内容（JSON）：
   ```json
-  { "exe": "<浏览器绝对路径>", "kind": "edge", "args": ["--remote-allow-origins=*", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--window-size=1600,1000"], "port": 9222, "userData": "~/.cdp-control/user-data" }
+  { "exe": "<浏览器绝对路径>", "kind": "edge", "args": ["--remote-allow-origins=*", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--disable-component-update", "--window-size=1200,800"], "port": 9222, "userData": "~/.cdp-control/user-data" }
   ```
 - **缺失** → 自动发现首个可用浏览器，用默认参数集 + 默认 port/userData 写此文件，再用它启动。
 - **存在且合法** → 用它启动，**不再发现**（配置即权威，用户钉死了浏览器/exe/参数/端口/用户数据）。
@@ -71,7 +71,7 @@
 
 ### D4 默认参数集（写入配置 args）
 
-- 写入 D1 配置的 `args`：`--remote-allow-origins=*`（Chrome 111+ CDP 来源校验，Node 客户端必须）、`--no-first-run`、`--no-default-browser-check`、`--disable-background-networking`、`--disable-component-update`、`--window-size=1600,1000`（稳定 `--visible-only` 视口）。
+- 写入 D1 配置的 `args`：`--remote-allow-origins=*`（Chrome 111+ CDP 来源校验，Node 客户端必须）、`--no-first-run`、`--no-default-browser-check`、`--disable-background-networking`、`--disable-component-update`、`--window-size=1200,800`（稳定 `--visible-only` 视口）。
 - **Linux 默认加** `--disable-dev-shm-usage`（大页面 /dev/shm 不足）。
 - **不加 `--no-sandbox`**；用户需要时自己在配置 args 里加（"不兜底"）。
 - 以上是**首次生成配置时的默认值**；用户改过则以其为准，工具不覆盖。
