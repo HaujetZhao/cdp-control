@@ -95,6 +95,20 @@ async function probeReady(timeoutMs?: number): Promise<{ ready: boolean; browser
   } catch { return { ready: false }; }
 }
 
+/** 忙端口的并发冷启动宽限；单次请求和轮询睡眠都受同一 deadline 约束。 */
+async function probeReadySoon(timeoutMs = 3000): Promise<{ ready: boolean; browser?: string }> {
+  const deadline = Date.now() + timeoutMs;
+  while (true) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return { ready: false };
+    const probe = await probeReady(Math.min(1000, remaining));
+    if (probe.ready) return probe;
+    const pause = Math.min(200, deadline - Date.now());
+    if (pause <= 0) return { ready: false };
+    await sleep(pause);
+  }
+}
+
 function describeBrowser(s: string): string {
   if (/Edg\//i.test(s)) return `Microsoft Edge (${s})`;
   if (/Chrome\//i.test(s)) return `Google Chrome (${s})`;
@@ -205,6 +219,7 @@ function prepareAndLaunch(cfg: BrowserConfig): ReturnType<typeof prepareFixedPor
   setPort(cfg.port);
   return prepareFixedPort(cfg.port, {
     probe: async () => probeReady(1000),
+    busyGraceProbe: async () => probeReadySoon(3000),
     portState,
     listenerPids,
     killPid,

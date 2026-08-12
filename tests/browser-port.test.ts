@@ -30,12 +30,14 @@ test('lsofListenerArgs: POSIX 枚举只请求精确 TCP LISTEN，不会收客户
 
 function dependencies(options: {
   probes?: ProbeResult[];
+  busyGraceProbes?: ProbeResult[];
   states?: PortState[];
   listeners?: number[][];
   killError?: Error;
 } = {}): FixedPortDependencies & { calls: string[] } {
   const calls: string[] = [];
   const probes = [...(options.probes ?? [{ ready: false }])];
+  const busyGraceProbes = options.busyGraceProbes ? [...options.busyGraceProbes] : null;
   const states = [...(options.states ?? [{ state: 'free' }])];
   const listeners = [...(options.listeners ?? [])];
   return {
@@ -44,6 +46,12 @@ function dependencies(options: {
       calls.push(`probe:${port}`);
       return probes.shift() ?? { ready: false };
     },
+    ...(busyGraceProbes ? {
+      busyGraceProbe: async (port: number) => {
+        calls.push(`grace:${port}`);
+        return busyGraceProbes.shift() ?? { ready: false };
+      },
+    } : {}),
     portState: async port => {
       calls.push(`state:${port}`);
       if (states.length > 1) return states.shift()!;
@@ -75,6 +83,16 @@ test('prepareFixedPort: 端口空闲就在同一个配置端口启动', async ()
   assert.deepEqual(d.calls, ['probe:24102', 'state:24102']);
 });
 
+test('prepareFixedPort: 忙端口先给并发冷启动就绪宽限；宽限内变健康则复用且不枚举或 kill', async () => {
+  const d = dependencies({
+    probes: [{ ready: false }],
+    busyGraceProbes: [{ ready: true, browser: 'Chrome/grace' }],
+    states: [{ state: 'busy' }],
+  });
+  assert.deepEqual(await prepareFixedPort(24119, d), { action: 'reuse', browser: 'Chrome/grace' });
+  assert.deepEqual(d.calls, ['probe:24119', 'state:24119', 'grace:24119']);
+});
+
 test('prepareFixedPort: 注入 launch 时启动前再检查；并发变健康就复用且不 spawn', async () => {
   const d = dependencies({
     probes: [{ ready: false }, { ready: true, browser: 'Chrome/free-race' }],
@@ -98,12 +116,13 @@ test('prepareFixedPort: 注入 launch 时两次确认空闲才在原配置端口
 test('prepareFixedPort: 忙且非健康时 kill 全部去重 listener，确认释放后仍启动配置端口', async () => {
   const d = dependencies({
     probes: [{ ready: false }, { ready: false }],
+    busyGraceProbes: [{ ready: false }],
     states: [{ state: 'busy' }, { state: 'busy' }, { state: 'free' }],
     listeners: [[501, 502, 501], [501, 502], [502, 501]],
   });
   assert.deepEqual(await prepareFixedPort(24103, d), { action: 'launch', port: 24103 });
   assert.deepEqual(d.calls, [
-    'probe:24103', 'state:24103', 'listeners:24103', 'probe:24103', 'state:24103', 'listeners:24103',
+    'probe:24103', 'state:24103', 'grace:24103', 'listeners:24103', 'probe:24103', 'state:24103', 'listeners:24103',
     'probe:24103', 'listeners:24103', 'kill:502', 'kill:501', 'state:24103',
   ]);
 });

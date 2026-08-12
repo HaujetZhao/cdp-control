@@ -27,6 +27,8 @@ export function lsofListenerArgs(port: number): string[] {
 
 export interface FixedPortDependencies {
   probe(port: number): Promise<ProbeResult>;
+  /** 忙端口进入破坏性流程前的有界就绪宽限；运行时用于等待并发冷启动。 */
+  busyGraceProbe?(port: number): Promise<ProbeResult>;
   portState(port: number): Promise<PortState>;
   listenerPids(port: number): Promise<number[]>;
   killPid(pid: number): void;
@@ -64,6 +66,12 @@ async function prepareFixedPortAttempt(
     return prepareFixedPortAttempt(port, deps, restartCount, true);
   }
   if (state.state === 'unknown') throw new FixedPortError(`无法确认配置端口 ${port} 的状态: ${state.reason}，拒绝启动浏览器`);
+
+  // 另一个并发调用可能刚 bind 端口、CDP 尚未就绪；先给有界宽限，再进入 listener 回收。
+  if (deps.busyGraceProbe) {
+    const graceProbe = await deps.busyGraceProbe(port);
+    if (graceProbe.ready) return { action: 'reuse', browser: graceProbe.browser };
+  }
 
   const observedPids = await listenerSnapshot(port, deps);
 
