@@ -61,9 +61,7 @@ async function prepareFixedPortAttempt(
       return { action: 'launch', port };
     }
     // 再走一轮完整状态判断，收紧 bind 探测与 spawn 之间的 TOCTOU 窗口。
-    const beforeLaunch = await prepareFixedPortAttempt(port, deps, restartCount, true);
-    if (beforeLaunch.action === 'reuse') return beforeLaunch;
-    return { action: 'launch', port };
+    return prepareFixedPortAttempt(port, deps, restartCount, true);
   }
   if (state.state === 'unknown') throw new FixedPortError(`无法确认配置端口 ${port} 的状态: ${state.reason}，拒绝启动浏览器`);
 
@@ -74,9 +72,7 @@ async function prepareFixedPortAttempt(
   if (finalProbe.ready) return { action: 'reuse', browser: finalProbe.browser };
   const finalState = await deps.portState(port);
   if (finalState.state === 'free') {
-    if (!deps.launch) return { action: 'launch', port };
-    await deps.launch(port);
-    return { action: 'launch', port };
+    return recheckBeforeLaunch(port, deps, restartCount);
   }
   if (finalState.state === 'unknown') throw new FixedPortError(`无法确认配置端口 ${port} 的状态: ${finalState.reason}，拒绝启动浏览器`);
   if (!observedPids.length) throw new FixedPortError(`配置端口 ${port} 已被占用，但找不到可归属的 TCP 监听进程，拒绝启动浏览器`);
@@ -87,15 +83,15 @@ async function prepareFixedPortAttempt(
     if (restartCount >= 3) throw new FixedPortError(`配置端口 ${port} 的监听进程持续变化，拒绝执行破坏性操作`);
     return prepareFixedPortAttempt(port, deps, restartCount + 1, launchChecked);
   }
-  // 再逐 PID 确认 listener 身份仍属于最终快照；变化时宁可重启状态机。
+  // 破坏性操作前最后复探；并发变健康就复用且绝不 kill。
+  const destructiveProbe = await deps.probe(port);
+  if (destructiveProbe.ready) return { action: 'reuse', browser: destructiveProbe.browser };
+  // 探活可能耗时，必须在它之后再逐 PID 确认 listener 身份；变化时宁可重启状态机。
   const killPids = await listenerSnapshot(port, deps);
   if (!samePids(currentPids, killPids)) {
     if (restartCount >= 3) throw new FixedPortError(`配置端口 ${port} 的监听进程持续变化，拒绝执行破坏性操作`);
     return prepareFixedPortAttempt(port, deps, restartCount + 1, launchChecked);
   }
-  // listener 最终快照稳定之后，破坏性操作前最后复探；并发变健康就复用且绝不 kill。
-  const destructiveProbe = await deps.probe(port);
-  if (destructiveProbe.ready) return { action: 'reuse', browser: destructiveProbe.browser };
 
   const killFailures: string[] = [];
   for (const pid of killPids) {
@@ -113,9 +109,7 @@ async function prepareFixedPortAttempt(
     const release = await deps.portState(port);
     if (release.state === 'free') {
       if (killFailures.length) throw new FixedPortError(`配置端口 ${port} 的监听进程结束失败(${killFailures.join('; ')})；端口现已释放，但拒绝继续启动`);
-      if (!deps.launch) return { action: 'launch', port };
-      await deps.launch(port);
-      return { action: 'launch', port };
+      return recheckBeforeLaunch(port, deps, restartCount);
     }
     if (release.state === 'unknown') {
       const failure = killFailures.length ? `；监听进程结束失败(${killFailures.join('; ')})` : '';
@@ -125,6 +119,16 @@ async function prepareFixedPortAttempt(
   }
   const failure = killFailures.length ? `；监听进程结束失败(${killFailures.join('; ')})` : '';
   throw new FixedPortError(`结束监听进程后配置端口 ${port} 超时未释放${failure}，拒绝启动浏览器`);
+}
+
+async function recheckBeforeLaunch(
+  port: number,
+  deps: FixedPortDependencies,
+  restartCount: number,
+): Promise<FixedPortAction> {
+  if (!deps.launch) return { action: 'launch', port };
+  if (restartCount >= 3) throw new FixedPortError(`配置端口 ${port} 的状态持续变化，拒绝启动浏览器`);
+  return prepareFixedPortAttempt(port, deps, restartCount + 1, true);
 }
 
 async function listenerSnapshot(port: number, deps: FixedPortDependencies): Promise<number[]> {
@@ -173,19 +177,22 @@ export function addressServes(addr: string, host: string, port: number, family?:
 /** 解析 Windows `netstat -ano`，只取服务目标端点的 TCP LISTENING PID。 */
 export function parseNetstatListeners(out: string, port: number, host = '127.0.0.1'): number[] {
   const pids: number[] = [];
+  const dualStackFallbackPids: number[] = [];
   for (const line of out.split(/\r?\n/)) {
     const columns = line.trim().split(/\s+/);
     if (columns.length < 5 || !/^TCP$/i.test(columns[0]) || columns[3] !== 'LISTENING') continue;
-    if (!addressServes(columns[1], host, port)) continue;
     const pid = Number(columns[4]);
-    if (Number.isInteger(pid) && pid > 0 && !pids.includes(pid)) pids.push(pid);
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    if (addressServes(columns[1], host, port)) addPid(pids, pid);
+    else if (ipv6WildcardMayServeIpv4(columns[1], host, port)) addPid(dualStackFallbackPids, pid);
   }
-  return pids;
+  return pids.length ? pids : dualStackFallbackPids;
 }
 
 /** 解析 POSIX `lsof ... -Fpnt`，按 process/fd/type/name 状态机取目标 listener PID。 */
 export function parseLsofListeners(out: string, port: number, host = '127.0.0.1'): number[] {
   const pids: number[] = [];
+  const dualStackFallbackPids: number[] = [];
   let currentPid = 0;
   let family = '';
   for (const line of out.split(/\r?\n/)) {
@@ -194,7 +201,25 @@ export function parseLsofListeners(out: string, port: number, host = '127.0.0.1'
     if (field === 'f') { family = ''; continue; }
     if (field === 't') { family = line.slice(1).trim(); continue; }
     if (field !== 'n' || !currentPid) continue;
-    if (addressServes(line.slice(1).trim(), host, port, family) && !pids.includes(currentPid)) pids.push(currentPid);
+    const address = line.slice(1).trim();
+    if (addressServes(address, host, port, family)) addPid(pids, currentPid);
+    else if (ipv6WildcardMayServeIpv4(address, host, port, family)) addPid(dualStackFallbackPids, currentPid);
   }
-  return pids;
+  return pids.length ? pids : dualStackFallbackPids;
+}
+
+function addPid(pids: number[], pid: number): void {
+  if (!pids.includes(pid)) pids.push(pid);
+}
+
+/**
+ * POSIX/Windows 都可能把双栈 socket 显示成 IPv6 wildcard。若已有直接匹配者，调用方只取
+ * 直接匹配，避免把独立的 IPv6-only listener 一并结束；只有没有直接匹配时才用此候选兜底。
+ */
+function ipv6WildcardMayServeIpv4(addr: string, host: string, port: number, family?: string): boolean {
+  if (!hostFamilies(host).includes('IPv4')) return false;
+  const separator = addr.lastIndexOf(':');
+  if (separator < 0 || addr.slice(separator + 1) !== String(port)) return false;
+  const address = addr.slice(0, separator).replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+  return address === '::' || (address === '*' && family === 'IPv6');
 }

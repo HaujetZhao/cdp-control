@@ -104,7 +104,7 @@ test('prepareFixedPort: 忙且非健康时 kill 全部去重 listener，确认�
   assert.deepEqual(await prepareFixedPort(24103, d), { action: 'launch', port: 24103 });
   assert.deepEqual(d.calls, [
     'probe:24103', 'state:24103', 'listeners:24103', 'probe:24103', 'state:24103', 'listeners:24103',
-    'listeners:24103', 'probe:24103', 'kill:502', 'kill:501', 'state:24103',
+    'probe:24103', 'listeners:24103', 'kill:502', 'kill:501', 'state:24103',
   ]);
 });
 
@@ -130,6 +130,31 @@ test('prepareFixedPort: 最终复探后 listener 集变化则重启判断，不�
     'probe:24110',
   ]);
   assert.ok(!d.calls.some(call => call.startsWith('kill:')));
+});
+
+test('prepareFixedPort: 最终健康探测期间 listener 换代则重新判断，不杀探测前的旧 PID', async () => {
+  const calls: string[] = [];
+  let listenerPid = 621;
+  let probeCount = 0;
+  const d: FixedPortDependencies = {
+    probe: async () => {
+      probeCount++;
+      calls.push(`probe:${probeCount}`);
+      if (probeCount === 3) listenerPid = 622;
+      return probeCount === 4 ? { ready: true, browser: 'Chrome/post-probe-race' } : { ready: false };
+    },
+    portState: async () => ({ state: 'busy' }),
+    listenerPids: async () => {
+      calls.push(`listeners:${listenerPid}`);
+      return [listenerPid];
+    },
+    killPid: pid => { calls.push(`kill:${pid}`); },
+    sleep: async () => undefined,
+    releaseTimeoutMs: 0,
+    releasePollMs: 100,
+  };
+  assert.deepEqual(await prepareFixedPort(24116, d), { action: 'reuse', browser: 'Chrome/post-probe-race' });
+  assert.ok(!calls.some(call => call.startsWith('kill:')));
 });
 
 test('prepareFixedPort: 找不到可归属 listener 且端点仍忙时明确失败，不 launch', async () => {
@@ -170,6 +195,34 @@ test('prepareFixedPort: listener 在枚举期间自行退出且端口已空闲�
   assert.deepEqual(d.calls, ['probe:24114', 'state:24114', 'listeners:24114', 'probe:24114', 'state:24114']);
 });
 
+test('prepareFixedPort: 忙 listener 自行退出后启动前再检查；并发健康 CDP 优先复用', async () => {
+  const d = dependencies({
+    probes: [{ ready: false }, { ready: false }, { ready: true, browser: 'Chrome/listener-exit-race' }],
+    states: [{ state: 'busy' }, { state: 'free' }],
+    listeners: [[951]],
+  });
+  d.launch = async port => { d.calls.push(`launch:${port}`); };
+  assert.deepEqual(await prepareFixedPort(24117, d), { action: 'reuse', browser: 'Chrome/listener-exit-race' });
+  assert.ok(!d.calls.some(call => call.startsWith('launch:')));
+});
+
+test('prepareFixedPort: kill 释放端口后启动前再检查；并发健康 CDP 优先复用', async () => {
+  const d = dependencies({
+    probes: [
+      { ready: false },
+      { ready: false },
+      { ready: false },
+      { ready: true, browser: 'Chrome/post-kill-race' },
+    ],
+    states: [{ state: 'busy' }, { state: 'busy' }, { state: 'free' }],
+    listeners: [[961], [961], [961]],
+  });
+  d.launch = async port => { d.calls.push(`launch:${port}`); };
+  assert.deepEqual(await prepareFixedPort(24118, d), { action: 'reuse', browser: 'Chrome/post-kill-race' });
+  assert.deepEqual(d.calls.filter(call => call.startsWith('kill:')), ['kill:961']);
+  assert.ok(!d.calls.some(call => call.startsWith('launch:')));
+});
+
 test('prepareFixedPort: 端点状态无法判断时明确失败', async () => {
   const d = dependencies({ probes: [{ ready: false }], states: [{ state: 'unknown', reason: 'EACCES fixture' }] });
   await assert.rejects(() => prepareFixedPort(24106, d), /端口 24106.*状态/);
@@ -186,7 +239,7 @@ test('prepareFixedPort: 任一 kill 抛错则保留真因并停止', async () =>
   await assert.rejects(() => prepareFixedPort(24107, d), /EPERM fixture/);
   assert.deepEqual(d.calls.slice(0, 11), [
     'probe:24107', 'state:24107', 'listeners:24107', 'probe:24107', 'state:24107',
-    'listeners:24107', 'listeners:24107', 'probe:24107', 'kill:701', 'kill:702', 'state:24107',
+    'listeners:24107', 'probe:24107', 'listeners:24107', 'kill:701', 'kill:702', 'state:24107',
   ]);
   assert.equal(d.calls.filter(call => call === 'kill:701').length, 1);
   assert.equal(d.calls.filter(call => call === 'kill:702').length, 1);
@@ -216,7 +269,7 @@ test('prepareFixedPort: kill 后端口超时未释放则失败，绝不谎报可
   await assert.rejects(() => prepareFixedPort(24108, d), /端口 24108.*未释放/);
   assert.deepEqual(d.calls, [
     'probe:24108', 'state:24108', 'listeners:24108', 'probe:24108', 'state:24108', 'listeners:24108',
-    'listeners:24108', 'probe:24108', 'kill:801',
+    'probe:24108', 'listeners:24108', 'kill:801',
     'state:24108', 'sleep:200', 'state:24108', 'sleep:200', 'state:24108', 'sleep:200', 'state:24108',
   ]);
 });
@@ -259,7 +312,12 @@ test('parseLsofListeners: p/f/t/n 状态机只取正确地址族的 LISTEN liste
   assert.deepEqual(parseLsofListeners(out, 9222, '::1'), [222]);
 });
 
+test('parseLsofListeners: IPv6 wildcard 双栈 listener 也能归属 IPv4 回环端点', () => {
+  const out = ['p555', 'f7', 'tIPv6', 'n*:9222'].join('\n');
+  assert.deepEqual(parseLsofListeners(out, 9222, '127.0.0.1'), [555]);
+});
+
 test('parseLsofListeners: 新 fd 清空地址族，无法归属的 wildcard 宁可不杀', () => {
-  const out = ['p555', 'f7', 'tIPv6', 'n*:9222', 'f8', 'n*:9222'].join('\n');
+  const out = ['p555', 'f7', 'tIPv6', 'n[::1]:9222', 'f8', 'n*:9222'].join('\n');
   assert.deepEqual(parseLsofListeners(out, 9222, '127.0.0.1'), []);
 });
