@@ -14,7 +14,8 @@
     "build": "node build.mjs",
     "prepare": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node test.mjs"
+    "test": "node test.mjs",
+    "bench:refs": "node --expose-gc --experimental-strip-types bench/refs-table.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

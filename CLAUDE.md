@@ -12,6 +12,7 @@
 npm install      # 首次:esbuild/typescript/@types/node/commander(运行时仅 commander)
 npm run build    # tsc --noEmit + esbuild(编译 + 打包注入脚本)
 npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
+npm run bench:refs   # __cdpRefs 登记表容量/复杂度压测(1e3→1e6 槽:每槽字节、各操作耗时、GC 释放),非门禁
 ```
 
 实时规则目录 = `~/.cdp-control/rules`(数据 home):本机它是**符号链接指向 `rules/`**(用户规则=根本规则,运行时读写直接落 git 工作树的 rules,**无覆盖问题**);干净环境是真目录,`rules-store.ts` seed-once 缺文件时从 `rules/` 拷默认。**build 不清不覆盖**(修 clobber)。
@@ -66,6 +67,7 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 ### ref 登记表 + 自愈
 **核心索引**:内容/交互元素登记进 `window.__cdpRefs`,`[ref=i]` 即下标。表存 **`{elRef:WeakRef<Element>, parentRef}`**(parentRef=最近已登记祖先,O(1) 跳表),`window.__cdpRefIndex` 用 `WeakMap<Element,number>` 反查已印发号码。
 - **分配**:统一走 `registerRef`:已登记元素复用旧号,首次见到的元素只在表尾追加；整页/局部 view、反馈、自愈、find/read/info 都不清空旧表。号码不回收,但 detached 元素不被表强引用、可 GC；导航/刷新换 document 时自然得到新表。
+- **容量(只追加不回收,刻意为之)**:表随 document 生死(导航/刷新换 realm 整表随旧 realm 回收);同一 document 内只有**首次见到的元素**才追加(复号由 `__cdpRefIndex` 保证),所以槽数 = 曾登记过的不同元素数,上界是 view/feedback 走过的子树规模之和,而每个打印 ref 都要花 agent 输出 token(hidden 包装不打印,约为打印数的 1–5 倍)。所有热路径都是 O(1)/O(祖先深度):`refElement`/`classifyRef`/`lookupRef`/`registerRef` 查 WeakMap+数组下标,`recoverRef` 只沿 parentRef 跳表走,`nearestRegisteredAncestor` 只上爬 DOM;唯一整表循环是 `ensureRefIndex` 的一次性回填(每 document 至多一次,且只对旧形态表)。Node 侧从不把 `__cdpRefs` 拉过线。实测(`npm run bench:refs`,1e3→1e6 槽):元素释放后死槽常驻 ≈ 100–113 B/槽(1e5 槽 ≈ 11 MB、1e6 ≈ 108 MB,跨 job 后 WeakRef 100% 释放),各操作单次耗时 <1 µs、`recoverRef` 29 跳 ≈ 8–13 µs,N 增 1000× 耗时涨 <10×(cache 效应)。**不做容量策略**:重排/回收号码会破坏「印发后永不换指向」;按阈值整表重置等于把 PR 消灭的"ref 在 agent 脚下失效"重新引入,而其触发规模(单 document 内 ≥1e5 个不同元素,对应数十万到百万级 token 的 view 输出)在真实会话里达不到。`tests/ref-registry-gc.test.ts` 锁定前提:死槽跨 job 真被 GC 清空、槽数不缩、号码不复用、死槽仍归 `live` 类可沿链自愈。若日后有真实页面出现 >1e5 槽,再考虑把死槽 WeakRef 壳换成 sentinel 的增量 sweep(只能省常数,不改上界)。
 - **parentRef 来源**:调用方知道树位置就显式传(`buildView` 子节点传树上最近已登记祖先、`info` 传祖先链上一层);**省略**(局部 view/find/feedback/自愈的**根**、`find`/`read` 单点登记)时按当前 DOM 沿 `parentElement`/shadow host 找最近已登记祖先(`nearestRegisteredAncestor`,O(深度) 次 WeakMap 查、不登记中间层),整页根 body 无祖先才是 null。**绝不能**把局部根写死 null——那会切断它整棵子树的自愈链(整页 view → 局部 view → 节点被替换 → `recoverRef` 走不到仍存活的祖先),`tests/recover-chain-dom.test.ts` 用最小假 DOM 锁定该链路(含自愈自身 buildView 不切断恢复根、二级自愈)。
 - **解析**:`lib/find-root.ts` 的 `refElement` 统一 `deref()`(兼容裸 Element / `{el}` / `{elRef}`),目标不存在或 `!isConnected` 即 stale；`climbAncestors` 供 `--ancestor`。
 - **回显**:操作成功回显唯一 selector(优先 selector 而非 ref);light 用 `genSel`;shadow 内回 `{ok,tag,shadow:true,selector:null}`,CLI 提示"用 ref";超长截断。统一走 `actionSelector(el)`。
@@ -158,7 +160,7 @@ Node 侧统一 `invoke(target, expr)` 执行注入脚本并解包:成功返回�
 ## 测试
 
 - `tests/*.test.ts` 用 Node 内置 `node:test`+`node:assert/strict`,零运行时依赖。
-- 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`ref-registry.test.ts`(WeakRef 形态/复号追加/parentRef 刷新与省略时按 DOM 接链/WeakMap 只查)、`recover-chain-dom.test.ts`(最小假 DOM:整页 view → 局部 view → 节点移除 → recoverRef 沿链自愈,新根按 DOM 接链)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/loadFolds,临时 CDP_FOLD_FILE)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/parseLinkRules + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
+- 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`ref-registry.test.ts`(WeakRef 形态/复号追加/parentRef 刷新与省略时按 DOM 接链/WeakMap 只查)、`recover-chain-dom.test.ts`(最小假 DOM:整页 view → 局部 view → 节点移除 → recoverRef 沿链自愈,新根按 DOM 接链)、`ref-registry-gc.test.ts`(死槽跨 job GC 释放/不缩表/号码不复用/死槽仍 live;用 `v8.setFlagsFromString('--expose-gc')`+`vm` 取 gc,不改测试入口 flag)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/loadFolds,临时 CDP_FOLD_FILE)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/parseLinkRules + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
 - 注入侧 DOM 相关(buildView/fold/inputInfo、find-entry 穿透 shadow、feedback observer/子树黑名单)依赖真实 DOM,主要靠浏览器实测(见 SKILL.md);`recoverRef` live 分支与 buildView 的 ref 分配/接链另用最小假 DOM 锁定(`recover-chain-dom.test.ts`)。纯函数分支(`formatView` 的 `·屏`/shadow 占位/fold 优先/`inputAttr`、`feedback` 的 `foldTimestampRun`)有单测。
 
 ## 文档分工
