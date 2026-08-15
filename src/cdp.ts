@@ -11,6 +11,8 @@ import { logs, cmdListen } from './monitor';
 import { ensureBrowser, killBrowser } from './browser';
 import { runScript } from './run-script';
 import { runRecipe } from './recipe-runner';
+import { assertTargetArg, parseRefArg } from './target-arg';
+import { parseKeySpec } from './keys';
 
 const api: any = { ...coreApi, logs, ensure: ensureBrowser, kill: killBrowser };
 // recipe:暴露给 run 脚本显式取站点摘要(命中返回 {lines},未命中 null)。
@@ -137,7 +139,7 @@ targetCmd('view', '感知:命中 recipe 输出站点摘要,否则整页结构树
   .option('--max-len <n>', '文本截断阈值(字符数);缺省不截断,设值则所有文本片截到 n 并补省略号')
   .action(async (n, opts) => {
     const sel = readOptFile(opts.selectorFile);
-    const ref = n != null ? Number(n) : undefined;
+    const ref = parseRefArg(n, 'view');
     if (ref != null && sel) throw new Error('ref 序号与 --selector-file 只能选其一');
     if ((opts.scrollPages != null || opts.scrollTo != null) && !opts.scrollToLoad) {
       throw new Error('--scroll-pages / --scroll-to 必须与 --scroll-to-load 配合使用');
@@ -158,9 +160,13 @@ targetCmd('view', '感知:命中 recipe 输出站点摘要,否则整页结构树
   });
 
 // 操作目标:位置参数 <target> 全数字→ref(配 --ancestor),否则视为 selector。见 api.TargetArg。
+// 防呆(网址 / XPath / Playwright / shadow 链 / "{ref:N}" 字面量)在这里就引爆:每个操作动作都先算 arg
+// 再 `await needTarget(...)`,所以非法目标绝不会走到浏览器探测/自动启动、更不会先装上 feedback observer。
+// (`api.click(await needTarget(...), arg)` 这种写法会先求值 needTarget —— 实参从左到右求值 —— 别改回去。)
 function normTarget(t: string, ancestor: number | undefined): string | { ref: number; ancestor?: number } {
-  if (/^\d+$/.test(t)) return { ref: Number(t), ancestor: ancestor != null ? Number(ancestor) : undefined };
-  return t;
+  const arg = /^\d+$/.test(t) ? { ref: Number(t), ancestor: ancestor != null ? Number(ancestor) : undefined } : t;
+  assertTargetArg(arg);
+  return arg;
 }
 const targetOpt = (c: any) => c
   .option('--ancestor <n>', '按 ref 定位后向上爬 N 层父级再操作(默认 0;把内容叶子抬到区域容器;仅对数字 ref 生效)');
@@ -265,14 +271,30 @@ function printInfoChain(r: any): void {
   if (r.suggested) console.log(`建议 selector: ${r.suggested}`);
 }
 
+// 操作动作的固定顺序:先 normTarget(含防呆)→ 再 needTarget → 再 api。参数校验一律放在 await 之前。
 feedbackOpt(targetOpt(targetCmd('click', '点击元素'))).argument('<target>', 'ref 序号或 selector(全数字=ref)')
-  .action(async (t: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.click(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已点击: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
+  .action(async (t: string, opts: any) => {
+    const arg = normTarget(t, opts.ancestor);
+    const target = await needTarget(opts.target);
+    const r = await api.click(target, arg, feedbackCfg(opts));
+    printAction(`已点击: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback);
+  });
 
 feedbackOpt(targetOpt(targetCmd('fill', '填输入框并触发 input/change'))).argument('<target>', 'ref 序号或 selector(全数字=ref)').argument('<value>', '值')
-  .action(async (t: string, val: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.fill(await needTarget(opts.target), arg, val, feedbackCfg(opts)); printAction(`已填入: ${argLabel(arg)} ← ${val}`, r); printFeedback(r.feedback); });
+  .action(async (t: string, val: string, opts: any) => {
+    const arg = normTarget(t, opts.ancestor);
+    const target = await needTarget(opts.target);
+    const r = await api.fill(target, arg, val, feedbackCfg(opts));
+    printAction(`已填入: ${argLabel(arg)} ← ${val}`, r); printFeedback(r.feedback);
+  });
 
 feedbackOpt(targetOpt(targetCmd('focus', '聚焦元素'))).argument('<target>', 'ref 序号或 selector(全数字=ref)')
-  .action(async (t: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.focus(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已聚焦: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback); });
+  .action(async (t: string, opts: any) => {
+    const arg = normTarget(t, opts.ancestor);
+    const target = await needTarget(opts.target);
+    const r = await api.focus(target, arg, feedbackCfg(opts));
+    printAction(`已聚焦: ${argLabel(arg)} (${r.tag})`, r); printFeedback(r.feedback);
+  });
 
 targetCmd('get-focus', '查看当前焦点元素在哪')
   .action(async (opts) => { const f = await api.getFocus(await needTarget(opts.target)); if (!f) { console.log('(当前无焦点元素)'); return; } console.log(`焦点在: [${f.tag}] "${f.text || ''}" ${f.id ? '#' + f.id : ''} sel=${f.selector}`); });
@@ -281,7 +303,9 @@ targetCmd('info', '列目标元素祖先链(tag/id/class/语义 data-*/aria/role
   .argument('<n>', 'view 输出的 ref 序号(穿透 shadow)')
   .option('--ancestor <k>', '按 ref 定位后向上爬 K 层父级再列(默认 0)')
   .action(async (n, opts) => {
-    const r = await api.info(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+    const ref = parseRefArg(n, 'info')!; // 位置参数防呆先于 needTarget
+    const target = await needTarget(opts.target);
+    const r = await api.info(target, ref, opts.ancestor != null ? Number(opts.ancestor) : undefined);
     printInfoChain(r);
   });
 
@@ -289,7 +313,9 @@ targetCmd('article', '以 ref 为根提取格式友好的 Markdown 文章(保序
   .argument('<n>', 'view 输出的 ref 序号(穿透 shadow)')
   .option('--ancestor <k>', '按 ref 定位后向上爬 K 层父级再提取(默认 0)')
   .action(async (n, opts) => {
-    const r = await api.article(await needTarget(opts.target), Number(n), opts.ancestor != null ? Number(opts.ancestor) : undefined);
+    const ref = parseRefArg(n, 'article')!; // 位置参数防呆先于 needTarget
+    const target = await needTarget(opts.target);
+    const r = await api.article(target, ref, opts.ancestor != null ? Number(opts.ancestor) : undefined);
     if (r?.refInvalid) { printRefInvalid(r); return; }
     if (!r?.lines?.length) { console.log('(空文章)'); return; }
     console.log(r.lines.join('\n'));
@@ -297,10 +323,20 @@ targetCmd('article', '以 ref 为根提取格式友好的 Markdown 文章(保序
 
 
 feedbackOpt(targetCmd('press-key', '按键/组合键,如 Enter、Ctrl+Shift+A、Tab')).argument('<key>', '按键')
-  .action(async (key: string, opts: any) => { const r = await api.pressKey(await needTarget(opts.target), key, feedbackCfg(opts)); console.log(`已按键: ${key}`); printFeedback(r?.feedback); });
+  .action(async (key: string, opts: any) => {
+    parseKeySpec(key); // 按键拼写防呆(未知按键/缺主键)先于 needTarget;api.pressKey 内会再解析一次,纯函数无副作用
+    const target = await needTarget(opts.target);
+    const r = await api.pressKey(target, key, feedbackCfg(opts));
+    console.log(`已按键: ${key}`); printFeedback(r?.feedback);
+  });
 
 feedbackOpt(targetOpt(targetCmd('hover', '鼠标移到元素上'))).argument('<target>', 'ref 序号或 selector(全数字=ref)')
-  .action(async (t: string, opts: any) => { const arg = normTarget(t, opts.ancestor); const r = await api.hover(await needTarget(opts.target), arg, feedbackCfg(opts)); printAction(`已悬停: ${argLabel(arg)}`, r); printFeedback(r?.feedback); });
+  .action(async (t: string, opts: any) => {
+    const arg = normTarget(t, opts.ancestor);
+    const target = await needTarget(opts.target);
+    const r = await api.hover(target, arg, feedbackCfg(opts));
+    printAction(`已悬停: ${argLabel(arg)}`, r); printFeedback(r?.feedback);
+  });
 
 targetCmd('screenshot', '截图').option('-f, --file <file>', '输出文件')
   .action(async (opts) => { const file = await api.screenshot(await needTarget(opts.target), opts.file); console.log(`已截图: ${file}`); });
@@ -316,6 +352,10 @@ targetCmd('logs', '读 target 控制台日志(常驻 daemon,支持过滤)')
     console.log(`→ ${t.title} ${t.url}`);
     for (const e of entries) { const ts = new Date(e.ts).toTimeString().slice(0, 8); const loc = (e.line != null) ? ` (${e.line}:${e.col ?? ''})` : ''; const argsText = (e.args || []).map((a: any) => a == null ? 'undefined' : (typeof a === 'string' ? a : JSON.stringify(a))).join(' '); console.log(`[${ts}][${e.level}] ${argsText}${loc}`); }
   });
+
+// 多余的位置参数一律报错(commander 12 默认是静默丢掉)。实测:弱模型爱写
+// `view <url>` / `click <sel> <url>`,被静默吞掉后它以为自己已经在目标页上,后面全盘错。
+for (const c of program.commands) c.allowExcessArguments(false);
 
 if (require.main === module) {
   program.parseAsync(process.argv).catch((err: any) => {
