@@ -34,12 +34,27 @@ test('registerRef: 首次登记追加 WeakRef 槽位并建立反向索引', () =
 test('registerRef: 同一元素复用旧号并刷新 parentRef，不追加新槽位', () => {
   const el = fakeElement();
   const first = registerRef(el, 3);
-  assert.equal(registerRef(el), first);
-  assert.equal((globals.__cdpRefs?.[0] as WeakEntry).parentRef, 3);
   const second = registerRef(el, 9);
   assert.equal(second, first);
   assert.equal(globals.__cdpRefs?.length, 1);
   assert.equal((globals.__cdpRefs?.[0] as WeakEntry).parentRef, 9);
+});
+
+test('registerRef: 省略 parentRef 按 DOM 最近已登记祖先接链，越过未登记的中间层；无祖先为 null', () => {
+  const grand = fakeElement();
+  const wrapper = fakeElement();
+  const leaf = fakeElement();
+  (wrapper as unknown as { parentElement: Element }).parentElement = grand;
+  (leaf as unknown as { parentElement: Element }).parentElement = wrapper;
+  const grandRef = registerRef(grand, null);
+  // wrapper 未登记 → leaf 越过它接到 grand;已登记元素省略 parentRef 也按当前 DOM 刷新而非退化成 null。
+  const leafRef = registerRef(leaf);
+  assert.equal((globals.__cdpRefs?.[leafRef] as WeakEntry).parentRef, grandRef);
+  registerRef(leaf, 7);
+  assert.equal(registerRef(leaf), leafRef);
+  assert.equal((globals.__cdpRefs?.[leafRef] as WeakEntry).parentRef, grandRef);
+  assert.equal((globals.__cdpRefs?.[registerRef(fakeElement())] as WeakEntry).parentRef, null);
+  assert.equal(globals.__cdpRefs?.length, 3, '省略 parentRef 的查找不登记中间层 wrapper');
 });
 
 test('registerRef: 兼容旧表并回收强引用形态，首次见到的新元素只追加', () => {

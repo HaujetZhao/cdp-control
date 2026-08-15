@@ -4,9 +4,9 @@
  * ref 的取法:window.__cdpRefs 是 view 遍历时登记的引用数组,index 即 view 输出的 [ref=i]。
  * --ancestor:按 ref 定位后向上爬 N 层父级再操作(把内容叶子抬到语义区域容器)。
  */
-import { climbAncestors, classifyRef, entryEl, entryParent, getRefs, refElement } from './find-root';
-import { buildView } from './view-core';
-import { markText, formatView } from './view-format';
+import { climbAncestors, classifyRef, entryEl, entryParent, getRefs, refElement } from './find-root.ts';
+import { buildView } from './view-core.ts';
+import { markText, formatView } from './view-format.ts';
 
 export interface OperableArg { sel?: string; ref?: number; ancestor?: number }
 

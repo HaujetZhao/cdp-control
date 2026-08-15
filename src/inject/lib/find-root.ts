@@ -65,22 +65,49 @@ export function lookupRef(el: Element | null | undefined): number | null {
   return entryEl(refGlobals.__cdpRefs?.[ref]) === el ? ref : null;
 }
 
+/** 组合树意义上的父:parentElement;shadow 根直接子(parentElement=null)与 ShadowRoot 自身跳到 host。 */
+function parentOrHost(n: Node): Element | null {
+  if (n.parentElement) return n.parentElement;
+  const root = typeof n.getRootNode === 'function' ? n.getRootNode() : null;
+  return root && typeof ShadowRoot !== 'undefined' && root instanceof ShadowRoot ? root.host : null;
+}
+
+/**
+ * 沿组合树向上找首个已登记祖先的 ref(不含自身),无则 null。
+ * 局部 view / find / read / 自愈 以任意元素为根建树时,根在本次树里没有位置,靠它把跳表接回既有登记表;
+ * 否则根被写成 null 会切断其整棵子树的 recoverRef 链。O(深度) 次 WeakMap 查,不登记任何元素。
+ */
+export function nearestRegisteredAncestor(n: Node): number | null {
+  const refs = getRefs();
+  if (!refs || !refs.length) return null;
+  const index = ensureRefIndex(refs);
+  let cur = parentOrHost(n);
+  let guard = 0;
+  while (cur && guard++ < 9999) {
+    const ref = index.get(cur);
+    if (ref != null && entryEl(refs[ref]) === cur) return ref;
+    cur = parentOrHost(cur);
+  }
+  return null;
+}
+
 /**
  * 统一登记入口：已登记元素复用原号，首次见到的元素只在表尾追加。
- * parentRef 传值时刷新跳表父链；省略时复用旧槽位父链，新槽位按 null 登记。
+ * parentRef 传值时按调用方给的树位置刷新跳表父链(buildView 子节点 / info 祖先链);
+ * 省略时按当前 DOM 取最近已登记祖先(局部根 / find / read),不会把已有链写成 null。
  */
 export function registerRef(el: Element, parentRef?: number | null): number {
   const refs = refGlobals.__cdpRefs || (refGlobals.__cdpRefs = []);
   const index = ensureRefIndex(refs);
+  const nextParent = parentRef === undefined ? nearestRegisteredAncestor(el) : parentRef;
   const oldRef = index.get(el);
   if (oldRef != null && entryEl(refs[oldRef]) === el) {
-    const nextParent = parentRef === undefined ? entryParent(refs[oldRef]) : parentRef;
     refs[oldRef] = { elRef: new WeakRef(el), parentRef: nextParent };
     return oldRef;
   }
   if (oldRef != null) index.delete(el);
   const ref = refs.length;
-  refs.push({ elRef: new WeakRef(el), parentRef: parentRef ?? null });
+  refs.push({ elRef: new WeakRef(el), parentRef: nextParent });
   index.set(el, ref);
   return ref;
 }

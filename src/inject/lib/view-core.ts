@@ -10,7 +10,7 @@ import { tmpFolds } from './fold.ts';
 import type { FoldItem } from './arg.ts';
 import { linkIgnored } from './ignore-links.ts';
 import { cut, isPureCount } from './view-utils.ts';
-import { registerRef } from './find-root.ts';
+import { nearestRegisteredAncestor, registerRef } from './find-root.ts';
 
 export interface ViewBuildOpts { visibleOnly?: boolean; viewport?: boolean; folds?: FoldItem[]; ignoreLinks?: string[]; maxLen?: number }
 
@@ -329,7 +329,10 @@ export function buildView(root: Element | ShadowRoot, opts: ViewBuildOpts = {}):
 
   let v = simplify(root, 0);
   if (!v) v = { tag: 'body', isContent: false, text: '', inter: false, ref: undefined, inView: true, view: false, imgAlt: '', shadow: false, kids: [], size: 0, hasText: false, agg: false };
-  assign(v, null);
+  // 根在本次树里没有父:局部 view / find / feedback / 自愈都以任意元素为根,其跳表父链取 DOM 上
+  // 最近已登记祖先(整页根 body 无祖先 → null)。若写死 null,局部根及其未登记的子树都会被切断,
+  // 节点被替换后 recoverRef 走不到仍存活的祖先。
+  assign(v, nearestRegisteredAncestor(root));
   if (visibleOnly) { v.kids = v.kids.filter(k => prune(k)); }
   return v;
 }
