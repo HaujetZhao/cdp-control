@@ -1,7 +1,8 @@
 /**
  * feedback.test.ts — 反馈纯函数单测(零运行时依赖,node:test)。
- * feedback.ts 的 DOM 部分(startFeedback/collectFeedback 装 observer、buildView 采集)依赖
- * 真实 DOM,靠浏览器实测验收;这里只锁定可纯化的 foldTimestampRun(连续播放时间戳折叠判定)。
+ * feedback.ts 的 DOM 部分(startFeedback/collectFeedback 装 observer、buildView 采集)见
+ * feedback-live-state.test.ts(jsdom 真实 DOM 语义)与浏览器实测;这里只锁定可纯化的
+ * foldTimestampRun(连续播放时间戳折叠判定)、class 差集与属性限量。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

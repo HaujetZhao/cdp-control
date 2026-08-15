@@ -206,7 +206,7 @@ export interface FeedbackResult {
   reloaded?: boolean;                               // 注入侧判定:本次是否整页重载(换 document)
   blocks?: { lines: string[]; count: number }[];   // 去重折叠后的新增内容块(可空);重载时为整页视图单块
   changes?: { before?: string; after: string }[];  // 文本变化(过滤前后相同),如 [{before:'63',after:'64'}]
-  attrs?: { desc: string; attr: string; before: string | null; after: string | null }[]; // 白名单属性变化；class 两侧仅存移除/新增 token
+  attrs?: { desc: string; attr: string; before: string | null; after: string | null }[]; // 白名单属性变化；class 两侧仅存移除/新增 token；checkbox/radio 的 checked、option 的 selected 来自 live property 快照比对(值 'true'/'false')
   attrsOverflow?: number;                          // 属性变化去重后超过 20 条的剩余数
   tabs?: { opened: Target[]; closed: Target[]; navigated?: { id: string; from: string; to: string }[] };
 }

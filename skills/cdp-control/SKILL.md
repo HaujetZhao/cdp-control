@@ -88,7 +88,7 @@ cdp-control run "./scripts/你的脚本.js"
 ## 操作后自动反馈(click/fill/focus/hover/press-key 默认开启)
 
 操作后等约 1s,回报**新增内容 view + tab 变化**,一轮拿到结果:
-- **内容**:`页面变化 · 新增内容:`(重复块标 `(重复 N 次,已折叠)`)、`页面变化 · 文本变化:`(逐条 `旧 → 新`)。observer **穿透 shadow**、**跳过 video/audio/canvas 子树与连续播放时间戳**(01:55→01:56 折叠,不淹没点赞数等真变化)。操作行同附 `，该元素的 selector 为: <唯一selector>`,后续优先用 selector 而非 ref。
+- **内容**:`页面变化 · 新增内容:`(重复块标 `(重复 N 次,已折叠)`)、`页面变化 · 文本变化:`(逐条 `旧 → 新`)、`页面变化 · 属性变化:`(逐条 `<元素> · <属性>: 旧 → 新`;`aria-*` 状态/disabled/open/class 差集,以及 checkbox/radio 的 `checked`、option 的 `selected` 真实状态 `false → true`——点了复选框/换了下拉选项一眼可见,最多 20 条并报剩余数)。observer **穿透 shadow**、**跳过 video/audio/canvas 子树与连续播放时间戳**(01:55→01:56 折叠,不淹没点赞数等真变化)。操作行同附 `，该元素的 selector 为: <唯一selector>`,后续优先用 selector 而非 ref。
 - **tab**:操作前后 diff,点 `target=_blank` 新开 tab 直接报 `新开 tab: <title> <url> [<targetId>]`,直接 `view --target <targetId>` 继续。
 - `--no-feedback`:关闭。`--feedback-delay <ms>`:自定义等待(默认 1000)。
 - **反馈树 ref 是增量号,不顶旧 ref**:新增内容 `[ref]` 从当前已有号递增,可操作新增内容,**原整页 ref 仍有效**。增量 ref 适合即时 click/fill;要 `view <ref>` 回看先整页 view。

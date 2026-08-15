@@ -1,8 +1,10 @@
 /**
  * feedback.ts — 操作后自动反馈(注入侧):MutationObserver 采集本次操作产生的 DOM 变化。
  * 分为两段,跨两次 Runtime.evaluate 调用协作,observer 状态暂存于全局 __cdpFeedback:
- *   startFeedback()   — 装 observer,记录 childList 新增 + 文本/白名单属性变化(前后值)。
- *   collectFeedback() — 断开 observer,取"顶层新增元素"逐块建视图拼接,产摘要与属性差集。
+ *   startFeedback()   — 装 observer,记录 childList 新增 + 文本/白名单属性变化(前后值);
+ *                       并快照 checkbox/radio 的 checked、option 的 selected(只活在 IDL property、
+ *                       不反映到 attribute,MutationObserver 看不到,与 view-core.elementState 同源)。
+ *   collectFeedback() — 断开 observer,取"顶层新增元素"逐块建视图拼接,产摘要、live 状态差集与属性差集。
  * 等待时长由 Node 侧(sleep)控制,不在此注入侧;node 侧在两次调用之间等待 delayMs。
  *
  * ref 语义:collect **不重置 __cdpRefs,只追加**——反馈新增的 ref 从现有长度递增,不顶掉整页旧 ref
@@ -41,7 +43,47 @@ export interface FeedbackChange { before?: string; after: string; note?: string 
 export interface FeedbackAttr { desc: string; attr: string; before: string | null; after: string | null }
 
 interface PendingFeedbackAttr { el: Element; attr: string; before: string | null; after: string | null }
-interface FeedbackState { added: Node[]; changes: FeedbackChange[]; attrs: PendingFeedbackAttr[]; document: Document }
+/** 只活在 IDL property、不反映到 content attribute 的语义状态(与 view-core.elementState 读的同源):
+ * checkbox/radio 的 checkedness、option 的 selectedness。点击、赋值 .checked、选中 option、select.value=
+ * 都不改 attribute,MutationObserver 看不见,只能 start 时快照、collect 时按 property 比对。 */
+interface LiveState { checked?: boolean; selected?: boolean }
+interface FeedbackState {
+  added: Node[]; changes: FeedbackChange[]; attrs: PendingFeedbackAttr[]; document: Document;
+  live: Map<Element, LiveState>;
+}
+
+/** 元素的 live 语义状态快照;不属于这两类的元素返回 null。 */
+export function liveStateOf(el: Element): LiveState | null {
+  if (el.tagName === 'INPUT') {
+    const type = (el as HTMLInputElement).type;
+    return type === 'checkbox' || type === 'radio' ? { checked: (el as HTMLInputElement).checked } : null;
+  }
+  if (el.tagName === 'OPTION') return { selected: (el as HTMLOptionElement).selected };
+  return null;
+}
+
+/** 把一棵已观察树(document / shadowRoot)里所有 checkbox/radio/option 的 live 状态记进快照。 */
+function snapshotLiveState(root: ParentNode, live: Map<Element, LiveState>): void {
+  for (const el of Array.from(root.querySelectorAll('input, option'))) {
+    const state = liveStateOf(el);
+    if (state) live.set(el, state);
+  }
+}
+
+/** 快照与当前 live 状态的差集,输出形态与属性条目一致(值为 'true'/'false');已脱离 DOM 的元素跳过。 */
+export function diffLiveState(live: Map<Element, LiveState>, describe: (el: Element) => string): FeedbackAttr[] {
+  const out: FeedbackAttr[] = [];
+  for (const [el, before] of live) {
+    if (!el.isConnected) continue;
+    const after = liveStateOf(el);
+    if (!after) continue;
+    for (const key of ['checked', 'selected'] as const) {
+      if (before[key] === undefined || after[key] === undefined || before[key] === after[key]) continue;
+      out.push({ desc: describe(el), attr: key, before: String(before[key]), after: String(after[key]) });
+    }
+  }
+  return out;
+}
 
 /** shadow 递归观察深度上限(防极深 shadow 树导致 observer 爆炸;B站等典型页面 shadow 嵌套 ≤3)。 */
 const MAX_SHADOW_DEPTH = 3;
@@ -131,7 +173,7 @@ function inIgnoredSubtree(node: Node): boolean {
  */
 export function startFeedback(): void {
   if ((globalThis as any).__cdpFeedback) return; // 已启动则复用(防重复装)
-  const st: FeedbackState = { added: [], changes: [], attrs: [], document };
+  const st: FeedbackState = { added: [], changes: [], attrs: [], document, live: new Map() };
   const mos: MutationObserver[] = [];
   // callback 在所有 observer 间共享:统一推 state,并给新增带 shadowRoot 的节点补装。
   const onMutate = (ms: MutationRecord[]) => {
@@ -187,7 +229,9 @@ export function startFeedback(): void {
   }
 
   // 递归为 root 及其内所有 shadowRoot 装 observer;depth 为 root 本身的 shadow 深度(document=0)。
-  function observeAll(root: Node, depth: number): void {
+  // snapshot:start 时的初始遍历顺手快照 live 状态(checkbox/radio/option),observer 覆盖到哪快照就到哪(含 shadow);
+  // 动作期间新增 host 的补装不快照——新增子树整体由 blocks 呈现,半程快照只会制造与 blocks 重复的差集。
+  function observeAll(root: Node, depth: number, snapshot: boolean): void {
     const mo = new MutationObserver(onMutate);
     mo.observe(root, {
       childList: true, subtree: true, characterData: true, characterDataOldValue: true,
@@ -195,6 +239,7 @@ export function startFeedback(): void {
     });
     mos.push(mo);
     depthMap.set(root, depth);
+    if (snapshot) snapshotLiveState(root as ParentNode, st.live);
     if (depth >= MAX_SHADOW_DEPTH) return; // 超深度不再下钻
     // 深度优先找 root 内带 shadowRoot 的元素,对其 shadowRoot 递归 observeAll。
     const hostEls = root instanceof Document || root instanceof ShadowRoot
@@ -202,22 +247,22 @@ export function startFeedback(): void {
       : (root as Element).querySelectorAll?.('*') ?? [];
     for (const el of Array.from(hostEls)) {
       const sr = (el as Element).shadowRoot;
-      if (sr) observeAll(sr, depth + 1);
+      if (sr) observeAll(sr, depth + 1, snapshot);
     }
   }
   // 给一棵元素子树(运行时新增 host)内所有 shadowRoot 补装 observer;depth 用宿主所在观察根的深度。
   function observeShadowTree(el: Element, hostDepth: number): void {
     if (hostDepth >= MAX_SHADOW_DEPTH) return;
     const sr = (el as any).shadowRoot;
-    if (sr) observeAll(sr, hostDepth + 1);
+    if (sr) observeAll(sr, hostDepth + 1, false);
     const kids = el.querySelectorAll?.('*') ?? [];
     for (const k of Array.from(kids)) {
       const ksr = (k as Element).shadowRoot;
-      if (ksr) observeAll(ksr, hostDepth + 1);
+      if (ksr) observeAll(ksr, hostDepth + 1, false);
     }
   }
 
-  observeAll(document, 0);
+  observeAll(document, 0, true);
   (globalThis as any).__cdpFeedback = { mos, state: st };
 }
 
@@ -227,7 +272,7 @@ export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResu
   if (!fb) return { blocks: [], changes: [], attrs: [], attrsOverflow: 0, reloaded: false };
   for (const mo of fb.mos as MutationObserver[]) mo.disconnect();
   (globalThis as any).__cdpFeedback = null;
-  const { added, changes, attrs: pendingAttrs } = fb.state as FeedbackState;
+  const { added, changes, attrs: pendingAttrs, live } = fb.state as FeedbackState;
   // 整页重载判定:装 observer 时(document)与采集时(document)是否同一对象。
   // 锚点/历史跳转 URL 变但 document 不变 → reloaded=false(ref 仍有效);整页导航换 document → true。
   const reloaded = (fb.state as FeedbackState).document !== document;
@@ -276,9 +321,15 @@ export function collectFeedback(opts: { viewport?: boolean } = {}): FeedbackResu
     if (current) current.after = item.after;
     else byAttr.set(item.attr, { ...item });
   }
-  const attrItems: FeedbackAttr[] = [];
+  // live 语义状态(checked/selected)先行:它是 agent 最关心的结果,也保证在 20 条限量里不被 class 噪声挤掉。
+  const attrItems: FeedbackAttr[] = diffLiveState(live ?? new Map(), describeElement);
   for (const byAttr of merged.values()) {
     for (const item of byAttr.values()) {
+      // checkbox/radio 的 checked、option 的 selected 以 live 比对为准:content attribute 只是默认态,
+      // 用户交互(dirty flag)后再 setAttribute 也不改真实状态,按 attribute 报会误导 agent;真改了状态的
+      // setAttribute 已由 live 比对报过一次,这里再报就是双报。
+      const liveCovered = liveStateOf(item.el);
+      if (liveCovered && item.attr in liveCovered) continue;
       if (item.attr === 'class') {
         const delta = diffClassTokens(item.before, item.after);
         if (!delta.added.length && !delta.removed.length) continue;
