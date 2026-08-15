@@ -165,6 +165,7 @@ Node 侧统一 `invoke(target, expr)` 执行注入脚本并解包:成功返回�
 
 - `tests/*.test.ts` 用 Node 内置 `node:test`+`node:assert/strict`,零运行时依赖。
 - 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`click-position.ts`(中心可用性/跨 shadow 命中链)、`click-events.ts`(moved/pressed/released 顺序与参数)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/loadFolds,临时 CDP_FOLD_FILE)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/parseLinkRules + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
+- Node 侧 click 链路端到端:`tests/click-error-path.test.ts` 用 esbuild 把**真实** `src/api.ts` 依赖图打成 CJS(仅 `./browser`/`./monitor` 换成"到达即抛"桩,测试绝不拉起浏览器/daemon)+ 真实 `src/inject/*.ts` bundle,连 `tests/helpers/fake-cdp.ts`(零依赖:`/json/version`/`/json/list` + 手写 RFC 6455 WS 服务端)回放 `inject/click.ts` 各分支字面结果。锁定:注入 `{ok:false, err}`(遮挡/零尺寸/selector 未命中)经 `invoke` 原样成为 `api.click` 抛出的信息(noFeedback 与默认反馈路径都是,反馈路径抛错后仍 collect 断 observer 再原样重抛),`refInvalid` 透传不派发,成功路径 moved→pressed→released 打到注入坐标,`--dom` 不派发,`点击坐标缺失` 只在注入返回 ok 却无坐标(契约违反)时出现。产物写到 `tmp/click-error-path/`。
 - 注入侧 DOM 相关(buildView/fold/inputInfo、find-entry 穿透 shadow、feedback observer/子树黑名单、recoverRef live 分支)依赖真实 DOM,靠浏览器实测(见 SKILL.md),不写单测。纯函数分支(`formatView` 的 `·屏`/shadow 占位/fold 优先/`inputAttr`、`feedback` 的 `foldTimestampRun`)有单测。
 
 ## 文档分工
