@@ -9,7 +9,7 @@
 `dist/` 不提交 git,改源码后重建:
 
 ```bash
-npm install      # 首次:esbuild/typescript/@types/node/commander(运行时仅 commander)
+npm install      # 首次:esbuild/typescript/@types/node/jsdom(仅测试)/commander(运行时仅 commander)
 npm run build    # tsc --noEmit + esbuild(编译 + 打包注入脚本)
 npm test         # node:test 跑 tests/*.test.ts(零运行时依赖)
 ```
@@ -81,6 +81,7 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 - **shadow host 占位**:带 `shadowRoot` 的 Element 标 `wantRef`+`isContent=true`。`view-format.walk` 对 `depth>0 && shadow && ref` 输出 `<tag>[shadow] [ref=N]` 不展开子树,根正常走子树。
 - **图标按钮兜底(`elLabel`)**:交互元素无直接文本时按 `aria-label → title → 直接文本` 取标。view 显示功能、article 降级 `[label]`,而非裸 `button [ref=N]`。
 - **表单采集**:simplify 对 INPUT/TEXTAREA 设 `inputInfo={type,value,placeholder}`(value 截 40),输出 `input[type=text value="..." placeholder="..."]`,agent 不必 eval。
+- **语义状态**:simplify 只读 DOM/ARIA 补 `node.state`(`pressed/checked/expanded/selected/disabled/open`,`mixed` 保留为 `name=mixed`);状态跟 ref 同括号输出，checkbox/radio 的 checked 并入 `input[...]`，无状态零额外字符。
 - **导出**:`strip`/`ownElText`(元素自身直接文本)/`subtreeText`(穿透 shadow)/`childrenOf`(穿透 shadow 取子)/`isInViewport`/`elLabel`/`buildView`。
 - **滚动加载**:整页完整 `view` 首次自动 `scrollToLoad()`(置 `__cdpFullViewDone`,同页只滚一次;局部/`--visible-only`/显式滚动参数不触发),滚动后默认等 `scrollWait`(默认 1000ms,`--scroll-wait 0` 关)才建树。`api.fetchPage` 靠它一次抓全,等待条件="body 有非空文本"。
 
@@ -137,7 +138,8 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 - **Args**:`FindCmdArgs{text?,selector?,ancestor?,all?}`。
 
 ### feedback
-**变更感知**:`feedback-start/collect` 分两次 eval 协作,observer 存全局 `__cdpFeedback`。`startFeedback()` 装 MutationObserver 记 childList 新增+文本变化(前后值);`collectFeedback()` 断开后取**顶层新增元素**逐块 `buildView`,返回 `{blocks, changes}`。
+**变更感知**:`feedback-start/collect` 分两次 eval 协作,observer 存全局 `__cdpFeedback`。`startFeedback()` 装 MutationObserver 记 childList 新增+文本变化，以及白名单属性(`aria-*` 状态、checked/disabled/open/selected/class);`collectFeedback()` 断开后取**顶层新增元素**逐块 `buildView`,返回 `{blocks, changes, attrs}`。class 只报 token 差集，属性条目去重后限 20 条并回报溢出数。
+- **live 语义状态快照/比对**:checkbox/radio 的 `checked`、option 的 `selected` 只活在 IDL property(点击、赋值 `.checked`、选中 option、`select.value=` 都**不改 content attribute**),MutationObserver 的 attributes 看不见,而 `view-core.elementState` 读的正是 live property。`startFeedback` 的初始 `observeAll` 遍历(document + 既有 shadowRoot)对每棵树 `querySelectorAll('input, option')` 快照 `liveStateOf`(`checked`/`selected`);`collectFeedback` 用 `diffLiveState` 比对仍 connected 的元素,差集**先于**属性条目进 `attrs`(同形态 `{desc, attr, before:'true'|'false', after}`,共用去重/20 条限量,保证不被 class 噪声挤掉)。属性通道对 INPUT-`checked`/OPTION-`selected` 的 mutation 直接跳过:attribute 只是默认态,dirty 后 `setAttribute('checked')` 不改真实状态、按 attribute 报会误导;真改了状态的已由 live 比对报过,不双报。动作期间新增 host 的补装(`observeShadowTree`)不快照,新增子树由 blocks 呈现。事件监听不能替代 property 快照(脚本赋值不派发事件)。
 - **编排**:Node `runWithFeedback` = 动作 + `sleep(feedbackDelay)` + diff tab;`noFeedback` 不观察/不等待/不 diff。
 - **refInvalid 短路**:doAction 返回 `{refInvalid:true}` 则跳过 sleep/collect/tabdiff,透传 `recovered`。
 - **shadow 穿透**:`observeAll` 递归 document+所有 shadowRoot 各起共享 callback 的 observer(`MAX_SHADOW_DEPTH=3`),动态 host 用 `observeShadowTree` 补装。
@@ -159,7 +161,8 @@ Node 侧统一 `invoke(target, expr)` 执行注入脚本并解包:成功返回�
 
 - `tests/*.test.ts` 用 Node 内置 `node:test`+`node:assert/strict`,零运行时依赖。
 - 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/loadFolds,临时 CDP_FOLD_FILE)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/parseLinkRules + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
-- 注入侧 DOM 相关(buildView/fold/inputInfo、find-entry 穿透 shadow、feedback observer/子树黑名单、recoverRef live 分支)依赖真实 DOM,靠浏览器实测(见 SKILL.md),不写单测。纯函数分支(`formatView` 的 `·屏`/shadow 占位/fold 优先/`inputAttr`、`feedback` 的 `foldTimestampRun`)有单测。
+- 真实 DOM 语义单测(jsdom,devDependency,不起浏览器):`tests/feedback-live-state.test.ts` 把 jsdom window 的 `document/Element/ShadowRoot/MutationObserver/…` 挂到 globalThis 后直接跑 `startFeedback/collectFeedback`——checkbox 点击、`.checked=` 赋值、radio 组互斥、`select.value=`/`option.selected=`、无变化不误报、`details.open` 仍走属性通道且 `setAttribute('checked')` 只按语义结果报一次、shadow 内元素、动作期间移除的元素。动作后 `await` 一个宏任务再 collect(对应真实流程里 collect 是另一次 `Runtime.evaluate`;jsdom 的 mutation 记录也是微任务投递,同步 collect 会 `disconnect` 丢记录)。
+- 注入侧其余 DOM 相关(buildView/fold/inputInfo/state、find-entry 穿透 shadow、feedback observer/子树黑名单、recoverRef live 分支)依赖真实 DOM,靠浏览器实测(见 SKILL.md),不写单测。纯函数分支(`formatView` 的 `·屏`/状态/shadow 占位/fold 优先/`inputAttr`、`feedback` 的 `foldTimestampRun`/class 差集/属性限量)有单测。
 
 ## 文档分工
 

@@ -1,11 +1,18 @@
 /**
  * feedback.test.ts — 反馈纯函数单测(零运行时依赖,node:test)。
- * feedback.ts 的 DOM 部分(startFeedback/collectFeedback 装 observer、buildView 采集)依赖
- * 真实 DOM,靠浏览器实测验收;这里只锁定可纯化的 foldTimestampRun(连续播放时间戳折叠判定)。
+ * feedback.ts 的 DOM 部分(startFeedback/collectFeedback 装 observer、buildView 采集)见
+ * feedback-live-state.test.ts(jsdom 真实 DOM 语义)与浏览器实测;这里只锁定可纯化的
+ * foldTimestampRun(连续播放时间戳折叠判定)、class 差集与属性限量。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { foldTimestampRun, type FeedbackChange } from '../src/inject/lib/feedback.ts';
+import {
+  diffClassTokens,
+  foldTimestampRun,
+  limitFeedbackAttrs,
+  type FeedbackAttr,
+  type FeedbackChange,
+} from '../src/inject/lib/feedback.ts';
 
 const ch = (before: string, after: string): FeedbackChange => ({ before, after });
 
@@ -67,4 +74,29 @@ test('foldTimestampRun: 时间戳边界格式(H:MM / HH:MM 都接受)', () => {
   const cs2 = [ch('59:58', '59:59'), ch('59:59', '1:00:00')]; // 末条不是分:秒格式
   // 第一条匹配,第二条 after "1:00:00" 不匹配 → 仅 1 条进序列(runLen<3)→ 2 条原样
   assert.equal(foldTimestampRun(cs2).length, 2);
+});
+
+test('diffClassTokens: 只返回 class token 差集并保持两侧原顺序', () => {
+  assert.deepEqual(
+    diffClassTokens('Button Button--grey compact', 'Button Button--red compact active'),
+    { added: ['Button--red', 'active'], removed: ['Button--grey'] },
+  );
+});
+
+test('diffClassTokens: 仅重排/重复/空白变化时差集为空', () => {
+  assert.deepEqual(diffClassTokens('a  b a', ' b\ta '), { added: [], removed: [] });
+  assert.deepEqual(diffClassTokens(null, 'ready'), { added: ['ready'], removed: [] });
+  assert.deepEqual(diffClassTokens('ready', null), { added: [], removed: ['ready'] });
+});
+
+test('limitFeedbackAttrs: 条目去重后最多 20 条并返回溢出数', () => {
+  const attrs: FeedbackAttr[] = Array.from({ length: 21 }, (_, i) => ({
+    desc: `button[ref=${i}]`, attr: 'aria-pressed', before: 'false', after: 'true',
+  }));
+  attrs.splice(3, 0, attrs[2]); // 完全重复的条目不占限额
+  const out = limitFeedbackAttrs(attrs);
+  assert.equal(out.attrs.length, 20);
+  assert.equal(out.overflow, 1);
+  assert.deepEqual(out.attrs[0], attrs[0]);
+  assert.deepEqual(out.attrs[19], attrs[20]);
 });
