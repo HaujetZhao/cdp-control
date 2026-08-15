@@ -149,7 +149,8 @@ dist/inject/*.js     注入浏览器页面跑的 JS(esbuild 打包成自包含 I
 
 ### target-arg
 **目标归一化**:`src/target-arg.ts`(纯函数零依赖)`normArg(a)` 把 click/fill/focus/hover 目标(selector 字符串或 `{ref,ancestor?}` 对象)归一化为 `{sel?}/{ref?}`。
-- **防呆**:字符串 `/^\{[\s\S]*ref[\s\S]*\}$/`(对象字面量当 selector 误用)抛"CLI 直接传数字,脚本 API 才用 `{ref:N}`"。
+- **防呆**:字符串 `/^\{[\s\S]*ref[\s\S]*\}$/`(对象字面量当 selector 误用)抛"CLI 直接传数字,脚本 API 才用 `{ref:N}`";网址(`RE_URL`)、shadow 链 `>>>`、XPath/Playwright 方言(`selectorDialect`,串首形状 + 掩码后 token,无名单)各给指路提示。`parseRefArg` 管位置参数只吃纯数字 ref。
+- **拦在第一步(顺序不变量)**:CLI 里参数防呆必须先于 `await needTarget(...)`(它会探测/自动启动浏览器,再往里还会装 feedback observer)。`cdp.ts` 的 `normTarget` 内部即调 `assertTargetArg`,四个操作动作(click/fill/focus/hover)都是「`normTarget` → `needTarget` → `api.*`」三行;info/article 先 `parseRefArg` 到局部变量;press-key 先 `parseKeySpec`;view 先 `parseRefArg`/互斥校验。**别写成 `api.click(await needTarget(...), arg)`**——实参左到右求值,防呆会落到浏览器之后,指路提示被端点错误盖掉、非法命令白白冷启动浏览器。`tests/cli-guard-order.test.ts` 用桩掉 `./api` 的真实 `cdp.ts` bundle 驱动 commander action 锁定这条顺序(非法目标 resolve 零调用;合法 CSS/ref/按键行为不变)。
 
 ## 返回契约(api.ts 的 `invoke`)
 
@@ -159,6 +160,7 @@ Node 侧统一 `invoke(target, expr)` 执行注入脚本并解包:成功返回�
 
 - `tests/*.test.ts` 用 Node 内置 `node:test`+`node:assert/strict`,零运行时依赖。
 - 纯函数单测:`view-utils.ts`、`view-format.ts`(formatView/markText)、`genSel.ts`、`find-root.ts`(refElement/climbAncestors/classifyRef)、`folds.ts`(parseRules/domainMatch/pathMatch/matchFolds/loadFolds,临时 CDP_FOLD_FILE)、`ignore-links.ts`(hrefForMatch/globToRegExp/linkRuleMatch/parseLinkRules + 浏览器侧 linkIgnored)、`target-arg.ts`(normArg 防呆)、`keys.ts`(parseKeySpec)、`transport.ts`(resolveTarget)。
+- CLI 顺序回归:`tests/cli-guard-order.test.ts`——esbuild 把真实 `src/cdp.ts` 打成 CJS(`commander` external 共享 `program` 单例;`./api`/`./monitor`/`./browser`/`./run-script`/`./recipe-runner` 换成记录调用/到达即抛的桩),每个用例清 require 缓存重新 require 拿干净单例,`exitOverride` 要连已注册的子命令一起补(否则 commander 用法错误会 `process.exit` 杀掉测试进程),`parseAsync([...], {from:'user'})` 驱动真实 action。断言非法网址/XPath/Playwright/shadow 链/`{ref:N}` 字面量/非法 info-article ref/未知按键都在 `resolve` 零调用下抛防呆错误,合法 CSS/ref/按键先 resolve 一次再以归一化参数调 api,多余位置参数仍被拒。
 - 注入侧 DOM 相关(buildView/fold/inputInfo、find-entry 穿透 shadow、feedback observer/子树黑名单、recoverRef live 分支)依赖真实 DOM,靠浏览器实测(见 SKILL.md),不写单测。纯函数分支(`formatView` 的 `·屏`/shadow 占位/fold 优先/`inputAttr`、`feedback` 的 `foldTimestampRun`)有单测。
 
 ## 文档分工
